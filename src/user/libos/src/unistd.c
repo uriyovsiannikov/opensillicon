@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <limits.h>
 #include "abi/syscall.h"
 #include "abi/credentials.h"
@@ -254,9 +255,10 @@ pid_t fork(void){return (pid_t)__libos_call(SYSCALL_FORK,0,0,0,0,0,0);}
 pid_t waitpid(pid_t pid,int *status,int options){
 	unsigned char child_status=0;
 	long result;
-	if(options!=0){errno=EINVAL;return -1;}
-	result=__libos_call(SYSCALL_WAITPID,pid,(long)(status?&child_status:0),0,0,0,0);
-	if(result>=0&&status)*status=(int)child_status<<8;
+	if(options!=0&&options!=WNOHANG){errno=EINVAL;return -1;}
+	result=__libos_call(SYSCALL_WAITPID,pid,(long)(status?&child_status:0),
+	    options==WNOHANG?OS_WAIT_NOHANG:0,0,0,0);
+	if(result>0&&status)*status=(int)child_status<<8;
 	return (pid_t)result;
 }
 int execv(const char *path,char *const argv[]){

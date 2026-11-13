@@ -9,8 +9,21 @@ $(BUILD_DIR)/user_path.o: src/user/path.c src/user/include/os.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/user_init.o: src/user/init/init.c src/user/init/logo_pixels.h \
-		src/user/include/os.h other/logo.png | $(BUILD_DIR)
+		src/user/init/service.h src/user/include/os.h other/logo.png | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/service.o: src/user/init/service.c src/user/init/service.h \
+		src/user/include/os.h src/include/abi/syscall.h | $(BUILD_DIR)
+	$(CC) $(LIBOS_CFLAGS) -Isrc/user -c $< -o $@
+
+$(BUILD_DIR)/svctl.o: src/user/init/svctl.c src/user/init/service.h | $(BUILD_DIR)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/svctl.elf: $(BUILD_DIR)/svctl.o $(LIBOS_BUILD_DIR)/crt0.o \
+		$(LIBOS_ARCHIVE) src/user/c_linker.ld
+	mkdir -p $(@D)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o \
+		$(BUILD_DIR)/svctl.o $(LIBOS_ARCHIVE) -o $@
 
 $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
@@ -74,10 +87,10 @@ $(BUILD_DIR)/coreutils/ping.o: src/user/coreutils/ping.c \
 
 $(BUILD_DIR)/init.elf: $(BUILD_DIR)/user_start.o $(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/user_init.o src/user/c_linker.ld
+		$(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
 		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/user_init.o -o $@
+		$(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBOS_ARCHIVE) -o $@
 
 $(BUILD_DIR)/shell.elf: $(BUILD_DIR)/user_start.o $(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_path.o \
@@ -261,11 +274,14 @@ $(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
 $(BUILD_DIR)/dillo/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
 	sh src/tools/builders/build_dillo.sh
 
-$(BUILD_DIR)/root.img: $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
+SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
+
+$(ROOT_IMAGE): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/startx.elf \
 		$(BUILD_DIR)/populate_root \
+		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf \
 		other/img1.jpg \
 		src/user/thirdparty/xorg/fonts/gallant.bdf src/user/thirdparty/xorg/fonts/fonts.dir \
 		src/user/thirdparty/xorg/startx/system.twmrc \
@@ -281,7 +297,9 @@ $(BUILD_DIR)/root.img: $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(
 		--twm $(BUILD_DIR)/x11/twm/src/twm --xterm $(BUILD_DIR)/x11/xterm/xterm \
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
 		--nano $(BUILD_DIR)/nano/nano --dillo $(BUILD_DIR)/dillo/target/src/dillo \
-		--module $(BUILD_DIR)/modules/e1000.ko --coreutils \
+		--module $(BUILD_DIR)/modules/e1000.ko \
+		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
+		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils \
 		$(BUILD_DIR)/coreutils/ls.elf $(BUILD_DIR)/coreutils/cat.elf \
 		$(BUILD_DIR)/coreutils/echo.elf $(BUILD_DIR)/coreutils/pwd.elf \
 		$(BUILD_DIR)/coreutils/true.elf $(BUILD_DIR)/coreutils/false.elf \

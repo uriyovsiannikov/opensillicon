@@ -15,6 +15,9 @@
 #define SYSCALL_SLEEP_TICKS 8U
 #define SYSCALL_PROCESS_SNAPSHOT 9U
 
+/* Options in the third argument of SYSCALL_WAITPID. */
+#define OS_WAIT_NOHANG 1U
+
 /* File descriptors, files, and directories. */
 #define SYSCALL_OPEN 10U
 #define SYSCALL_CLOSE 11U

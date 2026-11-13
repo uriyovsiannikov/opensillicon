@@ -141,12 +141,15 @@ main(int argc, char **argv)
 	const char *feh_path = NULL;
 	const char *nano_path = NULL;
 	const char *dillo_path = NULL;
+	const char *svctl_path = NULL;
+	const char *service_paths[32];
+	size_t service_count = 0;
 	const char *module_paths[32];
 	size_t module_count = 0;
 	int arg;
 
 	if (argc < 4) {
-		fprintf(stderr, "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--dillo elf] [--module file.ko] [--coreutils coreutils...]\n", argv[0]);
+		fprintf(stderr, "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--dillo elf] [--svctl elf] [--service file.conf] [--module file.ko] [--coreutils coreutils...]\n", argv[0]);
 		return 2;
 	}
 	for (arg = 4; arg < argc; arg++) {
@@ -180,6 +183,13 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--module") == 0 && arg + 1 < argc) {
 			if (module_count == 32) return 2;
 			module_paths[module_count++] = argv[++arg];
+		} else if (strcmp(argv[arg], "--svctl") == 0 && arg + 1 < argc) {
+			if (svctl_path != NULL) return 2;
+			svctl_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--service") == 0 && arg + 1 < argc) {
+			if (service_count == sizeof(service_paths) / sizeof(service_paths[0]))
+				return 2;
+			service_paths[service_count++] = argv[++arg];
 		} else if (strcmp(argv[arg], "--coreutils") == 0) {
 			if (coreutils_start != 0) return 2;
 			coreutils_start = arg + 1;
@@ -225,6 +235,32 @@ main(int argc, char **argv)
 		fprintf(stderr, "SilliconFS population failed: %d\n", error);
 		fclose(image);
 		return 1;
+	}
+	if (svctl_path != NULL &&
+	    (error = add_file("/bin/svctl", svctl_path, 0755)) != 0) {
+		fprintf(stderr, "svctl installation failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (svctl_path != NULL || service_count != 0) {
+		error = add_directory("/etc/service.d", 0755);
+		for (size_t i = 0; error == 0 && i < service_count; i++) {
+			const char *filename = strrchr(service_paths[i], '/');
+			char destination[sizeof("/etc/service.d/") + 36];
+
+			filename = filename == NULL ? service_paths[i] : filename + 1;
+			int length = snprintf(destination, sizeof(destination),
+			    "/etc/service.d/%s", filename);
+			if (length < 0 || (size_t)length >= sizeof(destination))
+				error = -EINVAL;
+			else
+				error = add_file(destination, service_paths[i], 0644);
+		}
+		if (error != 0) {
+			fprintf(stderr, "service configuration installation failed: %d\n", error);
+			fclose(image);
+			return 1;
+		}
 	}
 	if (module_count != 0) {
 		if ((error = add_directory("/boot", 0755)) != 0 ||

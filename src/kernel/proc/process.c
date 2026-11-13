@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#include "abi/syscall.h"
 #include "arch/x86_64/fpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/user.h"
@@ -1804,14 +1805,21 @@ process_waitpid(struct interrupt_frame *frame, uint64_t *error)
 {
 	struct process *parent = current_process;
 	uint64_t pid = frame->rdi;
+	uint64_t options = frame->rdx;
 	struct process *child;
 
+	if ((options & ~((uint64_t)OS_WAIT_NOHANG)) != 0) {
+		*error = PROCESS_ERROR_EINVAL;
+		return frame;
+	}
 	if (parent == NULL || (pid != PROCESS_WAIT_ANY &&
 	    (int64_t)pid <= 0)) {
 		*error = PROCESS_ERROR_ECHILD;
 		return frame;
 	}
-	child = find_child(parent, pid, false);
+	child = find_child(parent, pid, true);
+	if (child == NULL)
+		child = find_child(parent, pid, false);
 	if (child == NULL) {
 		*error = PROCESS_ERROR_ECHILD;
 		return frame;
@@ -1823,6 +1831,12 @@ process_waitpid(struct interrupt_frame *frame, uint64_t *error)
 			return frame;
 		frame->rax = child_id;
 		frame->rflags &= ~1ULL;
+		return frame;
+	}
+	if ((options & OS_WAIT_NOHANG) != 0) {
+		frame->rax = 0;
+		frame->rflags &= ~1ULL;
+		*error = 0;
 		return frame;
 	}
 	if (process_has_pending_signal(parent)) {

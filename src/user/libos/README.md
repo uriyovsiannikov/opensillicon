@@ -4,7 +4,7 @@
 loaded by OpenSillicon. It uses the kernel's `int 0x80` ABI directly and is not
 binary- or source-compatible with musl or Linux. Dynamic linking, shared
 objects, TLS, threads, and general POSIX behavior are out of scope.
-Process support includes fork, path-based exec, blocking waitpid, descriptor
+Process support includes fork, path-based exec, waitpid with WNOHANG, descriptor
 duplication, and per-process real/effective/saved UID/GID credentials.
 `setuid/seteuid/setgid/setegid`, `setresuid/setresgid`, `umask`, `chmod`,
 `fchmod`, `chown/fchown`, and `access` are checked by the kernel. File access
@@ -21,7 +21,7 @@ segment is emitted. The library does not invent auxiliary-vector values.
 
 Supported public functions are the declarations in `include/`: `exit`, `_exit`,
 `getpid/getppid`, `getuid/geteuid/getgid/getegid`, `setuid/seteuid/setgid/setegid`,
-`fork`, blocking `waitpid` (exit status only, options must be zero), `execv`,
+`fork`, `waitpid` (exit status only, options can be zero or `WNOHANG`), `execv`,
 `execl` (up to 16 arguments), `sysconf` for descriptor/page/vector limits,
 `uname`, limited signal actions/masks, and `kill`; `getenv` returns null
 because launched processes currently have an empty environment; the implemented

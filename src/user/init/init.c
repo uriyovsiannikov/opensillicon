@@ -1,5 +1,6 @@
 #include "include/os.h"
 #include "logo_pixels.h"
+#include "service.h"
 
 struct startup_phdr {
 	uint32_t type;
@@ -289,43 +290,5 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 	}
 	start_sleep_regression(startup_stack);
 	init_status("init", 1, 0);
-	/* Keep the interactive shell under init supervision. Back off after
-	 * repeated failures so a broken shell cannot flood the console. */
-	uint64_t restart_delay = 10;
-	for (;;) {
-		long child = u_fork();
-		uint8_t status = 0xff;
-
-		if (child == 0) {
-			if (u_setgid(1000) != 0 || u_setuid(1000) != 0) {
-				u_puts("OpenSillicon init: could not drop shell credentials\n");
-				u_exit(126);
-			}
-			(void)u_exec_path("/bin/sh");
-			init_status("/bin/sh", 0, "exec failed");
-			u_exit(127);
-		}
-		if (child > 0) {
-			init_status("/bin/sh", 1, 0);
-			if (u_waitpid((uint64_t)child, &status) < 0) {
-				init_status("/bin/sh", 0, "waitpid failed");
-				status = 255;
-			}
-			if (status != 0) {
-				init_status("/bin/sh", 0, "exited with an error");
-				restart_delay = restart_delay < 80 ? restart_delay * 2 : 160;
-			} else {
-				/* A clean exit is usually an intentional logout. */
-				restart_delay = 10;
-			}
-		}
-		else {
-			init_status("/bin/sh", 0, "fork failed");
-			restart_delay = restart_delay < 80 ? restart_delay * 2 : 160;
-		}
-		if (u_sleep_ticks(restart_delay) != 0) {
-			u_puts("OpenSillicon init: restart delay failed\n");
-			u_exit(1);
-		}
-	}
+	service_manager();
 }
