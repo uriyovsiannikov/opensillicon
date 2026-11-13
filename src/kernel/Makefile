@@ -263,8 +263,8 @@ $(BUILD_DIR)/smp_topology.o: src/kernel/arch/x86_64/cpu/smp_topology.c \
 		src/include/kernel/smp.h src/limine/limine.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -Ilimine -c $< -o $@
 
-$(BUILD_DIR)/smp_asm.o: src/kernel/arch/x86_64/cpu/smp.S | $(BUILD_DIR)
-	$(CC) $(KERNEL_ASFLAGS) -c $< -o $@
+$(BUILD_DIR)/smp_asm.o: src/kernel/arch/x86_64/cpu/smp.S src/include/abi/syscall.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_ASFLAGS) -Isrc/include -c $< -o $@
 
 $(BUILD_DIR)/fpu.o: src/kernel/arch/x86_64/cpu/fpu.c \
 		src/include/arch/x86_64/fpu.h src/include/kernel/log.h | $(BUILD_DIR)

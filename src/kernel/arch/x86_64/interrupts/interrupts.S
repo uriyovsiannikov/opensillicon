@@ -94,7 +94,24 @@ isr_common:
 	movq %rsp, %rbx
 	andq $-16, %rsp
 	call interrupt_dispatch
-	movq %rax, %rsp
+	movq %rax, %rdi
+	/* A deferred syscall can block and pick another process. Run each
+	 * continuation on its own kernel stack before touching its state. */
+3:
+	testb $3, 144(%rdi)
+	jz arch_return_interrupt_frame
+	cmpq $2, 120(%rdi)
+	je arch_return_interrupt_frame
+	movq %rdi, %rbx
+	movq %rdi, %rsp
+	andq $-16, %rsp
+	call process_prepare_user_return
+	movq %rax, %rdi
+	cmpq %rbx, %rax
+	jne 3b
+.global arch_return_interrupt_frame
+arch_return_interrupt_frame:
+	movq %rdi, %rsp
 	testb $3, 144(%rsp)
 	jz 2f
 	/* Restore only after dispatch chose the process that will return. */

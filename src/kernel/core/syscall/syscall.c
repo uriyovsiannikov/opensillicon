@@ -13,6 +13,7 @@
 #include "kernel/pipe.h"
 #include "kernel/process.h"
 #include "kernel/syscall.h"
+#include "kernel/smp.h"
 #include "kernel/tty.h"
 #include "kernel/vmm.h"
 #include "kernel/vfs.h"
@@ -146,15 +147,10 @@ struct syscall_winsize {
 	uint16_t ypixel;
 };
 
-static struct fd_table *descriptor_table;
-static bool syscall_handler_registered;
-
 static struct fd_table *
 current_fd_table(void)
 {
-	struct fd_table *table = process_current_fd_table();
-
-	return table == NULL ? descriptor_table : table;
+	return process_current_fd_table();
 }
 
 static uint64_t
@@ -751,23 +747,261 @@ syscall_getdents(struct interrupt_frame *frame)
 	return frame;
 }
 
-static struct interrupt_frame *
-syscall_interrupt(struct interrupt_frame *frame)
+static bool
+syscall_private_memory(uint64_t number)
+{
+	return number == SYSCALL_MMAP || number == SYSCALL_MUNMAP ||
+	    number == SYSCALL_MPROTECT;
+}
+
+/* These calls use the running process's state, synchronized allocators
+ * and the tick counter. They cannot sleep or enter BSP-owned services. */
+static bool
+syscall_process_local(struct interrupt_frame *frame)
+{
+	uint64_t error;
+
+	switch (frame->rax) {
+	case SYSCALL_GET_ABI_VERSION:
+		frame->rax = SYSCALL_ABI_VERSION;
+		return true;
+	case SYSCALL_GETPID:
+		frame->rax = process_current_pid();
+		return true;
+	case SYSCALL_GETCREDENTIALS:
+		{
+			struct os_credentials credentials;
+			struct address_space *space = vmm_active_address_space();
+			if (!vmm_validate_user_write(space, frame->rdi,
+			    sizeof(credentials)) ||
+			    !process_current_credentials(&credentials) ||
+			    !vmm_copy_to_user(space, frame->rdi, &credentials,
+			    sizeof(credentials)))
+				syscall_error(frame, ERRNO_EFAULT);
+			else
+				frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_CLOCK_GETTIME:
+		{
+			struct native_timespec value;
+			struct address_space *space = vmm_active_address_space();
+			uint64_t ticks;
+
+			if (frame->rdi != CLOCK_MONOTONIC_ID) {
+				syscall_error(frame, ERRNO_EINVAL);
+				return true;
+			}
+			if (!vmm_validate_user_write(space, frame->rsi,
+			    sizeof(value))) {
+				syscall_error(frame, ERRNO_EFAULT);
+				return true;
+			}
+			ticks = timer_ticks();
+			value.tv_sec = (int64_t)(ticks / MONOTONIC_TICK_HZ);
+			value.tv_nsec = (int64_t)(ticks % MONOTONIC_TICK_HZ) *
+			    (1000000000U / MONOTONIC_TICK_HZ);
+			if (!vmm_copy_to_user(space, frame->rsi, &value,
+			    sizeof(value))) {
+				syscall_error(frame, ERRNO_EFAULT);
+				return true;
+			}
+			frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_SET_FS_BASE:
+		error = process_set_fs_base(frame->rdi);
+		if (error != 0)
+			syscall_error(frame, error);
+		else
+			frame->rax = 0;
+		return true;
+	case SYSCALL_MMAP:
+		{
+			uint64_t base;
+			int result;
+
+			if (frame->rsi > UINT32_MAX)
+				result = -EINVAL;
+			else
+				result = vmm_private_map_protected(
+				    vmm_active_address_space(), frame->rdi,
+				    (unsigned int)frame->rsi, &base);
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = base;
+		}
+		return true;
+	case SYSCALL_MUNMAP:
+		{
+			int result = vmm_private_unmap_complete(
+			    vmm_active_address_space(), frame->rdi, frame->rsi);
+
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_MPROTECT:
+		{
+			int result;
+
+			if (frame->rdx > UINT32_MAX) {
+				result = -EINVAL;
+			} else {
+				result = vmm_private_protect(
+				    vmm_active_address_space(), frame->rdi,
+				    frame->rsi, (unsigned int)frame->rdx);
+			}
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_SHM_CREATE:
+		{
+			uint64_t base;
+			int result = vmm_shm_create(vmm_active_address_space(),
+			    frame->rdi, &base);
+
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = base;
+		}
+		return true;
+	case SYSCALL_SHM_DETACH:
+		{
+			int result = vmm_shm_detach(vmm_active_address_space(),
+			    frame->rdi);
+
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_SIGACTION:
+		if (frame->rdi > UINT32_MAX)
+			syscall_error(frame, ERRNO_EINVAL);
+		else {
+			(void)process_sigaction(frame, (unsigned int)frame->rdi,
+			    frame->rsi, frame->rdx, &error);
+			if (error != 0)
+				syscall_error(frame, error);
+		}
+		return true;
+	case SYSCALL_SIGPROCMASK:
+		{
+			uint64_t requested, previous;
+			uint64_t *requested_pointer = NULL;
+			uint64_t *previous_pointer = NULL;
+			int result;
+			struct address_space *space = vmm_active_address_space();
+
+			if (frame->rsi != 0) {
+				if (!vmm_copy_from_user(space, &requested, frame->rsi,
+				    sizeof(requested))) {
+					syscall_error(frame, ERRNO_EFAULT);
+					return true;
+				}
+				requested_pointer = &requested;
+			}
+			if (frame->rdx != 0) {
+				if (!vmm_validate_user_write(space, frame->rdx,
+				    sizeof(previous))) {
+					syscall_error(frame, ERRNO_EFAULT);
+					return true;
+				}
+				previous_pointer = &previous;
+			}
+			if (frame->rdi > INT32_MAX) {
+				syscall_error(frame, ERRNO_EINVAL);
+				return true;
+			}
+			result = process_signal_mask((int)frame->rdi,
+			    requested_pointer, previous_pointer);
+			if (result < 0) {
+				syscall_error(frame, (uint64_t)-result);
+				return true;
+			}
+			if (previous_pointer != NULL && !vmm_copy_to_user(space,
+			    frame->rdx, &previous, sizeof(previous))) {
+				syscall_error(frame, ERRNO_EFAULT);
+				return true;
+			}
+			frame->rax = 0;
+		}
+		return true;
+	default:
+		return false;
+	}
+}
+
+struct interrupt_frame *
+syscall_dispatch(struct interrupt_frame *frame)
 {
 	uint64_t number = frame->rax;
 	uint64_t error = 0;
 	struct fd_table *table;
 	size_t amount;
+	struct smp_cpu *cpu = smp_current_cpu();
+
+	/* Defer calls that need BSP-owned services until the AP releases the process. */
+	if (cpu != NULL && !cpu->bsp) {
+		if ((frame->cs & 3U) == 3U && cpu->current_process != NULL) {
+			uint64_t flags = frame->rflags;
+			frame->rflags &= ~1ULL;
+			bool private_memory = syscall_private_memory(number);
+			bool shared_memory = number == SYSCALL_SHM_CREATE ||
+			    number == SYSCALL_SHM_DETACH;
+#if defined(KERNEL_TEST_SHM_ALLOC_FAILURE) || defined(KERNEL_TEST_SHM_LIFECYCLE) || defined(KERNEL_TEST_SHM_FORK_FAILURE)
+			if (shared_memory)
+				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
+#endif
+#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
+			if (private_memory)
+				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
+#endif
+			if (syscall_process_local(frame)) {
+				if (shared_memory && (frame->rflags & 1U) == 0)
+					cpu->user_shared_memory_calls = true;
+				if (private_memory && (frame->rflags & 1U) == 0)
+					cpu->user_private_memory_calls = true;
+				__atomic_add_fetch(&cpu->user_local_syscalls, 1, __ATOMIC_RELAXED);
+				return frame;
+			}
+			frame->rflags = flags;
+			process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
+		}
+		frame->rflags &= ~1ULL;
+		if (cpu->user_entry_probe_active && (frame->cs & 3U) == 3U) {
+			if (number == SYSCALL_GET_ABI_VERSION) {
+				frame->rax = SYSCALL_ABI_VERSION;
+				return frame;
+			}
+			if (number == SYSCALL_EXIT)
+				user_return_to_kernel(frame->rdi);
+		}
+		syscall_error(frame, ERRNO_ENOSYS);
+		return frame;
+	}
+	if ((frame->cs & 3U) != 3U || current_fd_table() == NULL) {
+		syscall_error(frame, ERRNO_ENOSYS);
+		return frame;
+	}
 
 	/* Generic syscall safe point: network progress is not tied to UDP calls. */
 	(void)network_service_request(NETWORK_SERVICE_POLL_RX);
 	(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
 	process_syscall_retry_begin();
 	frame->rflags &= ~1ULL;
+	if (syscall_process_local(frame))
+		return frame;
 	switch (number) {
-	case SYSCALL_GET_ABI_VERSION:
-		frame->rax = SYSCALL_ABI_VERSION;
-		break;
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;
@@ -1083,25 +1317,8 @@ syscall_interrupt(struct interrupt_frame *frame)
 			frame->rax = amount;
 		}
 		break;
-	case SYSCALL_GETPID:
-		frame->rax = process_current_pid();
-		break;
 	case SYSCALL_GETPPID:
 		frame->rax = process_current_ppid();
-		break;
-	case SYSCALL_GETCREDENTIALS:
-		{
-			struct os_credentials credentials;
-			struct address_space *space = vmm_active_address_space();
-			if (!vmm_validate_user_write(space, frame->rdi,
-			    sizeof(credentials)) ||
-			    !process_current_credentials(&credentials) ||
-			    !vmm_copy_to_user(space, frame->rdi, &credentials,
-			    sizeof(credentials)))
-				syscall_error(frame, ERRNO_EFAULT);
-			else
-				frame->rax = 0;
-		}
 		break;
 	case SYSCALL_SETUID:
 	case SYSCALL_SETEUID:
@@ -1665,33 +1882,6 @@ syscall_interrupt(struct interrupt_frame *frame)
 			    request.tv_nsec, frame->rsi, &error);
 		}
 		break;
-	case SYSCALL_CLOCK_GETTIME:
-		{
-			struct native_timespec value;
-			struct address_space *space = vmm_active_address_space();
-			uint64_t ticks;
-
-			if (frame->rdi != CLOCK_MONOTONIC_ID) {
-				syscall_error(frame, ERRNO_EINVAL);
-				break;
-			}
-			if (!vmm_validate_user_write(space, frame->rsi,
-			    sizeof(value))) {
-				syscall_error(frame, ERRNO_EFAULT);
-				break;
-			}
-			ticks = timer_ticks();
-			value.tv_sec = (int64_t)(ticks / MONOTONIC_TICK_HZ);
-			value.tv_nsec = (int64_t)(ticks % MONOTONIC_TICK_HZ) *
-			    (1000000000U / MONOTONIC_TICK_HZ);
-			if (!vmm_copy_to_user(space, frame->rsi, &value,
-			    sizeof(value))) {
-				syscall_error(frame, ERRNO_EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
 	case SYSCALL_PTY_PAIR:
 	case SYSCALL_PIPE:
 		{
@@ -1733,132 +1923,8 @@ syscall_interrupt(struct interrupt_frame *frame)
 		else
 			frame->rax = 0;
 		break;
-	case SYSCALL_SIGACTION:
-		if (frame->rdi > UINT32_MAX)
-			syscall_error(frame, ERRNO_EINVAL);
-		else
-			frame = process_sigaction(frame, (unsigned int)frame->rdi,
-			    frame->rsi, frame->rdx, &error);
-		break;
-	case SYSCALL_SIGPROCMASK:
-		{
-			uint64_t requested, previous;
-			uint64_t *requested_pointer = NULL;
-			uint64_t *previous_pointer = NULL;
-			int result;
-			struct address_space *space = vmm_active_address_space();
-
-			if (frame->rsi != 0) {
-				if (!vmm_copy_from_user(space, &requested, frame->rsi,
-				    sizeof(requested))) {
-					syscall_error(frame, ERRNO_EFAULT);
-					break;
-				}
-				requested_pointer = &requested;
-			}
-			if (frame->rdx != 0) {
-				if (!vmm_validate_user_write(space, frame->rdx,
-				    sizeof(previous))) {
-					syscall_error(frame, ERRNO_EFAULT);
-					break;
-				}
-				previous_pointer = &previous;
-			}
-			if (frame->rdi > INT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
-				break;
-			}
-			result = process_signal_mask((int)frame->rdi,
-			    requested_pointer, previous_pointer);
-			if (result < 0) {
-				syscall_error(frame, (uint64_t)-result);
-				break;
-			}
-			if (previous_pointer != NULL && !vmm_copy_to_user(space,
-			    frame->rdx, &previous, sizeof(previous))) {
-				syscall_error(frame, ERRNO_EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
 	case SYSCALL_SIGRETURN:
 		frame = process_sigreturn(frame, &error);
-		break;
-	case SYSCALL_SHM_CREATE:
-		{
-			uint64_t base;
-			int result = vmm_shm_create(vmm_active_address_space(),
-			    frame->rdi, &base);
-
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = base;
-		}
-		break;
-	case SYSCALL_SHM_DETACH:
-		{
-			int result = vmm_shm_detach(vmm_active_address_space(),
-			    frame->rdi);
-
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
-	case SYSCALL_SET_FS_BASE:
-		error = process_set_fs_base(frame->rdi);
-		if (error != 0)
-			syscall_error(frame, error);
-		else
-			frame->rax = 0;
-		break;
-	case SYSCALL_MMAP:
-		{
-			uint64_t base;
-			int result;
-
-			if (frame->rsi > UINT32_MAX)
-				result = -EINVAL;
-			else
-				result = vmm_private_map_protected(
-				    vmm_active_address_space(), frame->rdi,
-				    (unsigned int)frame->rsi, &base);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = base;
-		}
-		break;
-	case SYSCALL_MUNMAP:
-		{
-			int result = vmm_private_unmap_complete(
-			    vmm_active_address_space(), frame->rdi, frame->rsi);
-
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
-	case SYSCALL_MPROTECT:
-		{
-			int result;
-
-			if (frame->rdx > UINT32_MAX) {
-				result = -EINVAL;
-			} else {
-				result = vmm_private_protect(
-				    vmm_active_address_space(), frame->rdi,
-				    frame->rsi, (unsigned int)frame->rdx);
-			}
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
 		break;
 	case SYSCALL_WRITEV:
 		return syscall_writev(frame);
@@ -3090,13 +3156,10 @@ syscall_interrupt(struct interrupt_frame *frame)
 }
 
 void
-syscall_init(struct fd_table *table)
+syscall_init(void)
 {
-	if (table == NULL || (!syscall_handler_registered &&
-	    !interrupt_register_handler(SYSCALL_VECTOR, syscall_interrupt))) {
+	if (!interrupt_register_handler(SYSCALL_VECTOR, syscall_dispatch)) {
 		klog("OpenSillicon: syscall initialization failed\n");
 		kernel_halt();
 	}
-	syscall_handler_registered = true;
-	descriptor_table = table;
 }

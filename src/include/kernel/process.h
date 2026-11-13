@@ -76,8 +76,19 @@ uint64_t process_pipe_blocked_ticks(void);
 uint64_t process_test_shm_reap_releases(void);
 uint64_t process_test_shm_exec_releases(void);
 #endif
+enum process_slice_stop {
+	PROCESS_SLICE_TIMER,
+	PROCESS_SLICE_SYSCALL,
+	PROCESS_SLICE_FAULT,
+	PROCESS_SLICE_SIGNAL
+};
+bool process_ap_has_assignment(void);
+void process_ap_run_assignment(void);
+_Noreturn void process_ap_stop(struct interrupt_frame *frame,
+	enum process_slice_stop reason);
 struct interrupt_frame *process_timer_preempt(
 	struct interrupt_frame *frame);
+struct interrupt_frame *process_reschedule_ipi(struct interrupt_frame *frame);
 struct interrupt_frame *process_fork(struct interrupt_frame *frame,
 	uint64_t *error);
 struct interrupt_frame *process_exec(struct interrupt_frame *frame,

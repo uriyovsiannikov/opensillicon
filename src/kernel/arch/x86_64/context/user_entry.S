@@ -38,6 +38,23 @@ user_enter:
 	iretq
 .size user_enter, .-user_enter
 
+.global user_resume
+.type user_resume, @function
+user_resume:
+	pushq %rbp
+	pushq %rbx
+	pushq %r12
+	pushq %r13
+	pushq %r14
+	pushq %r15
+	movq %rdi, %r12
+	movq %rsp, %rdi
+	subq $8, %rsp
+	call arch_user_context_save
+	movq %r12, %rdi
+	jmp arch_return_interrupt_frame
+.size user_resume, .-user_resume
+
 .global user_return_to_kernel
 .type user_return_to_kernel, @function
 user_return_to_kernel:

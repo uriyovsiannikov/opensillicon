@@ -114,13 +114,19 @@ fail:
 	return false;
 }
 
+/* The caller must already own a reference (or borrow one from an owned
+ * mapping). Atomic counts do not make acquisition from a stale pointer safe. */
 bool
 shm_object_retain(struct shm_object *object)
 {
-	if (object == NULL || object->references == 0 ||
-	    object->references == UINT64_MAX)
+	if (object == NULL)
 		return false;
-	object->references++;
+	uint64_t references = __atomic_load_n(&object->references, __ATOMIC_RELAXED);
+	do {
+		if (references == 0 || references == UINT64_MAX)
+			return false;
+	} while (!__atomic_compare_exchange_n(&object->references, &references,
+	    references + 1, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 	return true;
 }
 
@@ -129,9 +135,15 @@ shm_object_release(struct shm_object *object)
 {
 	size_t i;
 
-	if (object == NULL || object->references == 0)
+	if (object == NULL)
 		return false;
-	if (--object->references != 0)
+	uint64_t references = __atomic_load_n(&object->references, __ATOMIC_RELAXED);
+	do {
+		if (references == 0)
+			return false;
+	} while (!__atomic_compare_exchange_n(&object->references, &references,
+	    references - 1, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
+	if (references != 1)
 		return true;
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
 	if ((uint64_t)object->page_count > test_live_pages)
@@ -155,7 +167,8 @@ mapping_range_valid(uint64_t base, const struct shm_object *object,
 {
 	uint64_t bytes;
 
-	if (base == 0 || object == NULL || object->references == 0 ||
+	if (base == 0 || object == NULL ||
+	    __atomic_load_n(&object->references, __ATOMIC_RELAXED) == 0 ||
 	    (base & (SHM_PAGE_SIZE - 1)) != 0 ||
 	    object->page_count > UINT64_MAX / SHM_PAGE_SIZE)
 		return false;

@@ -568,6 +568,7 @@ virtio_rng_probe_done:
 	if (!ahci_controller_found)
 		kernel_halt();
 	process_system_init();
+	syscall_init();
 	klog_status("process subsystem", true, NULL);
 	initialize_filesystems(&info);
 	klog_status("VFS", true, NULL);
@@ -600,8 +601,12 @@ virtio_rng_probe_done:
 	if (smp_current_cpu() != NULL && smp_online_count() > 1)
 		klog("OpenSillicon: AP cooperative kernel schedulers ready\n");
 	if (smp_current_cpu() != NULL) {
-		if (!smp_verify_work_dispatch()) {
-			klog("OpenSillicon panic: online CPU work dispatch verification failed\n");
+		if (!smp_verify_ap_idle_timers()) {
+			klog("OpenSillicon panic: AP timer interrupt verification failed\n");
+			kernel_halt();
+		}
+		if (!smp_verify_work_dispatch() || !smp_verify_ap_user_entry()) {
+			klog("OpenSillicon panic: SMP startup verification failed\n");
 			kernel_halt();
 		}
 	}

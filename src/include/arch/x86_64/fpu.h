@@ -8,6 +8,7 @@
 #define ARCH_FPU_STATE_SIZE 512U
 
 bool arch_fpu_init(void);
+bool arch_fpu_init_secondary(void);
 void arch_fpu_save(void *state);
 void arch_fpu_restore(const void *state);
 void arch_fpu_init_process_state(void *state);

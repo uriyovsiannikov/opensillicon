@@ -71,8 +71,8 @@ address_space_valid(const struct address_space *space)
 	return false;
 }
 
-/* Address-space mutation stays BSP-owned until remote TLB shootdowns and
- * page-table publication are synchronized for every AP. */
+/* The BSP owns user page-table changes and address-space creation/destruction.
+ * Loading an existing address space is a separate, CPU-local operation. */
 static bool
 vmm_mutation_allowed(void)
 {
@@ -103,6 +103,32 @@ static struct address_space *
 current_active_space(void)
 {
 	return __atomic_load_n(active_space_slot(), __ATOMIC_ACQUIRE);
+}
+
+static bool
+user_access_space_valid(const struct address_space *space)
+{
+	if (space == NULL || space == &kernel_space)
+		return false;
+	/* An active space cannot be destroyed. On an AP, only its own
+	 * space may be accessed here. The BSP can change the global list. */
+	if (!vmm_mutation_allowed())
+		return space == current_active_space();
+	return address_space_valid(space);
+}
+
+/* Process handoff guarantees one owner of a private user page table.
+ * The BSP only accesses a running AP process after collecting its slice.
+ * AP callers must use their active space and never walk the global list. */
+static bool
+private_space_owned_here(const struct address_space *space)
+{
+#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
+	/* Fault injection uses BSP-owned global counters. */
+	if (!vmm_mutation_allowed())
+		return false;
+#endif
+	return user_access_space_valid(space);
 }
 
 static bool
@@ -142,8 +168,8 @@ canonical(uint64_t address)
 static void
 shootdown_tlbs(const struct address_space *space)
 {
-	/* Kernel mappings are published under kernel_mapping_lock. User address
-	 * spaces remain BSP-only until their full lifecycle is SMP-safe. */
+	/* Kernel mappings are published under kernel_mapping_lock. User
+	 * page-table changes are serialized by process ownership. */
 	if (!(space == NULL || space == &kernel_space ? smp_tlb_shootdown_all() :
 	    smp_tlb_shootdown_space(space))) {
 		klog("OpenSillicon panic: remote TLB shootdown failed\n");
@@ -366,15 +392,26 @@ vmm_map_page(struct address_space *space, uint64_t virtual_address,
 {
 	bool kernel_mapping = (flags & VMM_USER) == 0;
 	uint64_t kernel_lock_flags = 0;
+	bool private_mapping = (flags & VMM_PRIVATE) != 0;
+	bool user_mapping = (flags & VMM_USER) != 0;
 
-	if ((!vmm_mutation_allowed() &&
-	    !vmm_ap_heap_mapping_allowed(space, virtual_address)) || !initialized ||
-	    !address_space_valid(space) || (flags & ~0x1fU) != 0 ||
+	if (!initialized || (flags & ~0x1fU) != 0 ||
 	    (flags & (VMM_WRITE | VMM_EXEC)) == (VMM_WRITE | VMM_EXEC) ||
 	    (virtual_address & (PAGE_SIZE - 1)) != 0 ||
 	    (physical_address & (PAGE_SIZE - 1)) != 0 ||
 	    (physical_address & ~PTE_ADDRESS) != 0 || !canonical(virtual_address))
 		return false;
+	if (private_mapping) {
+		if (!private_space_owned_here(space))
+			return false;
+	} else if (user_mapping) {
+		if (!user_access_space_valid(space))
+			return false;
+	} else if ((!vmm_mutation_allowed() &&
+	    !vmm_ap_heap_mapping_allowed(space, virtual_address)) ||
+	    !address_space_valid(space)) {
+		return false;
+	}
 	if ((flags & VMM_USER) != 0 &&
 	    (space == &kernel_space || virtual_address < USER_BASE ||
 	    virtual_address >= USER_END))
@@ -505,9 +542,10 @@ vmm_map_shared_object(struct address_space *space, uint64_t base,
 	size_t installed = 0;
 	size_t i;
 
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space ||
-	    object == NULL || object->references == 0 || object->page_count == 0 ||
+	if (!initialized || !user_access_space_valid(space) ||
+	    object == NULL ||
+	    __atomic_load_n(&object->references, __ATOMIC_RELAXED) == 0 ||
+	    object->page_count == 0 ||
 	    object->page_count > UINT64_MAX / PAGE_SIZE ||
 	    (base & (PAGE_SIZE - 1)) != 0)
 		return false;
@@ -540,8 +578,7 @@ vmm_map_shared_object(struct address_space *space, uint64_t base,
 bool
 vmm_unmap_shared_object(struct address_space *space, uint64_t base)
 {
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space)
+	if (!initialized || !user_access_space_valid(space))
 		return false;
 	return shm_mapping_detach(&space->shared_mappings, base,
 	    unmap_shared_page, space);
@@ -559,9 +596,8 @@ vmm_shm_create(struct address_space *space, uint64_t size,
 	uint64_t next;
 	size_t page_count;
 
-	if (!vmm_mutation_allowed() || base_out == NULL || !initialized ||
-	    !address_space_valid(space) ||
-	    space == &kernel_space || size == 0 ||
+	if (base_out == NULL || !initialized ||
+	    !user_access_space_valid(space) || size == 0 ||
 	    size > UINT64_MAX - (PAGE_SIZE - 1))
 		return -EINVAL;
 	*base_out = 0;
@@ -593,8 +629,7 @@ vmm_shm_create(struct address_space *space, uint64_t size,
 int
 vmm_shm_detach(struct address_space *space, uint64_t base)
 {
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    base < SHM_ARENA_START + PAGE_SIZE ||
 	    base >= SHM_ARENA_END - PAGE_SIZE ||
 	    (base & (PAGE_SIZE - 1)) != 0 ||
@@ -611,7 +646,10 @@ unmap_user_page(struct address_space *space, uint64_t virtual_address,
 	uint64_t *table;
 	unsigned int i;
 
-	if (!initialized || !address_space_valid(space) || physical_address == NULL ||
+	if (!initialized || physical_address == NULL ||
+	    !(allow_private ? private_space_owned_here(space) :
+	    virtual_address < KERNEL_BASE ? user_access_space_valid(space) :
+	    address_space_valid(space)) ||
 	    (virtual_address & (PAGE_SIZE - 1)) != 0 || !canonical(virtual_address) ||
 	    virtual_address < USER_BASE ||
 	    (virtual_address >= USER_END && virtual_address < KERNEL_BASE) ||
@@ -707,9 +745,13 @@ vmm_unmap_page(struct address_space *space, uint64_t virtual_address,
 	uint64_t kernel_lock_flags = 0;
 	bool result;
 
-	if (!vmm_mutation_allowed() &&
-	    !vmm_ap_heap_mapping_allowed(space, virtual_address))
+	if (virtual_address < KERNEL_BASE) {
+		if (!user_access_space_valid(space))
+			return false;
+	} else if (!vmm_mutation_allowed() &&
+	    !vmm_ap_heap_mapping_allowed(space, virtual_address)) {
 		return false;
+	}
 	if (kernel_mapping)
 		kernel_lock_flags = spinlock_lock_irqsave(&kernel_mapping_lock);
 	result = unmap_user_page(space, virtual_address, physical_address, false);
@@ -808,9 +850,8 @@ vmm_private_map(struct address_space *space, uint64_t size,
 	size_t i;
 	int error = -ENOMEM;
 
-	if (!vmm_mutation_allowed() || base_out == NULL || !initialized ||
-	    !address_space_valid(space) ||
-	    space == &kernel_space || size == 0 ||
+	if (base_out == NULL || !initialized ||
+	    !private_space_owned_here(space) || size == 0 ||
 	    size > UINT64_MAX - (PAGE_SIZE - 1))
 		return -EINVAL;
 	*base_out = 0;
@@ -978,8 +1019,7 @@ vmm_private_unmap(struct address_space *space, uint64_t base,
 	struct private_mapping *mapping;
 	size_t i;
 
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !private_space_owned_here(space) ||
 	    requested_size == 0 || (base & (PAGE_SIZE - 1)) != 0 ||
 	    base < PRIVATE_MAP_USABLE_START || base >= PRIVATE_MAP_USABLE_END)
 		return -EINVAL;
@@ -1041,8 +1081,7 @@ vmm_private_unmap_complete(struct address_space *space, uint64_t base,
 {
 	struct private_mapping *mapping;
 
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !private_space_owned_here(space) ||
 	    length == 0 ||
 	    (base & (PAGE_SIZE - 1)) != 0 || base < PRIVATE_MAP_USABLE_START ||
 	    base >= PRIVATE_MAP_USABLE_END)
@@ -1072,8 +1111,7 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 		return -EOPNOTSUPP;
 	if (!vmm_private_protection_valid(protection))
 		return -EINVAL;
-	if (!vmm_mutation_allowed() || !initialized ||
-	    !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !private_space_owned_here(space) ||
 	    !vmm_private_protection_range(base, length, &rounded_length, &end) ||
 	    base < PRIVATE_MAP_USABLE_START || end > PRIVATE_MAP_USABLE_END)
 		return -EINVAL;
@@ -1261,8 +1299,6 @@ address_space_activate(const struct address_space *space)
 	uint64_t lock_flags;
 	bool result = false;
 
-	if (!vmm_mutation_allowed())
-		return false;
 	lock_flags = spinlock_lock_irqsave(&address_space_lifecycle_lock);
 	if (!initialized || !address_space_valid(space) || space->root_physical == 0 ||
 	    (space->root_physical & (PAGE_SIZE - 1)) != 0 ||
@@ -1310,7 +1346,8 @@ shared_mapping_page(const struct address_space *space, uint64_t address,
 	    mapping = mapping->next) {
 		uint64_t bytes;
 
-		if (mapping->object == NULL || mapping->object->references == 0 ||
+		if (mapping->object == NULL ||
+		    __atomic_load_n(&mapping->object->references, __ATOMIC_RELAXED) == 0 ||
 		    mapping->object->page_count == 0 ||
 		    mapping->object->page_count > UINT64_MAX / PAGE_SIZE ||
 		    (mapping->base & (PAGE_SIZE - 1)) != 0)
@@ -1528,7 +1565,8 @@ validate_shared_mappings(const struct address_space *space)
 	    mapping = mapping->next) {
 		size_t page_index;
 
-		if (mapping->object == NULL || mapping->object->references == 0 ||
+		if (mapping->object == NULL ||
+		    __atomic_load_n(&mapping->object->references, __ATOMIC_RELAXED) == 0 ||
 		    mapping->object->page_count == 0 ||
 		    mapping->object->page_count > UINT64_MAX / PAGE_SIZE ||
 		    mapping->base < USER_BASE || mapping->base >= USER_END ||
@@ -1731,7 +1769,7 @@ vmm_copy_from_user(const struct address_space *space, void *destination,
 	uint64_t remaining;
 	uintptr_t output = (uintptr_t)destination;
 
-	if (!initialized || !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    (length != 0 && destination == NULL))
 		return false;
 	if (length == 0)
@@ -1786,7 +1824,7 @@ vmm_copy_to_user(const struct address_space *space, uint64_t destination,
 	uint64_t remaining;
 	uintptr_t input = (uintptr_t)source;
 
-	if (!initialized || !address_space_valid(space) || space == &kernel_space ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    (length != 0 && source == NULL))
 		return false;
 	if (length == 0)
@@ -1842,7 +1880,7 @@ vmm_validate_user_read(const struct address_space *space,
 	uint64_t current;
 	uint64_t remaining;
 
-	if (!initialized || !address_space_valid(space) || space == &kernel_space)
+	if (!initialized || !user_access_space_valid(space))
 		return false;
 	if (length == 0)
 		return true;
@@ -1872,7 +1910,7 @@ vmm_validate_user_write(const struct address_space *space,
 	uint64_t current;
 	uint64_t remaining;
 
-	if (!initialized || !address_space_valid(space) || space == &kernel_space)
+	if (!initialized || !user_access_space_valid(space))
 		return false;
 	if (length == 0)
 		return true;
@@ -1902,7 +1940,7 @@ vmm_validate_user_exec(const struct address_space *space,
 	uint64_t current;
 	uint64_t remaining;
 
-	if (!initialized || !address_space_valid(space) || space == &kernel_space)
+	if (!initialized || !user_access_space_valid(space))
 		return false;
 	if (length == 0)
 		return true;
@@ -2063,8 +2101,8 @@ free_user_leaves(uint64_t table_physical, unsigned int level)
 				return false;
 		} else {
 			table[i] = 0;
-			/* Teardown only accepts inactive address spaces. With PCID and SMP
-			 * disabled, switching CR3 has already invalidated their translations. */
+			/* Teardown only accepts spaces inactive on all CPUs. With PCID
+			 * disabled, switching CR3 has invalidated their translations. */
 			__asm__ volatile ("" : : : "memory");
 			if ((entry & PTE_SHARED) == 0 &&
 			    !pmm_free_page(entry & PTE_ADDRESS))

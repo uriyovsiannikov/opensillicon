@@ -114,6 +114,8 @@ _Static_assert(SYSCALL_HIGH_MASK ==
 #undef SYSCALL_HIGH_MASK
 #undef SYSCALL_HIGH_SUM
 
-void syscall_init(struct fd_table *table);
+struct interrupt_frame;
+struct interrupt_frame *syscall_dispatch(struct interrupt_frame *frame);
+void syscall_init(void);
 
 #endif

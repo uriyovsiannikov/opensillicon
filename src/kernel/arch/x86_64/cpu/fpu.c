@@ -29,8 +29,8 @@ fxrstor(const void *state)
 	__asm__ volatile ("fxrstor64 %0" : : "m" (*(const uint8_t (*)[512])state) : "memory");
 }
 
-bool
-arch_fpu_init(void)
+static bool
+configure_local_fpu(void)
 {
 	uint32_t eax = 1;
 	uint32_t ebx;
@@ -63,10 +63,28 @@ arch_fpu_init(void)
 	    "pxor %%xmm12, %%xmm12; pxor %%xmm13, %%xmm13;"
 	    "pxor %%xmm14, %%xmm14; pxor %%xmm15, %%xmm15"
 	    : : "m" (default_mxcsr) : "memory");
+	return true;
+}
+
+bool
+arch_fpu_init(void)
+{
+	if (!configure_local_fpu())
+		return false;
 	fxsave(initial_state);
 	fxsave(kernel_state);
 	initialized = true;
 	klog("OpenSillicon: FXSAVE, SSE, and SSE2 enabled; AVX disabled\n");
+	return true;
+}
+
+bool
+arch_fpu_init_secondary(void)
+{
+	/* The BSP publishes the FXSAVE template before starting the APs. */
+	if (!initialized || !configure_local_fpu())
+		return false;
+	fxrstor(kernel_state);
 	return true;
 }
 

@@ -1,3 +1,5 @@
+#include "abi/syscall.h"
+
 .text
 .global smp_ap_entry_trampoline
 .type smp_ap_entry_trampoline,@function
@@ -20,135 +22,6 @@ smp_ap_exception_halt:
  jmp 1b
 .size smp_ap_exception_halt,.-smp_ap_exception_halt
 
-.global smp_ap_tlb_shootdown_entry
-.type smp_ap_tlb_shootdown_entry,@function
-smp_ap_tlb_shootdown_entry:
- cld
- pushq %rax
- pushq %rbx
- pushq %rcx
- pushq %rdx
- pushq %rbp
- pushq %rsi
- pushq %rdi
- pushq %r8
- pushq %r9
- pushq %r10
- pushq %r11
- pushq %r12
- pushq %r13
- pushq %r14
- pushq %r15
- movq %rsp,%rbx
- andq $-16,%rsp
- call smp_ap_tlb_shootdown_handler
- movq %rbx,%rsp
- popq %r15
- popq %r14
- popq %r13
- popq %r12
- popq %r11
- popq %r10
- popq %r9
- popq %r8
- popq %rdi
- popq %rsi
- popq %rbp
- popq %rdx
- popq %rcx
- popq %rbx
- popq %rax
- iretq
-.size smp_ap_tlb_shootdown_entry,.-smp_ap_tlb_shootdown_entry
-
-.global smp_ap_idle_timer_entry
-.type smp_ap_idle_timer_entry,@function
-smp_ap_idle_timer_entry:
- cld
- pushq %rax
- pushq %rbx
- pushq %rcx
- pushq %rdx
- pushq %rbp
- pushq %rsi
- pushq %rdi
- pushq %r8
- pushq %r9
- pushq %r10
- pushq %r11
- pushq %r12
- pushq %r13
- pushq %r14
- pushq %r15
- movq %rsp,%rbx
- andq $-16,%rsp
- call smp_ap_idle_timer_handler
- movq %rbx,%rsp
- popq %r15
- popq %r14
- popq %r13
- popq %r12
- popq %r11
- popq %r10
- popq %r9
- popq %r8
- popq %rdi
- popq %rsi
- popq %rbp
- popq %rdx
- popq %rcx
- popq %rbx
- popq %rax
- iretq
-.size smp_ap_idle_timer_entry,.-smp_ap_idle_timer_entry
-
-.global smp_ap_work_ipi_entry
-.type smp_ap_work_ipi_entry,@function
-smp_ap_work_ipi_entry:
- cld
- pushq %rax
- pushq %rbx
- pushq %rcx
- pushq %rdx
- pushq %rbp
- pushq %rsi
- pushq %rdi
- pushq %r8
- pushq %r9
- pushq %r10
- pushq %r11
- pushq %r12
- pushq %r13
- pushq %r14
- pushq %r15
- movq %rsp,%rbx
- andq $-16,%rsp
- call smp_ap_work_ipi_handler
- movq %rbx,%rsp
- popq %r15
- popq %r14
- popq %r13
- popq %r12
- popq %r11
- popq %r10
- popq %r9
- popq %r8
- popq %rdi
- popq %rsi
- popq %rbp
- popq %rdx
- popq %rcx
- popq %rbx
- popq %rax
- iretq
-.size smp_ap_work_ipi_entry,.-smp_ap_work_ipi_entry
-
-.global smp_ap_spurious_iret
-.type smp_ap_spurious_iret,@function
-smp_ap_spurious_iret:
- iretq
-.size smp_ap_spurious_iret,.-smp_ap_spurious_iret
-
 .global smp_ap_idle
 .type smp_ap_idle,@function
 smp_ap_idle:
@@ -159,4 +32,33 @@ smp_ap_idle:
 1: hlt
  jmp 1b
 .size smp_ap_idle,.-smp_ap_idle
+
+/* Copied to a user executable page. Keep the payload position independent. */
+.section .rodata
+.global smp_user_probe_start, smp_user_probe_end
+smp_user_probe_start:
+ movl $0x12345678,%ebx
+ movd %ebx,%xmm0
+ pushq %rbx
+ movl $SYSCALL_GET_ABI_VERSION,%eax
+ int $0x80
+ jc 1f
+ cmpl $SYSCALL_ABI_VERSION,%eax
+ jne 1f
+ /* A service that uses the BSP process table must fail on the AP. */
+ movl $SYSCALL_GETPID,%eax
+ int $0x80
+ jnc 1f
+ popq %rbx
+ movd %xmm0,%eax
+ cmpl %ebx,%eax
+ jne 1f
+ xorl %edi,%edi
+ jmp 2f
+1: movl $1,%edi
+2: movl $SYSCALL_EXIT,%eax
+ int $0x80
+ ud2
+smp_user_probe_end:
+
 .section .note.GNU-stack,"",@progbits

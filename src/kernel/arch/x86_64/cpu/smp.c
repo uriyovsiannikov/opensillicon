@@ -1,9 +1,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arch/x86_64/fpu.h"
+#include "arch/x86_64/gdt.h"
 #include "arch/x86_64/interrupts.h"
 #include "arch/x86_64/lapic.h"
+#include "arch/x86_64/user.h"
+#include "kernel/heap.h"
 #include "kernel/log.h"
+#include "kernel/pmm.h"
+#include "kernel/process.h"
 #include "kernel/scheduler.h"
 #include "kernel/smp.h"
 #include "kernel/spinlock.h"
@@ -17,6 +23,10 @@
 #define CPUID_FEATURE_APIC (1U << 9)
 #define IDT_ENTRIES 256U
 #define IDT_INTERRUPT_GATE 0x8eU
+#define USER_PROBE_PAGE 4096U
+#define USER_PROBE_CODE 0x400000U
+#define USER_PROBE_STACK 0x800000U
+#define USER_PROBE_KERNEL_STACK (32U * 1024U)
 
 struct descriptor_pointer {
 	uint16_t limit;
@@ -58,9 +68,7 @@ _Static_assert(sizeof(struct idt_gate) == 16,
 
 static struct smp_cpu cpus[SMP_MAX_CPUS];
 static struct idt_gate ap_startup_idt[IDT_ENTRIES];
-static struct idt_gate ap_idle_idt[IDT_ENTRIES];
 struct descriptor_pointer smp_ap_emergency_idtr;
-static struct descriptor_pointer smp_ap_idle_idtr;
 static uint8_t cpu_stacks[SMP_MAX_CPUS][SMP_STACK_SIZE]
 	__attribute__((aligned(16)));
 static size_t discovered_count;
@@ -75,17 +83,16 @@ extern void idt_load(void);
 extern void smp_ap_idle(struct smp_cpu *cpu, uint64_t stack_top);
 extern void smp_ap_entry_trampoline(struct limine_mp_info *info);
 extern void smp_ap_exception_halt(void);
-extern void smp_ap_tlb_shootdown_entry(void);
-extern void smp_ap_idle_timer_entry(void);
-extern void smp_ap_work_ipi_entry(void);
-extern void smp_ap_spurious_iret(void);
-void smp_ap_tlb_shootdown_handler(void);
+extern const unsigned char smp_user_probe_start[], smp_user_probe_end[];
+static struct interrupt_frame *smp_tlb_interrupt(struct interrupt_frame *frame);
+static struct interrupt_frame *smp_ap_timer_interrupt(struct interrupt_frame *frame);
+static struct interrupt_frame *smp_ap_work_interrupt(struct interrupt_frame *frame);
 
 static struct interrupt_frame *
-smp_bsp_tlb_shootdown_interrupt(struct interrupt_frame *frame)
+smp_reschedule_interrupt(struct interrupt_frame *frame)
 {
-	smp_ap_tlb_shootdown_handler();
-	return frame;
+	lapic_eoi();
+	return process_reschedule_ipi(frame);
 }
 
 static bool
@@ -145,54 +152,10 @@ prepare_ap_startup_idt(void)
 		.reserved = 0
 	};
 
-	for (size_t i = 0; i < IDT_ENTRIES; i++) {
+	for (size_t i = 0; i < IDT_ENTRIES; i++)
 		ap_startup_idt[i] = gate;
-		ap_idle_idt[i] = gate;
-	}
-	handler = (uintptr_t)smp_ap_tlb_shootdown_entry;
-	ap_idle_idt[SMP_TLB_SHOOTDOWN_VECTOR] = (struct idt_gate){
-		.offset_low = handler & 0xffffU,
-		.selector = GDT_BOOTSTRAP_CODE_SELECTOR,
-		.ist = 0,
-		.type_attributes = IDT_INTERRUPT_GATE,
-		.offset_middle = (handler >> 16) & 0xffffU,
-		.offset_high = handler >> 32,
-		.reserved = 0
-	};
-	handler = (uintptr_t)smp_ap_spurious_iret;
-	ap_idle_idt[255] = (struct idt_gate){
-		.offset_low = handler & 0xffffU,
-		.selector = GDT_BOOTSTRAP_CODE_SELECTOR,
-		.ist = 0,
-		.type_attributes = IDT_INTERRUPT_GATE,
-		.offset_middle = (handler >> 16) & 0xffffU,
-		.offset_high = handler >> 32,
-		.reserved = 0
-	};
-	handler = (uintptr_t)smp_ap_idle_timer_entry;
-	ap_idle_idt[SMP_AP_IDLE_TIMER_VECTOR] = (struct idt_gate){
-		.offset_low = handler & 0xffffU,
-		.selector = GDT_BOOTSTRAP_CODE_SELECTOR,
-		.ist = 0,
-		.type_attributes = IDT_INTERRUPT_GATE,
-		.offset_middle = (handler >> 16) & 0xffffU,
-		.offset_high = handler >> 32,
-		.reserved = 0
-	};
-	handler = (uintptr_t)smp_ap_work_ipi_entry;
-	ap_idle_idt[SMP_WORK_IPI_VECTOR] = (struct idt_gate){
-		.offset_low = handler & 0xffffU,
-		.selector = GDT_BOOTSTRAP_CODE_SELECTOR,
-		.ist = 0,
-		.type_attributes = IDT_INTERRUPT_GATE,
-		.offset_middle = (handler >> 16) & 0xffffU,
-		.offset_high = handler >> 32,
-		.reserved = 0
-	};
 	smp_ap_emergency_idtr.limit = sizeof(ap_startup_idt) - 1U;
 	smp_ap_emergency_idtr.base = (uintptr_t)ap_startup_idt;
-	smp_ap_idle_idtr.limit = sizeof(ap_idle_idt) - 1U;
-	smp_ap_idle_idtr.base = (uintptr_t)ap_idle_idt;
 }
 
 static void
@@ -231,7 +194,7 @@ smp_current_cpu(void)
 }
 
 static bool
-initialize_cpu_tables(struct smp_cpu *cpu, bool load_kernel_idt)
+initialize_cpu_tables(struct smp_cpu *cpu)
 {
 	struct tss64 *tss = (struct tss64 *)cpu->tss;
 	uint64_t tss_base = (uintptr_t)tss;
@@ -257,11 +220,6 @@ initialize_cpu_tables(struct smp_cpu *cpu, bool load_kernel_idt)
 	cpu->gdt[7] = tss_base >> 32;
 
 	gdt_load(&pointer);
-	if (load_kernel_idt) {
-		idt_load();
-	} else {
-		__asm__ volatile ("lidt %0" : : "m" (smp_ap_idle_idtr) : "memory");
-	}
 	__asm__ volatile ("ltr %0" : : "r" ((uint16_t)GDT_TSS_SELECTOR));
 	write_msr(IA32_GS_BASE, (uintptr_t)cpu);
 #if defined(KERNEL_TEST_SMP_FAIL_INIT_LOGICAL_CPU)
@@ -294,11 +252,14 @@ smp_init(struct limine_mp_response *response, uint64_t tsc_frequency,
 
 	/* AP entry reads the completed topology after Limine's acquire handoff. */
 	discovered_count = cpu_count;
-	if (!initialize_cpu_tables(&cpus[0], true))
+	if (!initialize_cpu_tables(&cpus[0]) ||
+	    !interrupt_register_nmi_handler(smp_tlb_interrupt) ||
+	    !interrupt_register_handler(SMP_AP_IDLE_TIMER_VECTOR, smp_ap_timer_interrupt) ||
+	    !interrupt_register_handler(SMP_WORK_IPI_VECTOR, smp_ap_work_interrupt) ||
+	    !interrupt_register_handler(SMP_RESCHEDULE_IPI_VECTOR,
+	    smp_reschedule_interrupt))
 		return false;
-	if (!interrupt_register_nmi_handler(
-	    smp_bsp_tlb_shootdown_interrupt))
-		return false;
+	idt_load();
 	__atomic_store_n(&cpus[0].active_address_space,
 	    vmm_active_address_space(), __ATOMIC_RELEASE);
 	__atomic_store_n(&cpus[0].stage, SMP_CPU_STAGE_LOCAL_READY,
@@ -380,7 +341,7 @@ smp_ap_entry(struct limine_mp_info *info)
 	}
 	__atomic_store_n(&cpu->stage, SMP_CPU_STAGE_AP_ENTERED, __ATOMIC_RELEASE);
 
-	if (!initialize_cpu_tables(cpu, false)) {
+	if (!initialize_cpu_tables(cpu) || !arch_fpu_init_secondary()) {
 		uint32_t expected = SMP_CPU_STARTING;
 		(void)__atomic_compare_exchange_n(&cpu->state, &expected,
 		    SMP_CPU_FAILED, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
@@ -407,6 +368,8 @@ smp_ap_entry(struct limine_mp_info *info)
 	if (cpu->logical_id == KERNEL_TEST_SMP_AP_EXCEPTION_LOGICAL_CPU)
 		__asm__ volatile ("ud2" : : : "memory");
 #endif
+	/* The shared IDT may now use the CPU-local GS and TSS. */
+	idt_load();
 	__atomic_store_n(&cpu->stage, SMP_CPU_STAGE_TABLES_READY,
 	    __ATOMIC_RELEASE);
 	smp_ap_idle(cpu, cpu->stack_top);
@@ -417,8 +380,12 @@ smp_ap_online(struct smp_cpu *cpu)
 {
 	uint32_t expected = SMP_CPU_STARTING;
 	__atomic_store_n(&cpu->stage, SMP_CPU_STAGE_LOCAL_READY, __ATOMIC_RELEASE);
-	(void)__atomic_compare_exchange_n(&cpu->state, &expected, SMP_CPU_ONLINE,
-	    false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+	if (!__atomic_compare_exchange_n(&cpu->state, &expected, SMP_CPU_ONLINE,
+	    false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+		/* The BSP may have timed out this CPU. Keep it offline. */
+		for (;;)
+			__asm__ volatile ("cli; hlt" : : : "memory");
+	}
 	for (;;) {
 		uint64_t request;
 		uint64_t acknowledged;
@@ -432,7 +399,8 @@ smp_ap_online(struct smp_cpu *cpu)
 		request = __atomic_load_n(&cpu->work_request, __ATOMIC_ACQUIRE);
 		acknowledged = __atomic_load_n(&cpu->work_acknowledged,
 		    __ATOMIC_RELAXED);
-		if (request == acknowledged && !scheduler_has_work())
+		if (request == acknowledged && !scheduler_has_work() &&
+		    !process_ap_has_assignment())
 			__asm__ volatile ("sti; hlt" : : : "memory");
 		else
 			__asm__ volatile ("sti" : : : "memory");
@@ -440,6 +408,7 @@ smp_ap_online(struct smp_cpu *cpu)
 		acknowledged = __atomic_load_n(&cpu->work_acknowledged,
 		    __ATOMIC_RELAXED);
 		if (request == acknowledged) {
+			process_ap_run_assignment();
 			scheduler_idle();
 			continue;
 		}
@@ -458,8 +427,8 @@ smp_ap_online(struct smp_cpu *cpu)
 	}
 }
 
-void
-smp_ap_tlb_shootdown_handler(void)
+static struct interrupt_frame *
+smp_tlb_interrupt(struct interrupt_frame *frame)
 {
 	struct smp_cpu *cpu = cpu_from_gs_base();
 	uint64_t cr3;
@@ -473,10 +442,11 @@ smp_ap_tlb_shootdown_handler(void)
 	__asm__ volatile ("mov %0, %%cr3" : : "r" (cr3) : "memory");
 	generation = __atomic_load_n(&cpu->tlb_request, __ATOMIC_ACQUIRE);
 	__atomic_store_n(&cpu->tlb_acknowledged, generation, __ATOMIC_RELEASE);
+	return frame;
 }
 
-void
-smp_ap_idle_timer_handler(void)
+static struct interrupt_frame *
+smp_ap_timer_interrupt(struct interrupt_frame *frame)
 {
 	struct smp_cpu *cpu = cpu_from_gs_base();
 
@@ -486,10 +456,17 @@ smp_ap_idle_timer_handler(void)
 			__asm__ volatile ("cli; hlt" : : : "memory");
 	__atomic_add_fetch(&cpu->idle_timer_ticks, 1, __ATOMIC_RELAXED);
 	lapic_eoi();
+	if ((frame->cs & 3U) == 3U && cpu->current_process != NULL) {
+		enum process_slice_stop reason =
+		    __atomic_load_n(&cpu->user_signal_pending, __ATOMIC_ACQUIRE) != 0 ?
+		    PROCESS_SLICE_SIGNAL : PROCESS_SLICE_TIMER;
+		process_ap_stop(frame, reason);
+	}
+	return frame;
 }
 
-void
-smp_ap_work_ipi_handler(void)
+static struct interrupt_frame *
+smp_ap_work_interrupt(struct interrupt_frame *frame)
 {
 	struct smp_cpu *cpu = cpu_from_gs_base();
 
@@ -498,6 +475,10 @@ smp_ap_work_ipi_handler(void)
 		for (;;)
 			__asm__ volatile ("cli; hlt" : : : "memory");
 	lapic_eoi();
+	if ((frame->cs & 3U) == 3U && cpu->current_process != NULL &&
+	    __atomic_load_n(&cpu->user_signal_pending, __ATOMIC_ACQUIRE) != 0)
+		process_ap_stop(frame, PROCESS_SLICE_SIGNAL);
+	return frame;
 }
 
 bool
@@ -564,29 +545,164 @@ smp_run_on_all_cpus(smp_work_function function, void *argument)
 	kernel_halt();
 }
 
+struct work_dispatch_probe {
+	struct address_space space;
+	uint64_t seen;
+};
+
+static uint64_t
+active_root(void)
+{
+	uint64_t root;
+
+	__asm__ volatile ("mov %%cr3, %0" : "=r" (root));
+	return root;
+}
+
 static void
 record_work_dispatch(void *argument)
 {
-	uint64_t *seen = argument;
+	struct work_dispatch_probe *probe = argument;
 	struct smp_cpu *cpu = smp_current_cpu();
+	struct address_space *previous = vmm_active_address_space();
 
-	if (cpu != NULL && cpu->logical_id < SMP_MAX_CPUS)
-		__atomic_or_fetch(seen, UINT64_C(1) << cpu->logical_id,
+	if (cpu == NULL || previous != vmm_kernel_address_space() ||
+	    !address_space_activate(&probe->space))
+		return;
+	bool switched = vmm_active_address_space() == &probe->space &&
+	    active_root() == probe->space.root_physical;
+	if (!address_space_activate(previous) || active_root() != previous->root_physical ||
+	    vmm_active_address_space() != previous) {
+		klog("OpenSillicon panic: SMP cannot restore kernel address space\n");
+		kernel_halt();
+	}
+	if (switched)
+		__atomic_or_fetch(&probe->seen, UINT64_C(1) << cpu->logical_id,
 		    __ATOMIC_RELAXED);
 }
 
 bool
 smp_verify_work_dispatch(void)
 {
-	uint64_t seen = 0;
+	struct work_dispatch_probe probe = {0};
 	uint64_t expected_mask = 0;
 
 	for (size_t i = 0; i < discovered_count; i++) {
 		if (__atomic_load_n(&cpus[i].state, __ATOMIC_ACQUIRE) == SMP_CPU_ONLINE)
 			expected_mask |= UINT64_C(1) << i;
 	}
-	return expected_mask != 0 && smp_run_on_all_cpus(record_work_dispatch,
-	    &seen) && __atomic_load_n(&seen, __ATOMIC_RELAXED) == expected_mask;
+	if (expected_mask == 0 || !address_space_create(&probe.space))
+		return false;
+	bool ran = smp_run_on_all_cpus(record_work_dispatch, &probe);
+	bool destroyed = address_space_destroy(&probe.space);
+	if (!ran || !destroyed ||
+	    __atomic_load_n(&probe.seen, __ATOMIC_RELAXED) != expected_mask)
+		return false;
+	klog("OpenSillicon: SMP address-space switches verified on all online CPUs\n");
+	return true;
+}
+
+struct user_entry_probe {
+	struct address_space space;
+	uint8_t *kernel_stacks;
+	uint64_t passed;
+};
+
+static bool
+map_probe_page(struct address_space *space, uint64_t address,
+    unsigned int flags, const unsigned char *data, size_t length)
+{
+	uint64_t physical;
+
+	if (length > USER_PROBE_PAGE || !pmm_alloc_page(&physical))
+		return false;
+	uint8_t *page = (void *)(uintptr_t)(vmm_hhdm_offset() + physical);
+	for (size_t i = 0; i < USER_PROBE_PAGE; i++)
+		page[i] = i < length ? data[i] : 0;
+	if (vmm_map_page(space, address, physical, VMM_USER | flags))
+		return true;
+	(void)pmm_free_page(physical);
+	return false;
+}
+
+static uint64_t
+probe_stack_top(size_t logical_id)
+{
+	return USER_PROBE_STACK + (logical_id + 1) * USER_PROBE_PAGE;
+}
+
+static void
+run_user_entry_probe(void *argument)
+{
+	struct user_entry_probe *probe = argument;
+	struct smp_cpu *cpu = smp_current_cpu();
+	struct address_space *previous = vmm_active_address_space();
+
+	if (cpu == NULL || cpu->bsp || previous != vmm_kernel_address_space())
+		return;
+
+	/* The interrupt stack must not overwrite user_enter's saved continuation
+	 * on the AP's bootstrap stack. Each AP also has its own user stack page. */
+	__asm__ volatile ("cli" : : : "memory");
+	if (!address_space_activate(&probe->space)) {
+		__asm__ volatile ("sti" : : : "memory");
+		return;
+	}
+	gdt_set_kernel_stack((uintptr_t)probe->kernel_stacks +
+	    cpu->logical_id * USER_PROBE_KERNEL_STACK);
+	cpu->user_entry_probe_active = true;
+	uint64_t status = user_enter(USER_PROBE_CODE, probe_stack_top(cpu->logical_id));
+	cpu->user_entry_probe_active = false;
+	gdt_restore_kernel_stack();
+	arch_fpu_restore_kernel_state();
+	if (!address_space_activate(previous)) {
+		klog("OpenSillicon panic: cannot restore AP kernel address space\n");
+		kernel_halt();
+	}
+	__asm__ volatile ("sti" : : : "memory");
+	if (status == 0)
+		__atomic_or_fetch(&probe->passed, UINT64_C(1) << cpu->logical_id,
+		    __ATOMIC_RELAXED);
+}
+
+bool
+smp_verify_ap_user_entry(void)
+{
+	struct user_entry_probe probe = {0};
+	uint64_t expected = 0;
+	bool result = false;
+
+	for (size_t i = 1; i < discovered_count; i++) {
+		if (__atomic_load_n(&cpus[i].state, __ATOMIC_ACQUIRE) == SMP_CPU_ONLINE)
+			expected |= UINT64_C(1) << i;
+	}
+	if (expected == 0)
+		return true;
+	if (!address_space_create(&probe.space))
+		return false;
+	probe.kernel_stacks = kheap_alloc((discovered_count - 1) *
+	    USER_PROBE_KERNEL_STACK);
+	if (probe.kernel_stacks == NULL ||
+	    !map_probe_page(&probe.space, USER_PROBE_CODE, VMM_EXEC,
+	    smp_user_probe_start, (uintptr_t)smp_user_probe_end -
+	    (uintptr_t)smp_user_probe_start))
+		goto out;
+	for (size_t i = 1; i < discovered_count; i++) {
+		if ((expected & (UINT64_C(1) << i)) != 0 &&
+		    !map_probe_page(&probe.space, probe_stack_top(i) - USER_PROBE_PAGE,
+		    VMM_WRITE, NULL, 0))
+			goto out;
+	}
+	result = smp_run_on_all_cpus(run_user_entry_probe, &probe) &&
+	    __atomic_load_n(&probe.passed, __ATOMIC_RELAXED) == expected;
+out:
+	if (probe.kernel_stacks != NULL && !kheap_free(probe.kernel_stacks))
+		result = false;
+	if (!address_space_destroy_with_pages(&probe.space))
+		result = false;
+	if (result)
+		klog("OpenSillicon: SMP ring 3 and syscall return verified on all online APs\n");
+	return result;
 }
 
 bool
@@ -597,6 +713,15 @@ smp_kick_cpu(size_t logical_id)
 	    SMP_CPU_ONLINE)
 		return false;
 	return lapic_send_ipi(cpus[logical_id].apic_id, SMP_WORK_IPI_VECTOR);
+}
+
+bool
+smp_kick_bsp(void)
+{
+	struct smp_cpu *cpu = smp_current_cpu();
+
+	return cpu != NULL && !cpu->bsp &&
+	    lapic_send_ipi(cpus[0].apic_id, SMP_RESCHEDULE_IPI_VECTOR);
 }
 
 bool
@@ -713,7 +838,7 @@ smp_online_count(void)
 	return count;
 }
 
-const struct smp_cpu *
+struct smp_cpu *
 smp_cpu_at(size_t index)
 {
 	return index < discovered_count ? &cpus[index] : NULL;

@@ -14,6 +14,7 @@ uint64_t shm_test_live_pages(void);
 #endif
 
 struct shm_object {
+	/* Shared between independently owned per-process mapping sets. */
 	uint64_t references;
 	size_t page_count;
 	uint64_t pages[];

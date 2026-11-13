@@ -96,58 +96,49 @@ idt_load(void)
 	__asm__ volatile ("lidt %0" : : "m" (pointer) : "memory");
 }
 
+static bool
+register_handler(uint8_t vector, interrupt_handler handler)
+{
+	interrupt_handler expected = NULL;
+
+	if (handler == NULL)
+		return false;
+	return __atomic_compare_exchange_n(&handlers[vector], &expected, handler,
+	    false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
 bool
 interrupt_register_handler(uint8_t vector, interrupt_handler handler)
 {
-	uint64_t flags;
-	bool available;
-
-	if (vector < 32 || vector == 255 || handler == NULL)
-		return false;
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-	available = handlers[vector] == NULL;
-	if (available)
-		handlers[vector] = handler;
-	if ((flags & (1ULL << 9)) != 0)
-		__asm__ volatile ("sti" : : : "memory");
-	return available;
+	return vector >= 32 && vector != 255 && register_handler(vector, handler);
 }
 
 bool
 interrupt_register_nmi_handler(interrupt_handler handler)
 {
-	uint64_t flags;
-	bool available;
-
-	if (handler == NULL)
-		return false;
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-	available = handlers[2] == NULL;
-	if (available)
-		handlers[2] = handler;
-	if ((flags & (1ULL << 9)) != 0)
-		__asm__ volatile ("sti" : : : "memory");
-	return available;
+	return register_handler(2, handler);
 }
 
 struct interrupt_frame *
 interrupt_dispatch(struct interrupt_frame *frame)
 {
 	struct interrupt_frame *next;
+	interrupt_handler handler = NULL;
 
 	if (frame == NULL) {
 		klog("OpenSillicon panic: missing interrupt frame\n");
 		kernel_halt();
 	}
-	if (frame->vector == 2 && handlers[2] != NULL) {
-		next = handlers[2](frame);
+	if (frame->vector < IDT_ENTRIES)
+		handler = __atomic_load_n(&handlers[frame->vector], __ATOMIC_ACQUIRE);
+	if (frame->vector == 2 && handler != NULL) {
+		next = handler(frame);
 		if (next != NULL)
 			return next;
 		klog("OpenSillicon panic: NMI handler returned no frame\n");
 	} else if (frame->vector < 32) {
 		if ((frame->cs & 3U) == 3U)
-			return process_prepare_user_return(
-			    process_user_exception(frame));
+			return process_user_exception(frame);
 		{
 			char diagnostic[384];
 			size_t length = 0;
@@ -192,12 +183,12 @@ interrupt_dispatch(struct interrupt_frame *frame)
 			klog(diagnostic);
 		}
 	} else if (frame->vector == 255) {
-		return process_prepare_user_return(frame);
-	} else if (frame->vector < IDT_ENTRIES && handlers[frame->vector] != NULL) {
-		next = handlers[frame->vector](frame);
+		return frame;
+	} else if (handler != NULL) {
+		next = handler(frame);
 
 		if (next != NULL)
-			return process_prepare_user_return(next);
+			return next;
 		klog("OpenSillicon panic: interrupt handler returned no frame\n");
 	} else {
 		klog("OpenSillicon panic: unexpected interrupt vector ");

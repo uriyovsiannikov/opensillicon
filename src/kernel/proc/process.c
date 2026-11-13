@@ -11,6 +11,7 @@
 #include "kernel/network_service.h"
 #include "kernel/pmm.h"
 #include "kernel/smp.h"
+#include "kernel/spinlock.h"
 #include "kernel/timer.h"
 #include "kernel/process.h"
 #include "kernel/tty.h"
@@ -74,6 +75,8 @@ struct process {
 	struct os_credentials credentials;
 	uint32_t file_creation_mask;
 	enum process_state state;
+	bool resume_on_bsp;
+	enum process_slice_stop ap_stop_reason;
 	uint8_t exit_status;
 	uint64_t waiting_for;
 	uint64_t wait_status_address;
@@ -120,11 +123,20 @@ _Static_assert(_Alignof(struct process) >= 16,
 	"process FXSAVE state must be 16-byte aligned");
 
 static struct process *process_head;
+static struct process *ap_dispatch_cursor;
 static struct process *fallback_current_process;
 static uint64_t next_process_id = 1;
 static uint64_t user_preemptions;
 static uint64_t pipe_blocked_ticks;
+static unsigned int reported_ap_stops;
+static uint64_t reported_ap_local_syscalls;
+static uint64_t reported_ap_private_memory;
+static uint64_t reported_ap_shared_memory;
+static bool reported_reschedule_ipi;
 static bool initialized;
+/* Protect signal queues, masks and action pairs across BSP senders and APs.
+ * No scheduler operation may run while this lock is held. */
+static struct spinlock signal_lock = SPINLOCK_INITIALIZER;
 
 static struct process **
 process_current_slot(void)
@@ -179,7 +191,7 @@ process_tls_from_plan(const struct elf_load_plan *plan)
 }
 
 static bool
-process_has_pending_signal(const struct process *process)
+signal_pending_locked(const struct process *process)
 {
 	unsigned int signo;
 
@@ -192,6 +204,16 @@ process_has_pending_signal(const struct process *process)
 			return true;
 	}
 	return false;
+}
+
+static bool
+process_has_pending_signal(const struct process *process)
+{
+	uint64_t flags = spinlock_lock_irqsave(&signal_lock);
+	bool pending = signal_pending_locked(process);
+
+	spinlock_unlock_irqrestore(&signal_lock, flags);
+	return pending;
 }
 
 bool
@@ -379,6 +401,8 @@ insert_process(struct process *process)
 static void
 remove_process(struct process *process)
 {
+	if (ap_dispatch_cursor == process)
+		ap_dispatch_cursor = process->next == process ? NULL : process->next;
 	if (process->next == process) {
 		process_head = NULL;
 	} else {
@@ -422,6 +446,167 @@ release_process(struct process *process)
 	}
 }
 
+bool
+process_ap_has_assignment(void)
+{
+	struct smp_cpu *cpu = smp_current_cpu();
+
+	return cpu != NULL && !cpu->bsp &&
+	    __atomic_load_n(&cpu->user_assignment, __ATOMIC_ACQUIRE) != NULL &&
+	    __atomic_load_n(&cpu->user_slice_done, __ATOMIC_RELAXED) == 0;
+}
+
+void
+process_ap_run_assignment(void)
+{
+	if (!process_ap_has_assignment())
+		return;
+	struct smp_cpu *cpu = smp_current_cpu();
+	struct process *process = __atomic_load_n(&cpu->user_assignment,
+	    __ATOMIC_ACQUIRE);
+
+	__asm__ volatile ("cli" : : : "memory");
+	/* A kick may already have been consumed in the idle loop. */
+	if (__atomic_load_n(&cpu->user_signal_pending, __ATOMIC_ACQUIRE) != 0) {
+		process->ap_stop_reason = PROCESS_SLICE_SIGNAL;
+		goto complete;
+	}
+	current_process = process;
+	if (!address_space_activate(process->address_space)) {
+		klog("OpenSillicon panic: AP cannot load process address space\n");
+		kernel_halt();
+	}
+	gdt_set_kernel_stack(process_kernel_stack_top(process));
+	arch_fpu_restore(process->fpu_state);
+	(void)user_resume(process->saved_frame);
+	arch_fpu_restore_kernel_state();
+	gdt_restore_kernel_stack();
+	if (!address_space_activate(vmm_kernel_address_space())) {
+		klog("OpenSillicon panic: AP cannot restore kernel address space\n");
+		kernel_halt();
+	}
+	current_process = NULL;
+complete:
+	/* The process frame and its FPU state belong to the BSP again. */
+	__atomic_store_n(&cpu->user_slice_done, 1, __ATOMIC_RELEASE);
+	/* The periodic BSP timer is the fallback if delivery fails. */
+	(void)smp_kick_bsp();
+	__asm__ volatile ("sti" : : : "memory");
+}
+
+_Noreturn void
+process_ap_stop(struct interrupt_frame *frame, enum process_slice_stop reason)
+{
+	struct process *process = current_process;
+
+	process->saved_frame = frame;
+	process->ap_stop_reason = reason;
+	arch_fpu_save(process->fpu_state);
+	user_return_to_kernel(0);
+}
+
+static bool
+collect_ap_processes(void)
+{
+	bool running = false;
+
+	for (size_t i = 1; i < smp_discovered_count(); i++) {
+		struct smp_cpu *cpu = smp_cpu_at(i);
+		struct process *process = __atomic_load_n(&cpu->user_assignment,
+		    __ATOMIC_RELAXED);
+
+		if (process == NULL)
+			continue;
+		if (__atomic_load_n(&cpu->user_slice_done, __ATOMIC_ACQUIRE) == 0) {
+			running = true;
+			continue;
+		}
+		__atomic_store_n(&cpu->user_assignment, NULL, __ATOMIC_RELEASE);
+		process->resume_on_bsp = process->ap_stop_reason == PROCESS_SLICE_SYSCALL ||
+		    process->ap_stop_reason == PROCESS_SLICE_FAULT;
+		process->state = PROCESS_READY;
+
+		uint64_t cpu_bit = UINT64_C(1) << i;
+		if ((reported_ap_local_syscalls & cpu_bit) == 0 &&
+		    __atomic_load_n(&cpu->user_local_syscalls, __ATOMIC_RELAXED) != 0) {
+			reported_ap_local_syscalls |= cpu_bit;
+			klog("OpenSillicon: SMP process-local syscall completed on AP ");
+			klog_u64(i);
+			klog("\n");
+		}
+
+		if ((reported_ap_private_memory & cpu_bit) == 0 &&
+		    cpu->user_private_memory_calls) {
+			reported_ap_private_memory |= cpu_bit;
+			klog("OpenSillicon: SMP private memory syscall completed on AP ");
+			klog_u64(i);
+			klog("\n");
+		}
+
+		if ((reported_ap_shared_memory & cpu_bit) == 0 &&
+		    cpu->user_shared_memory_calls) {
+			reported_ap_shared_memory |= cpu_bit;
+			klog("OpenSillicon: SMP shared memory syscall completed on AP ");
+			klog_u64(i);
+			klog("\n");
+		}
+
+		unsigned int reason_bit = 1U << process->ap_stop_reason;
+		if ((reported_ap_stops & reason_bit) == 0) {
+			static const char *const reasons[] = {
+				[PROCESS_SLICE_TIMER] = "timer",
+				[PROCESS_SLICE_SYSCALL] = "syscall",
+				[PROCESS_SLICE_FAULT] = "fault",
+				[PROCESS_SLICE_SIGNAL] = "signal"
+			};
+			reported_ap_stops |= reason_bit;
+			klog("OpenSillicon: SMP user slice ended on AP ");
+			klog_u64(i);
+			klog(" via ");
+			klog(reasons[process->ap_stop_reason]);
+			klog("\n");
+		}
+	}
+	return running;
+}
+
+static bool
+dispatch_ap_processes(void)
+{
+	bool dispatched = false;
+
+	if (process_head == NULL)
+		return false;
+	for (size_t i = 1; i < smp_discovered_count(); i++) {
+		struct smp_cpu *cpu = smp_cpu_at(i);
+
+		if (__atomic_load_n(&cpu->state, __ATOMIC_ACQUIRE) != SMP_CPU_ONLINE ||
+		    __atomic_load_n(&cpu->user_assignment, __ATOMIC_RELAXED) != NULL)
+			continue;
+		struct process *start = ap_dispatch_cursor == NULL ?
+		    process_head : ap_dispatch_cursor;
+		struct process *process = start;
+		do {
+			/* BSP is still executing on current_process's kernel stack. */
+			if (process != current_process && process->state == PROCESS_READY &&
+			    process->saved_frame != NULL && !process->resume_on_bsp &&
+			    !process->retry_pending && !process_has_pending_signal(process)) {
+				ap_dispatch_cursor = process->next;
+				process->state = PROCESS_RUNNING;
+				__atomic_store_n(&cpu->user_slice_done, 0, __ATOMIC_RELAXED);
+				__atomic_store_n(&cpu->user_signal_pending, 0, __ATOMIC_RELAXED);
+				__atomic_store_n(&cpu->user_assignment, process, __ATOMIC_RELEASE);
+				/* The AP timer also wakes the idle loop if the IPI fails. */
+				(void)smp_kick_cpu(i);
+				dispatched = true;
+				break;
+			}
+			process = process->next;
+		} while (process != start);
+	}
+	return dispatched;
+}
+
 static struct process *
 find_next_ready(struct process *after)
 {
@@ -446,10 +631,13 @@ schedule_from(struct process *after)
 	if (current_process != NULL)
 		arch_fpu_save(current_process->fpu_state);
 	for (;;) {
+		bool ap_running = collect_ap_processes();
+		ap_running |= dispatch_ap_processes();
 		next = find_next_ready(after);
 		if (next != NULL)
 			break;
-		if (current_process != NULL && current_process->parent == NULL &&
+		if (!ap_running && current_process != NULL &&
+		    current_process->parent == NULL &&
 		    current_process->state == PROCESS_ZOMBIE) {
 			uint64_t status = current_process->exit_status;
 
@@ -463,7 +651,7 @@ schedule_from(struct process *after)
 		}
 		if (process_head != NULL) {
 			struct process *process = process_head;
-			bool blocked_exists = false;
+			bool blocked_exists = ap_running;
 
 			do {
 				if (process->state == PROCESS_BLOCKED) {
@@ -655,8 +843,14 @@ process_system_init(void)
 	if (!process_table_owned_here())
 		return;
 	process_head = NULL;
+	ap_dispatch_cursor = NULL;
 	current_process = NULL;
 	next_process_id = 1;
+	reported_ap_stops = 0;
+	reported_ap_local_syscalls = 0;
+	reported_ap_private_memory = 0;
+	reported_ap_shared_memory = 0;
+	reported_reschedule_ipi = false;
 	__atomic_store_n(&user_preemptions, 0, __ATOMIC_RELAXED);
 	__atomic_store_n(&pipe_blocked_ticks, 0, __ATOMIC_RELAXED);
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
@@ -970,6 +1164,25 @@ process_set_name(struct process *process, const char *path)
 		process->name[i] = '\0';
 }
 
+static void
+interrupt_ap_for_signal(const struct process *process)
+{
+	if (process->state != PROCESS_RUNNING || process == current_process ||
+	    !process_has_pending_signal(process))
+		return;
+	for (size_t i = 1; i < smp_discovered_count(); i++) {
+		struct smp_cpu *cpu = smp_cpu_at(i);
+
+		if (__atomic_load_n(&cpu->user_assignment, __ATOMIC_RELAXED) != process)
+			continue;
+		/* The BSP alone owns the signal queue. The AP reads this flag
+		 * and returns the frame for normal signal delivery on the BSP. */
+		__atomic_store_n(&cpu->user_signal_pending, 1, __ATOMIC_RELEASE);
+		(void)smp_kick_cpu(i);
+		return;
+	}
+}
+
 uint64_t
 process_kill(uint64_t pid, unsigned int signo)
 {
@@ -1012,12 +1225,17 @@ process_kill(uint64_t pid, unsigned int signo)
 		if (process->id == pid && process->state != PROCESS_ZOMBIE) {
 			if (signo == 0)
 				return 0;
+			uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 			if (signo != OS_SIGKILL &&
 			    process->signals.actions[signo].handler ==
-			    OS_SIGNAL_IGNORE)
+			    OS_SIGNAL_IGNORE) {
+				spinlock_unlock_irqrestore(&signal_lock, flags);
 				return 0;
+			}
 			(void)os_signal_queue(&process->signals, signo);
+			spinlock_unlock_irqrestore(&signal_lock, flags);
 			process_wake_for_signal(process);
+			interrupt_ap_for_signal(process);
 			return 0;
 		}
 		process = process->next;
@@ -1028,29 +1246,20 @@ process_kill(uint64_t pid, unsigned int signo)
 int
 process_signal_mask(int how, const uint64_t *set, uint64_t *old_set)
 {
-	uint64_t mask;
-
-	if (current_process == NULL)
+	if (current_process == NULL || (set != NULL && (how < 0 || how > 2)))
 		return -(int)PROCESS_ERROR_EINVAL;
+	uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 	if (old_set != NULL)
 		*old_set = current_process->signals.blocked;
-	if (set == NULL)
-		return 0;
-	mask = *set;
-	switch (how) {
-	case 0: /* SIG_BLOCK */
-		current_process->signals.blocked |= mask;
-		break;
-	case 1: /* SIG_UNBLOCK */
-		current_process->signals.blocked &= ~mask;
-		break;
-	case 2: /* SIG_SETMASK */
-		current_process->signals.blocked = mask;
-		break;
-	default:
-		return -(int)PROCESS_ERROR_EINVAL;
+	if (set != NULL) {
+		switch (how) {
+		case 0: current_process->signals.blocked |= *set; break;
+		case 1: current_process->signals.blocked &= ~*set; break;
+		case 2: current_process->signals.blocked = *set; break;
+		}
+		current_process->signals.blocked &= ~(1ULL << OS_SIGKILL);
 	}
-	current_process->signals.blocked &= ~(1ULL << OS_SIGKILL);
+	spinlock_unlock_irqrestore(&signal_lock, flags);
 	return 0;
 }
 
@@ -1103,14 +1312,17 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 			}
 		}
 	}
+	uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 	old_action = process->signals.actions[signo];
 	if (old_address != 0 && !vmm_copy_to_user(process->address_space,
 	    old_address, &old_action, sizeof(old_action))) {
+		spinlock_unlock_irqrestore(&signal_lock, flags);
 		*error = PROCESS_ERROR_EFAULT;
 		return frame;
 	}
 	if (new_address != 0)
 		(void)os_signal_set_action(&process->signals, signo, &new_action, NULL);
+	spinlock_unlock_irqrestore(&signal_lock, flags);
 	frame->rax = 0;
 	*error = 0;
 	return frame;
@@ -1123,18 +1335,36 @@ process_prepare_user_return(struct interrupt_frame *frame)
 		0xb8, SYSCALL_SIGRETURN, 0x00, 0x00, 0x00, 0xcd, 0x80, 0x0f, 0x0b
 	};
 
-	while (frame != NULL && (frame->cs & 3U) == 3U &&
+	struct interrupt_frame *stack_frame = frame;
+
+	if (!process_table_owned_here()) {
+		if (current_process != NULL && (frame->cs & 3U) == 3U &&
+		    process_has_pending_signal(current_process))
+			process_ap_stop(frame, PROCESS_SLICE_SIGNAL);
+		return frame;
+	}
+	while (frame == stack_frame && frame != NULL && (frame->cs & 3U) == 3U &&
 	    current_process != NULL) {
 		struct os_signal_action action;
 		unsigned int signo;
 
+		if (current_process->resume_on_bsp) {
+			enum process_slice_stop reason = current_process->ap_stop_reason;
+			current_process->resume_on_bsp = false;
+			frame = reason == PROCESS_SLICE_SYSCALL ?
+			    syscall_dispatch(frame) : process_user_exception(frame);
+			continue;
+		}
 		if (current_process->retry_pending)
 			return frame;
 		current_process->retry_in_progress = false;
+		uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 		signo = os_signal_take(&current_process->signals);
+		if (signo != 0)
+			action = current_process->signals.actions[signo];
+		spinlock_unlock_irqrestore(&signal_lock, flags);
 		if (signo == 0)
 			return frame;
-		action = current_process->signals.actions[signo];
 		if (signo == OS_SIGCHLD &&
 		    action.handler == OS_SIGNAL_DEFAULT)
 			continue;
@@ -1145,7 +1375,9 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			continue;
 		}
 		if (current_process->signal_active) {
+			flags = spinlock_lock_irqsave(&signal_lock);
 			(void)os_signal_queue(&current_process->signals, signo);
+			spinlock_unlock_irqrestore(&signal_lock, flags);
 			return frame;
 		}
 		{
@@ -1286,6 +1518,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->credentials = (struct os_credentials){0};
 	root->file_creation_mask = 0022U;
 	root->state = PROCESS_RUNNING;
+	root->resume_on_bsp = false;
 	root->exit_status = 0;
 	root->waiting_for = 0;
 	root->wait_status_address = 0;
@@ -1319,7 +1552,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->user_fs_base = 0;
 	arch_fpu_init_process_state(root->fpu_state);
 	fd_table_init_standard(&root->descriptors);
-	syscall_init(&root->descriptors);
+
 	if (!map_process_stack(root->loaded_image, startup_stack,
 	    &root->initial_user_stack, 0, NULL)) {
 		release_process(root);
@@ -1469,6 +1702,30 @@ process_timer_preempt(struct interrupt_frame *frame)
 }
 
 struct interrupt_frame *
+process_reschedule_ipi(struct interrupt_frame *frame)
+{
+	/* A kernel-mode interruption only wakes the BSP. Its scheduler can
+	 * collect the completion once it reaches a safe point. */
+	if (!process_table_owned_here() || current_process == NULL ||
+	    (frame->cs & 3U) != 3U)
+		return frame;
+
+	for (size_t i = 1; i < smp_discovered_count(); i++) {
+		struct smp_cpu *cpu = smp_cpu_at(i);
+
+		if (__atomic_load_n(&cpu->user_assignment, __ATOMIC_RELAXED) != NULL &&
+		    __atomic_load_n(&cpu->user_slice_done, __ATOMIC_ACQUIRE) != 0) {
+			if (!reported_reschedule_ipi) {
+				reported_reschedule_ipi = true;
+				klog("OpenSillicon: SMP BSP preempted by AP completion IPI\n");
+			}
+			return process_timer_preempt(frame);
+		}
+	}
+	return frame;
+}
+
+struct interrupt_frame *
 process_fork(struct interrupt_frame *frame, uint64_t *error)
 {
 	struct process *child;
@@ -1517,6 +1774,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	child->credentials = current_process->credentials;
 	child->file_creation_mask = current_process->file_creation_mask;
 	child->state = PROCESS_READY;
+	child->resume_on_bsp = false;
 	child->exit_status = 0;
 	child->waiting_for = 0;
 	child->wait_status_address = 0;
@@ -1593,6 +1851,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 #endif
 	child->saved_frame = child_frame;
 	insert_process(child);
+	(void)dispatch_ap_processes();
 	frame->rax = child->id;
 	frame->rflags &= ~1ULL;
 	*error = 0;
@@ -2148,6 +2407,8 @@ process_exit(struct interrupt_frame *frame, uint64_t status)
 struct interrupt_frame *
 process_user_exception(struct interrupt_frame *frame)
 {
+	if (!process_table_owned_here() && current_process != NULL)
+		process_ap_stop(frame, PROCESS_SLICE_FAULT);
 	if (current_process == NULL) {
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_PROTECTION
 		if (test_user_fault_capture_armed) {
