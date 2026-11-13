@@ -265,6 +265,15 @@ $(BUILD_DIR)/nano/nano: $(NANO_SOURCES) src/tools/builders/build_nano.sh $(LIBOS
 		$(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
 	sh src/tools/builders/build_nano.sh
 
+HTOP_SOURCES := $(wildcard src/user/thirdparty/htop/*.[ch] \
+	src/user/thirdparty/htop/generic/*.[ch] src/user/thirdparty/htop/unsupported/*.[ch] \
+	src/user/thirdparty/htop/opensillicon/*.[ch]) src/user/thirdparty/htop/Makefile.am
+
+$(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) src/tools/builders/build_htop.sh \
+		$(BUILD_DIR)/nano/nano $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o \
+		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
+	sh src/tools/builders/build_htop.sh
+
 .PHONY: $(BUILD_DIR)/x11/.apps-ready
 $(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
 		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE)
@@ -279,6 +288,7 @@ SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 $(ROOT_IMAGE): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
+		$(BUILD_DIR)/htop/htop \
 		$(BUILD_DIR)/startx.elf \
 		$(BUILD_DIR)/populate_root \
 		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf \
@@ -296,7 +306,8 @@ $(ROOT_IMAGE): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DI
 		--startx $(BUILD_DIR)/startx.elf \
 		--twm $(BUILD_DIR)/x11/twm/src/twm --xterm $(BUILD_DIR)/x11/xterm/xterm \
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
-		--nano $(BUILD_DIR)/nano/nano --dillo $(BUILD_DIR)/dillo/target/src/dillo \
+		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
+		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
 		--module $(BUILD_DIR)/modules/e1000.ko \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
 		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils \

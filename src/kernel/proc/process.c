@@ -70,6 +70,7 @@ struct process_tls_metadata {
 
 struct process {
 	uint64_t id;
+	char name[OS_PROCESS_NAME_SIZE];
 	struct os_credentials credentials;
 	uint32_t file_creation_mask;
 	enum process_state state;
@@ -926,6 +927,49 @@ process_snapshot(struct process_snapshot_entry *entries, size_t capacity)
 	return (int)count;
 }
 
+int
+process_info_snapshot(struct os_process_info *entries, size_t capacity)
+{
+	struct process *process = process_head;
+	size_t count = 0;
+
+	if (!process_table_owned_here())
+		return -(int)PROCESS_ERROR_EBUSY;
+	if (entries == NULL || capacity == 0 || capacity > OS_PROCESS_INFO_MAX)
+		return -(int)PROCESS_ERROR_EINVAL;
+	if (process == NULL)
+		return 0;
+	do {
+		if (count == capacity)
+			return -(int)PROCESS_ERROR_E2BIG;
+		struct os_process_info *entry = &entries[count++];
+		entry->pid = process->id;
+		entry->parent_pid = process->parent == NULL ? 0 : process->parent->id;
+		entry->state = (uint32_t)process->state;
+		entry->uid = process->credentials.effective_uid;
+		for (size_t i = 0; i < sizeof(entry->name); i++)
+			entry->name[i] = process->name[i];
+		process = process->next;
+	} while (process != process_head);
+	return (int)count;
+}
+
+static void
+process_set_name(struct process *process, const char *path)
+{
+	const char *name = path;
+	size_t i = 0;
+
+	for (; *path != '\0'; path++) {
+		if (*path == '/')
+			name = path + 1;
+	}
+	for (; i + 1 < sizeof(process->name) && name[i] != '\0'; i++)
+		process->name[i] = name[i];
+	for (; i < sizeof(process->name); i++)
+		process->name[i] = '\0';
+}
+
 uint64_t
 process_kill(uint64_t pid, unsigned int signo)
 {
@@ -1215,7 +1259,7 @@ process_test_shm_exec_releases(void)
 
 static uint64_t
 process_run_elf_internal(const void *image, size_t image_size,
-	bool startup_stack)
+	bool startup_stack, const char *name)
 {
 	struct process *root;
 	uint64_t status;
@@ -1238,6 +1282,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 		return UINT64_MAX;
 	}
 	root->id = next_process_id++;
+	process_set_name(root, name);
 	root->credentials = (struct os_credentials){0};
 	root->file_creation_mask = 0022U;
 	root->state = PROCESS_RUNNING;
@@ -1308,7 +1353,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 uint64_t
 process_run_elf(const void *image, size_t image_size)
 {
-	return process_run_elf_internal(image, image_size, false);
+	return process_run_elf_internal(image, image_size, false, "elf");
 }
 
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
@@ -1322,7 +1367,7 @@ process_test_private_mapping_lifecycle(const void *image, size_t image_size)
 	test_private_mapping_faults = 0;
 	test_private_mapping_zombies = 0;
 	test_private_mapping_reaps = 0;
-	status = process_run_elf_internal(image, image_size, false);
+	status = process_run_elf_internal(image, image_size, false, "elf");
 	if (status != 0 || test_private_mapping_armed ||
 	    test_private_mapping_failed || test_private_mapping_faults != 1 ||
 	    test_private_mapping_zombies != 1 || test_private_mapping_reaps != 1)
@@ -1403,7 +1448,7 @@ process_run_path(const char *path, bool startup_stack)
 		return UINT64_MAX;
 	/* Path-based launches always receive the standard argc/envp/auxv stack. */
 	(void)startup_stack;
-	result = process_run_elf_internal(image, image_size, true);
+	result = process_run_elf_internal(image, image_size, true, path);
 	(void)kheap_free(image);
 	return result;
 }
@@ -1467,6 +1512,8 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 		return frame;
 	}
 	child->id = next_process_id++;
+	for (i = 0; i < sizeof(child->name); i++)
+		child->name[i] = current_process->name[i];
 	child->credentials = current_process->credentials;
 	child->file_creation_mask = current_process->file_creation_mask;
 	child->state = PROCESS_READY;
@@ -1555,7 +1602,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 static struct interrupt_frame *
 replace_process_image(struct interrupt_frame *frame, const void *image,
 	size_t image_size, uint64_t invalid_elf_error, uint64_t *error,
-	size_t argc, const char *const argv[])
+	size_t argc, const char *const argv[], const char *name)
 {
 	struct process *process = current_process;
 	struct elf_loaded_image *replacement;
@@ -1602,6 +1649,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	 * preserves the caller's saved IDs. */
 	process->credentials.saved_uid = process->credentials.effective_uid;
 	process->credentials.saved_gid = process->credentials.effective_gid;
+	process_set_name(process, name);
 	process->loaded_image = replacement;
 	process->address_space = &replacement->address_space;
 	process->tls = process_tls_from_plan(&replacement->plan);
@@ -1677,7 +1725,7 @@ process_exec(struct interrupt_frame *frame, uint64_t *error)
 		return frame;
 	}
 	result = replace_process_image(frame, image_copy, (size_t)image_size,
-	    PROCESS_ERROR_EINVAL, error, 0, NULL);
+	    PROCESS_ERROR_EINVAL, error, 0, NULL, "elf");
 	(void)kheap_free(image_copy);
 	return result;
 }
@@ -1724,7 +1772,7 @@ process_exec_path_argv(struct interrupt_frame *frame, const char *path,
 		return frame;
 	}
 	result = replace_process_image(frame, image, image_size,
-	    PROCESS_ERROR_ENOEXEC, error, argc, argv);
+	    PROCESS_ERROR_ENOEXEC, error, argc, argv, canonical);
 	(void)kheap_free(image);
 	return result;
 }

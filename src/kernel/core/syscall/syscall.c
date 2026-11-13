@@ -232,6 +232,7 @@ syscall_select(struct interrupt_frame *frame)
 	uint64_t wait_ticks = 0;
 	int ready_count = 0;
 	bool has_timeout = frame->r8 != 0;
+	bool poll_terminal = false;
 	if (nfds > FD_TABLE_CAPACITY) {
 		process_select_deadline_clear();
 		syscall_error(frame, EINVAL);
@@ -286,7 +287,13 @@ syscall_select(struct interrupt_frame *frame)
 			syscall_error(frame, EBADF);
 			return frame;
 		}
-		ready = fd_object_poll(object, requested);
+		if ((requested & FD_POLL_READ) != 0 && fd_object_is_console(object)) {
+			poll_terminal = true;
+			ready = tty_input_ready() ? FD_POLL_READ : 0;
+			ready |= fd_object_poll(object, requested & ~FD_POLL_READ);
+		} else {
+			ready = fd_object_poll(object, requested);
+		}
 		if (ready != 0)
 			ready_count++;
 		if ((ready & FD_POLL_READ) != 0) {
@@ -350,6 +357,13 @@ syscall_select(struct interrupt_frame *frame)
 		}
 		frame->rax = 0;
 		return frame;
+	}
+	/* The PS/2 console reads hardware events by polling. Retry on the
+	 * next timer tick even when select has no user timeout. */
+	if (poll_terminal) {
+		uint64_t next_tick = timer_ticks() + 1;
+		if (next_tick < deadline)
+			deadline = next_tick;
 	}
 	return process_block_on_channel_until(frame, fd_readiness_wait_channel(),
 	    deadline == UINT64_MAX ? 0 : deadline);
@@ -1495,6 +1509,26 @@ syscall_interrupt(struct interrupt_frame *frame)
 				break;
 			}
 			frame->rax = (uint64_t)count;
+		}
+		break;
+	case SYSCALL_PROCESS_INFO:
+		{
+			struct os_process_info entries[OS_PROCESS_INFO_MAX];
+			struct address_space *space = vmm_active_address_space();
+			uint64_t capacity = frame->rsi;
+
+			if (capacity == 0 || capacity > OS_PROCESS_INFO_MAX) {
+				syscall_error(frame, EINVAL);
+				break;
+			}
+			int count = process_info_snapshot(entries, (size_t)capacity);
+			if (count < 0)
+				syscall_error(frame, (uint64_t)-count);
+			else if (!vmm_copy_to_user(space, frame->rdi, entries,
+			    (size_t)count * sizeof(entries[0])))
+				syscall_error(frame, EFAULT);
+			else
+				frame->rax = (uint64_t)count;
 		}
 		break;
 	case SYSCALL_FORK:

@@ -278,7 +278,8 @@ print_help_commands(void)
 }
 
 static void
-command_external(size_t argc, const char *const argv[], int background)
+command_external(size_t argc, const char *const argv[], int background,
+	int interactive)
 {
 	char path[PATH_CAPACITY];
 	const char *command = argv[0];
@@ -316,7 +317,7 @@ command_external(size_t argc, const char *const argv[], int background)
 			path[5 + u_strlen(command)] = '\0';
 		}
 	}
-	if (u_ioctl(0, U_TIOCCANON, 0) < 0) {
+	if (interactive && u_ioctl(0, U_TIOCCANON, 0) < 0) {
 		print_error("tty mode", "canonical");
 		return;
 	}
@@ -343,7 +344,7 @@ command_external(size_t argc, const char *const argv[], int background)
 		}
 	}
 resume_editor:
-	if (u_ioctl(0, U_TIOCSRAW, 0) < 0) {
+	if (interactive && u_ioctl(0, U_TIOCSRAW, 0) < 0) {
 		u_puts("sh: cannot restore interactive input mode\n");
 		u_exit(1);
 	}
@@ -622,6 +623,15 @@ read_command_line(char *line)
 			if (u_read(0, sequence, sizeof(sequence)) !=
 			    (long)sizeof(sequence) || sequence[0] != '[')
 				continue;
+			if (sequence[1] >= '0' && sequence[1] <= '9') {
+				/* Ignore parameterized keys the line editor does not use. */
+				char final = sequence[1];
+				for (unsigned int i = 0; i < 8 && final < '@'; i++) {
+					if (u_read(0, &final, 1) != 1)
+						break;
+				}
+				continue;
+			}
 			switch (sequence[1]) {
 			case 'A':
 				if (history_position != 0) {
@@ -714,7 +724,7 @@ read_command_line(char *line)
 }
 
 static int
-run_command(char *line)
+run_command(char *line, int interactive)
 {
 	char *arguments[ARGUMENT_CAPACITY + 1];
 	char *cursor = line;
@@ -770,7 +780,8 @@ run_command(char *line)
 		return 0;
 	} else {
 		arguments[count] = 0;
-		command_external(count, (const char *const *)arguments, background);
+		command_external(count, (const char *const *)arguments, background,
+		    interactive);
 	}
 	return 1;
 }
@@ -828,7 +839,8 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 		u_exit(1);
 	}
 	if (argc == 3 && u_streq(argv[1], "-c")) {
-		(void)run_command(argv[2]);
+		/* A command shell has no line editor and does not own the tty. */
+		(void)run_command(argv[2], 0);
 		u_exit(0);
 	}
 	if (argc == 2 && u_streq(argv[1], "--xterm")) {
@@ -863,7 +875,7 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 			print_error("read", "stdin");
 			continue;
 		}
-		if (!run_command(line)) {
+		if (!run_command(line, 1)) {
 			(void)u_ioctl(0, U_TIOCCANON, 0);
 			u_exit(0);
 		}

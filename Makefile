@@ -16,7 +16,7 @@ endif
 root: $(ROOT_IMAGE)
 
 run: iso $(ROOT_IMAGE)
-	$(QEMU) -machine q35 -m 256M -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
+	$(QEMU) -machine q35 -m 1024M -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
 		-drive file=$(ROOT_IMAGE),if=none,id=rootdisk,format=raw \
 		-device ide-hd,drive=rootdisk,bus=ide.0 \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \
@@ -24,7 +24,7 @@ run: iso $(ROOT_IMAGE)
 		-serial stdio -display none
 
 run-gui:
-	$(QEMU) -machine q35 -m 256M -smp 8 -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
+	$(QEMU) -machine q35 -m 1024M -smp 8 -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
 		-drive file=$(ROOT_IMAGE),if=none,id=rootdisk,format=raw \
 		-device ide-hd,drive=rootdisk,bus=ide.0 -nic none \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \

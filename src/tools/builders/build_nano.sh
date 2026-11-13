@@ -12,6 +12,12 @@ printf '%s  %s\n' 136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971c
 if [ ! -f "$src/configure" ]; then
     tar -xzf "$root/src/user/thirdparty/nano/deps/ncurses-6.5.tar.gz" -C "$out/deps"
 fi
+# ncurses uses this clock for input deadlines. OpenSillicon provides
+# CLOCK_MONOTONIC, and elapsed-time measurements should use it.
+clock_header="$src/ncurses/curses.priv.h"
+if grep -q 'GetClockTime(t) clock_gettime(CLOCK_REALTIME, t)' "$clock_header"; then
+    sed -i 's/GetClockTime(t) clock_gettime(CLOCK_REALTIME, t)/GetClockTime(t) clock_gettime(CLOCK_MONOTONIC, t)/' "$clock_header"
+fi
 build_triplet=$(sh "$src/config.guess")
 cflags='-O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
 cppflags="-nostdinc -I$root/src/user/libos/include -isystem $($cc -print-file-name=include)"

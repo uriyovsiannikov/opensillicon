@@ -16,6 +16,7 @@ typedef struct { int fd; size_t pos, size; unsigned char buffer[4096]; struct di
 DIR *opendir(const char *);
 struct dirent *readdir(DIR *);
 int closedir(DIR *);
+static inline int dirfd(DIR *directory) { return directory->fd; }
 void rewinddir(DIR *);
 int scandir(const char *, struct dirent ***, int (*)(const struct dirent *),
 	int (*)(const struct dirent **, const struct dirent **));

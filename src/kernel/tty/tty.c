@@ -78,6 +78,21 @@ tty_dimensions(unsigned short *rows, unsigned short *columns)
 	return true;
 }
 
+bool
+tty_input_ready(void)
+{
+	struct terminal_key_event event;
+
+	if (!console_input_permitted())
+		return false;
+	for (unsigned int i = 0; i < 32 && !terminal_input_available(); i++) {
+		if (!ps2_keyboard_available() || !ps2_keyboard_poll(&event))
+			break;
+		terminal_key_event(event);
+	}
+	return terminal_input_available();
+}
+
 int
 tty_read(void *buffer, size_t length, size_t *read_length)
 {

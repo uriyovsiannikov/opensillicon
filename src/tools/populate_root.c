@@ -140,6 +140,7 @@ main(int argc, char **argv)
 	const char *xeyes_path = NULL;
 	const char *feh_path = NULL;
 	const char *nano_path = NULL;
+	const char *htop_path = NULL;
 	const char *dillo_path = NULL;
 	const char *svctl_path = NULL;
 	const char *service_paths[32];
@@ -149,7 +150,7 @@ main(int argc, char **argv)
 	int arg;
 
 	if (argc < 4) {
-		fprintf(stderr, "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--dillo elf] [--svctl elf] [--service file.conf] [--module file.ko] [--coreutils coreutils...]\n", argv[0]);
+		fprintf(stderr, "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--service file.conf] [--module file.ko] [--coreutils coreutils...]\n", argv[0]);
 		return 2;
 	}
 	for (arg = 4; arg < argc; arg++) {
@@ -177,6 +178,9 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--nano") == 0 && arg + 1 < argc) {
 			if (nano_path != NULL) return 2;
 			nano_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--htop") == 0 && arg + 1 < argc) {
+			if (htop_path != NULL) return 2;
+			htop_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--dillo") == 0 && arg + 1 < argc) {
 			if (dillo_path != NULL) return 2;
 			dillo_path = argv[++arg];
@@ -371,6 +375,12 @@ main(int argc, char **argv)
 	if (nano_path != NULL &&
 	    (error = add_file("/bin/nano", nano_path, 0755)) != 0) {
 		fprintf(stderr, "SilliconFS nano population failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (htop_path != NULL &&
+	    (error = add_file("/bin/htop", htop_path, 0755)) != 0) {
+		fprintf(stderr, "SilliconFS htop population failed: %d\n", error);
 		fclose(image);
 		return 1;
 	}

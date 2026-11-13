@@ -108,12 +108,25 @@ void
 framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 	unsigned int progress, const char *label)
 {
+	static const char *const logo[] = {
+		"   ___                          _____    .    .",
+		".'   `. \\,___,   ___  , __    (      `  |    |   `   ___    __.  , __",
+		"|     | |    \\ .'   ` |'  `.   `--.  |  |    |   | .'   ` .'   \\ |'  `.",
+		"|     | |    | |----' |    |      |  |  |    |   | |      |    | |    |",
+		" `.__.' |`---' `.___, /    | \\___.'  / /\\__ /\\__ /  `._.'  `._.' /    |",
+		"         \\"
+	};
 	char bar[] = "[ . . . . . ]";
 	uint64_t bar_width = (sizeof(bar) - 1) * FONT_WIDTH;
 	uint64_t label_width = 0;
-	uint64_t panel_width;
+	const size_t logo_rows = sizeof(logo) / sizeof(logo[0]);
+	uint64_t logo_height = logo_rows * FONT_HEIGHT;
+	uint64_t logo_width = 0;
 	uint64_t x;
-	uint64_t y;
+	uint64_t logo_y;
+	uint64_t bar_y;
+	uint64_t label_y;
+	uint64_t panel_height;
 	uint64_t i;
 
 	if (framebuffer == NULL || framebuffer->address == NULL || label == NULL ||
@@ -121,19 +134,31 @@ framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 		return;
 	for (i = 0; label[i] != '\0'; i++)
 		label_width += FONT_WIDTH;
-	panel_width = label_width > bar_width ? label_width : bar_width;
-	x = framebuffer->width > panel_width ?
-	    (framebuffer->width - panel_width) / 2 : 0;
-	y = framebuffer->height / 2 - FONT_HEIGHT;
-	/* Clear the whole centered text band so a shorter new status cannot leave
-	 * glyphs behind from the previous, longer status. */
-	boot_fill_rectangle(0, y, framebuffer->width, FONT_HEIGHT * 2 + 4, 0);
+	panel_height = logo_height + FONT_HEIGHT + FONT_HEIGHT * 2 + 4;
+	logo_y = framebuffer->height > panel_height ?
+	    (framebuffer->height - panel_height) / 2 : 0;
+	bar_y = logo_y + logo_height + FONT_HEIGHT;
+	label_y = bar_y + FONT_HEIGHT + 4;
+	/* Clear the entire centered panel so shorter status lines cannot leave
+	 * glyphs behind from previous updates. */
+	boot_fill_rectangle(0, logo_y, framebuffer->width, panel_height, 0);
+	/* ASCII art uses one grid, including each row's leading spaces. */
+	for (i = 0; i < logo_rows; i++) {
+		uint64_t width = 0;
+		for (const char *character = logo[i]; *character != '\0'; character++)
+			width += FONT_WIDTH;
+		if (width > logo_width)
+			logo_width = width;
+	}
+	x = framebuffer->width > logo_width ? (framebuffer->width - logo_width) / 2 : 0;
+	for (i = 0; i < logo_rows; i++)
+		boot_draw_text(x, logo_y + i * FONT_HEIGHT, logo[i], 0xffffff);
 	x = framebuffer->width > bar_width ? (framebuffer->width - bar_width) / 2 : 0;
-	boot_draw_text(x, y, bar, 0xaaaaaa);
+	boot_draw_text(x, bar_y, bar, 0xaaaaaa);
 	for (i = 0; i < progress; i++)
-		boot_draw_text(x + (2 + i * 2) * FONT_WIDTH, y, ".", 0xffffff);
+		boot_draw_text(x + (2 + i * 2) * FONT_WIDTH, bar_y, ".", 0xffffff);
 	x = framebuffer->width > label_width ? (framebuffer->width - label_width) / 2 : 0;
-	boot_draw_text(x, y + FONT_HEIGHT + 4, label, 0xffffff);
+	boot_draw_text(x, label_y, label, 0xffffff);
 	boot_splash_active = true;
 }
 

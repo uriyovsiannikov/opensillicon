@@ -9,16 +9,17 @@
 #include "kernel/fd.h"
 #include "kernel/signal_state.h"
 #include "abi/credentials.h"
+#include "abi/process_info.h"
 
 #define PROCESS_EXEC_ARG_MAX 16U
 #define PROCESS_EXEC_ARG_BYTES_MAX 2048U
 #define PROCESS_SNAPSHOT_MAX 128U
 
 enum process_state {
-	PROCESS_READY,
-	PROCESS_RUNNING,
-	PROCESS_BLOCKED,
-	PROCESS_ZOMBIE
+	PROCESS_READY = OS_PROCESS_READY,
+	PROCESS_RUNNING = OS_PROCESS_RUNNING,
+	PROCESS_BLOCKED = OS_PROCESS_BLOCKED,
+	PROCESS_ZOMBIE = OS_PROCESS_ZOMBIE
 };
 
 struct process_snapshot_entry {
@@ -56,6 +57,7 @@ int process_getcwd(char *buffer, size_t capacity);
 int process_resolve_path(const char *path, char *output, size_t capacity);
 int process_current_snapshot(struct process_snapshot_entry *entry);
 int process_snapshot(struct process_snapshot_entry *entries, size_t capacity);
+int process_info_snapshot(struct os_process_info *entries, size_t capacity);
 void process_syscall_retry_begin(void);
 uint64_t process_select_deadline(void);
 void process_select_deadline_set(uint64_t deadline);

@@ -18,6 +18,12 @@
 #define KEY_ARROW_DOWN 0x50U
 #define KEY_HOME 0x47U
 #define KEY_END 0x4fU
+#define KEY_PAGE_UP 0x49U
+#define KEY_PAGE_DOWN 0x51U
+#define KEY_INSERT 0x52U
+#define KEY_DELETE 0x53U
+#define KEY_F11 0x57U
+#define KEY_F12 0x58U
 #define EOF_TOKEN 256U
 
 enum parser_state {
@@ -496,19 +502,16 @@ terminal_raw_mode(void)
 }
 
 static void
-queue_escape_sequence(struct terminal_state *terminal, char final)
+queue_key_sequence(struct terminal_state *terminal, const char *sequence)
 {
-	size_t tail;
+	size_t length = 0;
 
-	if (TERMINAL_INPUT_CAPACITY - terminal->input_count < 3)
+	while (sequence[length] != '\0')
+		length++;
+	if (TERMINAL_INPUT_CAPACITY - terminal->input_count < length)
 		return;
-	tail = (terminal->input_head + terminal->input_count) %
-	    TERMINAL_INPUT_CAPACITY;
-	terminal->input[tail] = 0x1bU;
-	terminal->input[(tail + 1) % TERMINAL_INPUT_CAPACITY] = '[';
-	terminal->input[(tail + 2) % TERMINAL_INPUT_CAPACITY] =
-	    (uint8_t)final;
-	terminal->input_count += 3;
+	for (size_t i = 0; i < length; i++)
+		(void)queue_token(terminal, (uint8_t)sequence[i]);
 }
 
 static uint8_t
@@ -626,16 +629,36 @@ terminal_key_event(struct terminal_key_event event)
 	if (event.extended) {
 		if (terminal->raw_mode) {
 			switch (code) {
-			case KEY_ARROW_UP: queue_escape_sequence(terminal, 'A'); break;
-			case KEY_ARROW_DOWN: queue_escape_sequence(terminal, 'B'); break;
-			case KEY_ARROW_RIGHT: queue_escape_sequence(terminal, 'C'); break;
-			case KEY_ARROW_LEFT: queue_escape_sequence(terminal, 'D'); break;
-			case KEY_HOME: queue_escape_sequence(terminal, 'H'); break;
-			case KEY_END: queue_escape_sequence(terminal, 'F'); break;
+			case KEY_ARROW_UP: queue_key_sequence(terminal, "\033[A"); break;
+			case KEY_ARROW_DOWN: queue_key_sequence(terminal, "\033[B"); break;
+			case KEY_ARROW_RIGHT: queue_key_sequence(terminal, "\033[C"); break;
+			case KEY_ARROW_LEFT: queue_key_sequence(terminal, "\033[D"); break;
+			case KEY_HOME: queue_key_sequence(terminal, "\033[H"); break;
+			case KEY_END: queue_key_sequence(terminal, "\033[F"); break;
+			case KEY_PAGE_UP: queue_key_sequence(terminal, "\033[5~"); break;
+			case KEY_PAGE_DOWN: queue_key_sequence(terminal, "\033[6~"); break;
+			case KEY_INSERT: queue_key_sequence(terminal, "\033[2~"); break;
+			case KEY_DELETE: queue_key_sequence(terminal, "\033[3~"); break;
 			default: break;
 			}
 		}
 		return;
+	}
+	if (terminal->raw_mode && !alt_down && !control_down &&
+	    !shift_left && !shift_right) {
+		static const char *const function_keys[] = {
+			"\033OP", "\033OQ", "\033OR", "\033OS", "\033[15~",
+			"\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
+			"\033[23~", "\033[24~"
+		};
+		if (code >= KEY_F1 && code <= KEY_F1 + 9) {
+			queue_key_sequence(terminal, function_keys[code - KEY_F1]);
+			return;
+		}
+		if (code == KEY_F11 || code == KEY_F12) {
+			queue_key_sequence(terminal, function_keys[10 + code - KEY_F11]);
+			return;
+		}
 	}
 	shifted = shift_left || shift_right;
 	character = translate_key(code, shifted, caps_lock);
