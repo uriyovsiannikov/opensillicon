@@ -97,6 +97,8 @@ isr_common:
 	movq %rax, %rdi
 	/* A deferred syscall can block and pick another process. Run each
 	 * continuation on its own kernel stack before touching its state. */
+.global arch_prepare_user_frame
+arch_prepare_user_frame:
 3:
 	testb $3, 144(%rdi)
 	jz arch_return_interrupt_frame

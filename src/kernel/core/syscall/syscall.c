@@ -425,6 +425,31 @@ validate_iovec_buffers(const struct syscall_iovec *vectors, uint64_t count,
 	return 0;
 }
 
+/* Keep a complete small writev indivisible, just like one scalar pipe write. */
+static struct interrupt_frame *
+syscall_pipe_writev(struct interrupt_frame *frame, struct fd_object *object,
+	const struct syscall_iovec *vectors, uint64_t total)
+{
+	char buffer[PIPE_CAPACITY];
+	size_t offset = 0, amount = 0;
+	for (uint64_t i = 0; i < frame->rdx; i++) {
+		if (vectors[i].length != 0 && !vmm_copy_from_user(vmm_active_address_space(),
+		    buffer + offset, vectors[i].base, (size_t)vectors[i].length)) {
+			syscall_error(frame, EFAULT);
+			return frame;
+		}
+		offset += (size_t)vectors[i].length;
+	}
+	int result = pipe_write_try(object, buffer, (size_t)total, &amount);
+	if (result == -EAGAIN && !fd_object_nonblocking(object))
+		return process_block_local_on_channel(frame, pipe_wait_channel(object, PIPE_WRITE_WAIT));
+	if (result != 0)
+		syscall_error(frame, errno_from_kernel(result));
+	else
+		frame->rax = amount;
+	return frame;
+}
+
 static struct interrupt_frame *
 syscall_writev(struct interrupt_frame *frame)
 {
@@ -455,6 +480,8 @@ syscall_writev(struct interrupt_frame *frame)
 		syscall_error(frame, errno_from_kernel(result));
 		return frame;
 	}
+	if (pipe_is_write_endpoint(object) && total <= PIPE_CAPACITY)
+		return syscall_pipe_writev(frame, object, vectors, total);
 	for (i = 0; i < count; i++) {
 		uint64_t offset = 0;
 
@@ -480,7 +507,7 @@ syscall_writev(struct interrupt_frame *frame)
 						syscall_error(frame, ERRNO_EAGAIN);
 						return frame;
 					}
-					return process_block_on_channel(frame,
+					return process_block_local_on_channel(frame,
 					    pipe_wait_channel(object, PIPE_WRITE_WAIT));
 				}
 			} else {
@@ -519,6 +546,13 @@ partial:
 	return frame;
 }
 
+static bool
+pipe_copy_user(void *context, const void *source, size_t length)
+{
+	return vmm_copy_to_user(vmm_active_address_space(), (uintptr_t)context,
+	    source, length);
+}
+
 static struct interrupt_frame *
 syscall_readv(struct interrupt_frame *frame)
 {
@@ -550,7 +584,8 @@ syscall_readv(struct interrupt_frame *frame)
 		while (offset < vectors[i].length) {
 			size_t chunk = (size_t)(vectors[i].length - offset);
 			size_t amount = 0;
-			uint64_t old_offset = fd_get_offset(table, frame->rdi);
+			uint64_t old_offset = pipe_is_read_endpoint(object) ? 0 :
+			    fd_get_offset(table, frame->rdi);
 
 			if (chunk > sizeof(buffer))
 				chunk = sizeof(buffer);
@@ -560,7 +595,8 @@ syscall_readv(struct interrupt_frame *frame)
 			if (received != 0 && fd_object_is_terminal(object))
 				goto partial;
 			if (pipe_is_read_endpoint(object)) {
-				result = pipe_read_stage(object, buffer, chunk, &amount);
+				result = pipe_read_to(object, chunk, pipe_copy_user,
+				    (void *)(uintptr_t)(vectors[i].base + offset), &amount);
 				if (result == -(int)ERRNO_EAGAIN) {
 					if (received != 0)
 						goto partial;
@@ -568,7 +604,7 @@ syscall_readv(struct interrupt_frame *frame)
 						syscall_error(frame, ERRNO_EAGAIN);
 						return frame;
 					}
-					return process_block_on_channel(frame,
+					return process_block_local_on_channel(frame,
 					    pipe_wait_channel(object, PIPE_READ_WAIT));
 				}
 			} else {
@@ -595,7 +631,7 @@ syscall_readv(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				return frame;
 			}
-			if (amount != 0 && !vmm_copy_to_user(
+			if (!pipe_is_read_endpoint(object) && amount != 0 && !vmm_copy_to_user(
 			    vmm_active_address_space(), vectors[i].base + offset,
 			    buffer, amount)) {
 				if (!pipe_is_read_endpoint(object))
@@ -603,13 +639,6 @@ syscall_readv(struct interrupt_frame *frame)
 				if (received != 0)
 					goto partial;
 				syscall_error(frame, ERRNO_EFAULT);
-				return frame;
-			}
-			if (pipe_is_read_endpoint(object) &&
-			    pipe_read_commit(object, amount) != 0) {
-				if (received != 0)
-					goto partial;
-				syscall_error(frame, ERRNO_EINVAL);
 				return frame;
 			}
 			received += amount;
@@ -754,14 +783,173 @@ syscall_private_memory(uint64_t number)
 	    number == SYSCALL_MPROTECT;
 }
 
-/* These calls use the running process's state, synchronized allocators
- * and the tick counter. They cannot sleep or enter BSP-owned services. */
+/* Only pipe endpoints enter this path. Local waits keep the original frame
+ * for a kernel continuation, rather than rewinding a user int instruction. */
 static bool
-syscall_process_local(struct interrupt_frame *frame)
+syscall_pipe_io(struct interrupt_frame **result_frame)
 {
+	struct interrupt_frame *frame = *result_frame;
+	struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
+	bool reading = frame->rax == SYSCALL_READ;
+	if (reading ? !pipe_is_read_endpoint(object) : !pipe_is_write_endpoint(object))
+		return false;
+	if (frame->rdx > SYSCALL_MAX_IO) {
+		syscall_error(frame, EINVAL);
+		return true;
+	}
+	size_t amount = 0;
+	int result;
+	if (reading) {
+		result = pipe_read_to(object, (size_t)frame->rdx, pipe_copy_user,
+		    (void *)(uintptr_t)frame->rsi, &amount);
+	} else {
+		char buffer[SYSCALL_MAX_IO];
+		if (frame->rdx != 0 && !vmm_copy_from_user(vmm_active_address_space(),
+		    buffer, frame->rsi, (size_t)frame->rdx)) {
+			syscall_error(frame, EFAULT);
+			return true;
+		}
+		result = pipe_write_try(object, buffer, (size_t)frame->rdx, &amount);
+	}
+	if (result == -EAGAIN && !fd_object_nonblocking(object)) {
+		*result_frame = process_block_local_on_channel(frame,
+		    pipe_wait_channel(object, reading ? PIPE_READ_WAIT : PIPE_WRITE_WAIT));
+		return true;
+	}
+	if (result != 0) {
+		syscall_error(frame, errno_from_kernel(result));
+	} else {
+		frame->rax = amount;
+		struct smp_cpu *cpu = smp_current_cpu();
+		if (amount != 0 && cpu != NULL && !cpu->bsp)
+			__atomic_store_n(&cpu->user_pipe_io, true, __ATOMIC_RELAXED);
+	}
+	return true;
+}
+
+/* These calls use the running process's state, synchronized allocators
+ * and the tick counter. APs defer teardown instead of entering BSP services.
+ * Invalid sigreturn on the BSP can select a different process's frame. */
+static bool
+syscall_process_local(struct interrupt_frame **result_frame)
+{
+	struct interrupt_frame *frame = *result_frame;
 	uint64_t error;
 
 	switch (frame->rax) {
+	case SYSCALL_SLEEP_TICKS:
+		*result_frame = process_sleep_ticks(frame, frame->rdi, &error);
+		if (error != 0)
+			syscall_error(*result_frame, error);
+		return true;
+	case SYSCALL_NANOSLEEP:
+		{
+			struct native_timespec request;
+			struct address_space *space = vmm_active_address_space();
+			uint64_t ticks;
+
+			if (!vmm_copy_from_user(space, &request, frame->rdi,
+			    sizeof(request))) {
+				syscall_error(frame, ERRNO_EFAULT);
+				return true;
+			}
+			if (request.tv_sec < 0 || request.tv_nsec < 0 ||
+			    request.tv_nsec >= 1000000000LL) {
+				syscall_error(frame, ERRNO_EINVAL);
+				return true;
+			}
+			if (frame->rsi != 0 && !vmm_validate_user_write(space,
+			    frame->rsi, sizeof(request))) {
+				syscall_error(frame, ERRNO_EFAULT);
+				return true;
+			}
+			if ((uint64_t)request.tv_sec >
+			    (UINT64_MAX - 1U) / MONOTONIC_TICK_HZ) {
+				syscall_error(frame, ERRNO_EINVAL);
+				return true;
+			}
+			ticks = (uint64_t)request.tv_sec * MONOTONIC_TICK_HZ;
+			if (request.tv_nsec != 0) {
+				uint64_t fractional_ticks =
+				    ((uint64_t)request.tv_nsec + MONOTONIC_TICK_NS - 1U) /
+				    MONOTONIC_TICK_NS;
+				if (ticks > UINT64_MAX - fractional_ticks - 1U) {
+					syscall_error(frame, ERRNO_EINVAL);
+					return true;
+				}
+				ticks += fractional_ticks;
+			}
+			if (ticks != 0) {
+				if (ticks == UINT64_MAX) {
+					syscall_error(frame, ERRNO_EINVAL);
+					return true;
+				}
+				/* One extra tick accounts for unknown phase within the
+				 * current tick; the wait therefore cannot finish early. */
+				ticks++;
+			}
+			*result_frame = process_nanosleep(frame, ticks, request.tv_sec,
+			    request.tv_nsec, frame->rsi, &error);
+		}
+		if (error != 0)
+			syscall_error(*result_frame, error);
+		return true;
+	case SYSCALL_READV:
+	case SYSCALL_WRITEV:
+		{
+			struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
+			bool reading = frame->rax == SYSCALL_READV;
+			if (reading ? !pipe_is_read_endpoint(object) : !pipe_is_write_endpoint(object))
+				return false;
+			*result_frame = reading ? syscall_readv(frame) : syscall_writev(frame);
+			struct smp_cpu *cpu = smp_current_cpu();
+			if (cpu != NULL && !cpu->bsp && ((*result_frame)->rflags & 1U) == 0 &&
+			    (*result_frame)->rax != 0)
+				__atomic_store_n(&cpu->user_pipe_vectors, true, __ATOMIC_RELAXED);
+		}
+		return true;
+	case SYSCALL_READ:
+	case SYSCALL_WRITE:
+		return syscall_pipe_io(result_frame);
+	case SYSCALL_CLOSE:
+		{
+			struct fd_table *table = current_fd_table();
+			struct fd_object *object = fd_object_for_descriptor(table, frame->rdi);
+			if (!pipe_is_read_endpoint(object) && !pipe_is_write_endpoint(object))
+				return false;
+			int result = fd_close(table, frame->rdi);
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = 0;
+		}
+		return true;
+	case SYSCALL_PIPE:
+		{
+			uint32_t descriptors[2];
+			int reader, writer;
+			struct address_space *space = vmm_active_address_space();
+			struct fd_table *table = current_fd_table();
+			if (!vmm_validate_user_write(space, frame->rdi, sizeof(descriptors))) {
+				syscall_error(frame, EFAULT);
+				return true;
+			}
+			int result = pipe_create(table, &reader, &writer);
+			if (result != 0) {
+				syscall_error(frame, errno_from_kernel(result));
+				return true;
+			}
+			descriptors[0] = (uint32_t)reader;
+			descriptors[1] = (uint32_t)writer;
+			if (!vmm_copy_to_user(space, frame->rdi, descriptors, sizeof(descriptors))) {
+				(void)fd_close(table, reader);
+				(void)fd_close(table, writer);
+				syscall_error(frame, EFAULT);
+			} else {
+				frame->rax = 0;
+			}
+		}
+		return true;
 	case SYSCALL_GET_ABI_VERSION:
 		frame->rax = SYSCALL_ABI_VERSION;
 		return true;
@@ -894,6 +1082,11 @@ syscall_process_local(struct interrupt_frame *frame)
 				syscall_error(frame, error);
 		}
 		return true;
+	case SYSCALL_SIGRETURN:
+		*result_frame = process_sigreturn(frame, &error);
+		if (error != 0)
+			syscall_error(*result_frame, error);
+		return true;
 	case SYSCALL_SIGPROCMASK:
 		{
 			uint64_t requested, previous;
@@ -966,11 +1159,15 @@ syscall_dispatch(struct interrupt_frame *frame)
 			if (private_memory)
 				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
 #endif
-			if (syscall_process_local(frame)) {
+			process_channel_wait_begin();
+			if (syscall_process_local(&frame)) {
+				if ((number == SYSCALL_SIGACTION || number == SYSCALL_SIGPROCMASK) &&
+				    (frame->rflags & 1U) == 0)
+					__atomic_store_n(&cpu->user_signal_calls, true, __ATOMIC_RELAXED);
 				if (shared_memory && (frame->rflags & 1U) == 0)
-					cpu->user_shared_memory_calls = true;
+					__atomic_store_n(&cpu->user_shared_memory_calls, true, __ATOMIC_RELAXED);
 				if (private_memory && (frame->rflags & 1U) == 0)
-					cpu->user_private_memory_calls = true;
+					__atomic_store_n(&cpu->user_private_memory_calls, true, __ATOMIC_RELAXED);
 				__atomic_add_fetch(&cpu->user_local_syscalls, 1, __ATOMIC_RELAXED);
 				return frame;
 			}
@@ -999,7 +1196,8 @@ syscall_dispatch(struct interrupt_frame *frame)
 	(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
 	process_syscall_retry_begin();
 	frame->rflags &= ~1ULL;
-	if (syscall_process_local(frame))
+	process_channel_wait_begin();
+	if (syscall_process_local(&frame))
 		return frame;
 	switch (number) {
 	case SYSCALL_POWER_CONTROL:
@@ -1285,7 +1483,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 					break;
 				}
 				if (result == -(int)ERRNO_EAGAIN)
-					return process_block_on_channel(frame,
+					return process_block_local_on_channel(frame,
 					    pipe_wait_channel(object, PIPE_WRITE_WAIT));
 				if (result != 0) {
 					syscall_error(frame, errno_from_kernel(result));
@@ -1829,61 +2027,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 	case SYSCALL_WAITPID:
 		frame = process_waitpid(frame, &error);
 		break;
-	case SYSCALL_SLEEP_TICKS:
-		frame = process_sleep_ticks(frame, frame->rdi, &error);
-		break;
-	case SYSCALL_NANOSLEEP:
-		{
-			struct native_timespec request;
-			struct address_space *space = vmm_active_address_space();
-			uint64_t ticks;
-
-			if (!vmm_copy_from_user(space, &request, frame->rdi,
-			    sizeof(request))) {
-				syscall_error(frame, ERRNO_EFAULT);
-				break;
-			}
-			if (request.tv_sec < 0 || request.tv_nsec < 0 ||
-			    request.tv_nsec >= 1000000000LL) {
-				syscall_error(frame, ERRNO_EINVAL);
-				break;
-			}
-			if (frame->rsi != 0 && !vmm_validate_user_write(space,
-			    frame->rsi, sizeof(request))) {
-				syscall_error(frame, ERRNO_EFAULT);
-				break;
-			}
-			if ((uint64_t)request.tv_sec >
-			    (UINT64_MAX - 1U) / MONOTONIC_TICK_HZ) {
-				syscall_error(frame, ERRNO_EINVAL);
-				break;
-			}
-			ticks = (uint64_t)request.tv_sec * MONOTONIC_TICK_HZ;
-			if (request.tv_nsec != 0) {
-				uint64_t fractional_ticks =
-				    ((uint64_t)request.tv_nsec + MONOTONIC_TICK_NS - 1U) /
-				    MONOTONIC_TICK_NS;
-				if (ticks > UINT64_MAX - fractional_ticks - 1U) {
-					syscall_error(frame, ERRNO_EINVAL);
-					break;
-				}
-				ticks += fractional_ticks;
-			}
-			if (ticks != 0) {
-				if (ticks == UINT64_MAX) {
-					syscall_error(frame, ERRNO_EINVAL);
-					break;
-				}
-				/* One extra tick accounts for unknown phase within the
-				 * current tick; the wait therefore cannot finish early. */
-				ticks++;
-			}
-			frame = process_nanosleep(frame, ticks, request.tv_sec,
-			    request.tv_nsec, frame->rsi, &error);
-		}
-		break;
 	case SYSCALL_PTY_PAIR:
-	case SYSCALL_PIPE:
 		{
 			uint32_t descriptors[2];
 			int read_descriptor;
@@ -1896,9 +2040,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			table = current_fd_table();
-			result = number == SYSCALL_PTY_PAIR ?
-			    pty_create(table, &read_descriptor, &write_descriptor) :
-			    pipe_create(table, &read_descriptor, &write_descriptor);
+			result = pty_create(table, &read_descriptor, &write_descriptor);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
@@ -1923,9 +2065,6 @@ syscall_dispatch(struct interrupt_frame *frame)
 		else
 			frame->rax = 0;
 		break;
-	case SYSCALL_SIGRETURN:
-		frame = process_sigreturn(frame, &error);
-		break;
 	case SYSCALL_WRITEV:
 		return syscall_writev(frame);
 	case SYSCALL_READV:
@@ -1948,9 +2087,9 @@ syscall_dispatch(struct interrupt_frame *frame)
 					break;
 				}
 				if (enabled)
-					object->status_flags |= FD_STATUS_NONBLOCK;
+					__atomic_fetch_or(&object->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
 				else
-					object->status_flags &= ~FD_STATUS_NONBLOCK;
+					__atomic_fetch_and(&object->status_flags, ~FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
 				break;
@@ -2763,12 +2902,13 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			case NATIVE_F_GETFL:
-				frame->rax = object->status_flags;
+				frame->rax = __atomic_load_n(&object->status_flags, __ATOMIC_RELAXED);
 				break;
 			case NATIVE_F_SETFL:
-				object->status_flags = (object->status_flags &
+				__atomic_store_n(&object->status_flags,
+				    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
 				    NATIVE_O_ACCMODE) | ((uint32_t)frame->rdx &
-				    NATIVE_O_NONBLOCK);
+				    NATIVE_O_NONBLOCK), __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
 				break;
@@ -2954,28 +3094,18 @@ syscall_dispatch(struct interrupt_frame *frame)
 			int result;
 
 			if (pipe_is_read_endpoint(object)) {
-				result = pipe_read_stage(object, buffer,
-				    (size_t)frame->rdx, &amount);
+				result = pipe_read_to(object, (size_t)frame->rdx,
+				    pipe_copy_user, (void *)(uintptr_t)frame->rsi, &amount);
 				if (result == -(int)ERRNO_EAGAIN &&
 				    fd_object_nonblocking(object)) {
 					syscall_error(frame, ERRNO_EAGAIN);
 					break;
 				}
 				if (result == -(int)ERRNO_EAGAIN)
-					return process_block_on_channel(frame,
+					return process_block_local_on_channel(frame,
 					    pipe_wait_channel(object, PIPE_READ_WAIT));
 				if (result != 0) {
 					syscall_error(frame, errno_from_kernel(result));
-					break;
-				}
-				if (amount != 0 && !vmm_copy_to_user(
-				    vmm_active_address_space(), frame->rsi, buffer,
-				    amount)) {
-					syscall_error(frame, ERRNO_EFAULT);
-					break;
-				}
-				if (pipe_read_commit(object, amount) != 0) {
-					syscall_error(frame, ERRNO_EINVAL);
 					break;
 				}
 				frame->rax = amount;

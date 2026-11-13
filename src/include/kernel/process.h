@@ -59,6 +59,11 @@ int process_current_snapshot(struct process_snapshot_entry *entry);
 int process_snapshot(struct process_snapshot_entry *entries, size_t capacity);
 int process_info_snapshot(struct os_process_info *entries, size_t capacity);
 void process_syscall_retry_begin(void);
+/* Snapshot readiness before a local I/O attempt; publish a wait only if
+ * no event intervened. Local waits retain a kernel syscall continuation. */
+void process_channel_wait_begin(void);
+struct interrupt_frame *process_block_local_on_channel(
+	struct interrupt_frame *frame, void *channel);
 uint64_t process_select_deadline(void);
 void process_select_deadline_set(uint64_t deadline);
 void process_select_deadline_clear(void);
@@ -80,7 +85,9 @@ enum process_slice_stop {
 	PROCESS_SLICE_TIMER,
 	PROCESS_SLICE_SYSCALL,
 	PROCESS_SLICE_FAULT,
-	PROCESS_SLICE_SIGNAL
+	PROCESS_SLICE_EXIT,
+	PROCESS_SLICE_BLOCK,
+	PROCESS_SLICE_SLEEP
 };
 bool process_ap_has_assignment(void);
 void process_ap_run_assignment(void);

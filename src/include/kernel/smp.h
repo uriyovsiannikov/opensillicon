@@ -20,6 +20,19 @@ enum smp_cpu_stage {
 	SMP_CPU_STAGE_TABLES_READY,
 	SMP_CPU_STAGE_LOCAL_READY
 };
+#define SMP_USER_QUEUE_CAPACITY 4U
+enum smp_user_slot_state {
+	SMP_USER_SLOT_EMPTY,
+	SMP_USER_SLOT_RESERVED,
+	SMP_USER_SLOT_RUNNABLE,
+	SMP_USER_SLOT_ACTIVE,
+	SMP_USER_SLOT_COMPLETE
+};
+struct smp_user_slot {
+	struct process *process;
+	uint32_t state;
+	bool stolen;
+};
 struct smp_cpu {
 	struct smp_cpu *self;
 	uint32_t logical_id;
@@ -36,13 +49,26 @@ struct smp_cpu {
 	smp_work_function work_function;
 	void *work_argument;
 	struct process *current_process;
-	/* BSP publishes a process, AP publishes completion after leaving its stack. */
-	struct process *user_assignment;
-	uint32_t user_slice_done;
-	uint32_t user_signal_pending;
+	/* Slot state publishes ownership of both process stack and address space. */
+	struct smp_user_slot user_queue[SMP_USER_QUEUE_CAPACITY];
+	size_t user_queue_cursor;
+	size_t user_steal_cursor;
+	bool user_current_stolen;
+	bool user_stolen_run;
+	uint64_t user_last_pid;
+	bool user_last_slice_local;
+	bool user_queue_rotation;
 	uint64_t user_local_syscalls;
 	bool user_private_memory_calls;
 	bool user_shared_memory_calls;
+	bool user_signal_calls;
+	bool user_signal_delivery;
+	bool user_signal_return;
+	bool user_pipe_io;
+	bool user_pipe_vectors;
+	bool user_local_wait_resume;
+	bool user_timer_wait;
+	bool user_timer_resume;
 	bool user_entry_probe_active;
 	uint64_t user_kernel_stack;
 	struct scheduler_cpu *scheduler_context;

@@ -52,7 +52,7 @@ user_resume:
 	subq $8, %rsp
 	call arch_user_context_save
 	movq %r12, %rdi
-	jmp arch_return_interrupt_frame
+	jmp arch_prepare_user_frame
 .size user_resume, .-user_resume
 
 .global user_return_to_kernel

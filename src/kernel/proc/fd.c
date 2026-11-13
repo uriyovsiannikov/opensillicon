@@ -339,7 +339,7 @@ bool
 fd_object_nonblocking(const struct fd_object *object)
 {
 	return object != NULL &&
-	    (object->status_flags & FD_STATUS_NONBLOCK) != 0;
+	    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) & FD_STATUS_NONBLOCK) != 0;
 }
 
 int

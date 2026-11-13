@@ -456,12 +456,8 @@ smp_ap_timer_interrupt(struct interrupt_frame *frame)
 			__asm__ volatile ("cli; hlt" : : : "memory");
 	__atomic_add_fetch(&cpu->idle_timer_ticks, 1, __ATOMIC_RELAXED);
 	lapic_eoi();
-	if ((frame->cs & 3U) == 3U && cpu->current_process != NULL) {
-		enum process_slice_stop reason =
-		    __atomic_load_n(&cpu->user_signal_pending, __ATOMIC_ACQUIRE) != 0 ?
-		    PROCESS_SLICE_SIGNAL : PROCESS_SLICE_TIMER;
-		process_ap_stop(frame, reason);
-	}
+	if ((frame->cs & 3U) == 3U && cpu->current_process != NULL)
+		process_ap_stop(frame, PROCESS_SLICE_TIMER);
 	return frame;
 }
 
@@ -475,9 +471,6 @@ smp_ap_work_interrupt(struct interrupt_frame *frame)
 		for (;;)
 			__asm__ volatile ("cli; hlt" : : : "memory");
 	lapic_eoi();
-	if ((frame->cs & 3U) == 3U && cpu->current_process != NULL &&
-	    __atomic_load_n(&cpu->user_signal_pending, __ATOMIC_ACQUIRE) != 0)
-		process_ap_stop(frame, PROCESS_SLICE_SIGNAL);
 	return frame;
 }
 
