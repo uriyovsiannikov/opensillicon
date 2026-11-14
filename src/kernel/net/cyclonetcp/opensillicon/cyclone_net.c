@@ -252,6 +252,12 @@ cyclone_net_ready(void)
 	return stack_ready;
 }
 
+const char *
+cyclone_net_device_name(void)
+{
+	return stack_ready && ethernet_device != NULL ? ethernet_device->name : NULL;
+}
+
 bool
 cyclone_net_ipv4_config(uint8_t address[4], uint8_t netmask[4],
 	uint8_t gateway[4])

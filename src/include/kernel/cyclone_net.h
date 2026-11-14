@@ -13,6 +13,7 @@ typedef void (*cyclone_udp_callback)(void *context, const uint8_t source[4],
 bool cyclone_net_init(struct net_device *device);
 size_t cyclone_net_poll(size_t budget);
 bool cyclone_net_ready(void);
+const char *cyclone_net_device_name(void);
 bool cyclone_net_ipv4_config(uint8_t address[4], uint8_t netmask[4],
 	uint8_t gateway[4]);
 bool cyclone_net_dns_server(uint8_t address[4]);

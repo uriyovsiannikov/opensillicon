@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "kernel/heap.h"
+#include "kernel/cyclone_net.h"
 #include "kernel/process.h"
 #include "kernel/module.h"
 #include "kernel/pmm.h"
@@ -31,7 +32,8 @@ enum procfs_entry {
 	PROCFS_USB,
 	PROCFS_DISKS,
 	PROCFS_CMDLINE,
-	PROCFS_NETPCI
+	PROCFS_NETPCI,
+	PROCFS_NETIF
 };
 
 struct procfs_node {
@@ -43,7 +45,7 @@ struct procfs_node {
 	uint64_t meminfo_inode;
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
-	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode, netpci_inode;
+	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode, netpci_inode, netif_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
@@ -533,6 +535,20 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		if (error == 0) *result = &entry->vnode;
 		return error;
 	}
+	if (name_length == 5 && memcmp(name, "netif", 5) == 0) {
+		struct procfs_node *entry = procfs_allocate("netif", PROCFS_NETIF,
+		    VNODE_REGULAR, node->netif_inode);
+		if (entry == NULL)
+			return -PROCFS_ENOMEM;
+		const char *device = cyclone_net_device_name();
+		if (device != NULL && !append_text(entry, device)) {
+			vnode_put(&entry->vnode);
+			return -PROCFS_EINVAL;
+		}
+		entry->vnode.size = entry->content_length;
+		*result = &entry->vnode;
+		return 0;
+	}
 	if (name_length == 7 && memcmp(name, "cmdline", 7) == 0) {
 		struct procfs_node *entry = procfs_allocate("cmdline",
 		    PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
@@ -580,7 +596,7 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
 	static const char *const names[] = {"self", "uptime", "meminfo",
-	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline", "netpci"};
+	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline", "netpci", "netif"};
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
@@ -600,7 +616,8 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	    : index == 6	  ? node->usb_inode
 	    : index == 7	  ? node->disks_inode
 				  : index == 8	  ? node->cmdline_inode
-				  : node->netpci_inode;
+				  : index == 9       ? node->netpci_inode
+				  : node->netif_inode;
 	entry->mode = 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
@@ -632,11 +649,13 @@ procfs_mount(const char *path)
 	root->disks_inode = vfs_allocate_inode();
 	root->cmdline_inode = vfs_allocate_inode();
 	root->netpci_inode = vfs_allocate_inode();
+	root->netif_inode = vfs_allocate_inode();
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
 	    root->usb_inode == 0 || root->disks_inode == 0 ||
-	    root->cmdline_inode == 0 || root->netpci_inode == 0) {
+	    root->cmdline_inode == 0 || root->netpci_inode == 0 ||
+	    root->netif_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}
