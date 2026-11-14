@@ -20,6 +20,12 @@ boot. After boot, use cat /tmp/btlog.log for the i219 lines and ifconfig for
 the assigned address. A successful DHCP exchange exercises both TX and RX.
 The diagnostics entry remains available when this experiment fails.
 
+Hardware results for PCI 8086:15bc rev 0x10, subsystem 17aa:36eb:
+the probe read PHY ID 0x015400a6 with link up. The Ethernet test acquired
+an IPv4 DHCP lease and received an ICMP echo reply from the LAN gateway.
+This covers the firmware-initialized link on that machine; initialization
+from a down PHY and cable reconnect remain to be verified.
+
 References:
 - https://github.com/freebsd/freebsd-src/blob/main/sys/dev/e1000/e1000_hw.h
 - https://github.com/freebsd/freebsd-src/blob/main/sys/dev/e1000/e1000_regs.h
