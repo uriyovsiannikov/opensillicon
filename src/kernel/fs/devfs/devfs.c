@@ -69,7 +69,7 @@ devfs_disk_io(struct devfs_node *node, uint64_t offset, void *buffer,
 	*transferred = 0;
 	if (length == 0) return 0;
 	if (offset % sector != 0 || length % sector != 0) return -EINVAL;
-	if (write && device->mounted) return -EBUSY;
+	if (write && !block_raw_write_allowed(device)) return -EBUSY;
 	if (offset >= size) return write ? -ENOSPC : 0;
 	if (length > size - offset) length = (size_t)(size - offset);
 	/* block_read/write require sector-aligned buffers. */

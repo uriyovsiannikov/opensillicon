@@ -17,7 +17,7 @@
 #define PROCFS_ENOENT 2
 #define PROCFS_ENOMEM 12
 #define PROCFS_ENOTDIR 20
-#define PROCFS_CONTENT_MAX 4096U
+#define PROCFS_CONTENT_MAX 16384U
 #define PROCFS_TICK_HZ 100U
 
 enum procfs_entry {

@@ -12,7 +12,7 @@
 #define AHCI_TIMEOUT 10000000U
 #define AHCI_CONTROLLER_MAX 8U
 /* Keep one block registry slot available for the Live RAM disk. */
-#define AHCI_DISK_MAX (BLOCK_DEVICE_MAX - 1U)
+#define AHCI_DISK_MAX 7U
 #define AHCI_CAP 0x00U
 #define AHCI_GHC 0x04U
 #define AHCI_PI 0x0cU
