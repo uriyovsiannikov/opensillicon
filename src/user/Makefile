@@ -335,3 +335,21 @@ $(BUILD_DIR)/tests/newfs_guest.o: src/tests/newfs_guest.c | $(BUILD_DIR)
 
 $(BUILD_DIR)/tests/newfs_guest.elf: $(BUILD_DIR)/tests/newfs_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/coreutils/gpart.o: src/user/coreutils/gpart.c src/user/storage/storage.h
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/gpart.elf: $(BUILD_DIR)/coreutils/gpart.o \
+		$(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o \
+		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o \
+		$(BUILD_DIR)/coreutils/gpart.o $(BUILD_DIR)/storage/gpt_write.o \
+		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/tests/gpart_guest.o: src/tests/gpart_guest.c | $(BUILD_DIR)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/tests/gpart_guest.elf: $(BUILD_DIR)/tests/gpart_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@

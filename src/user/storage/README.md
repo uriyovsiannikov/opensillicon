@@ -16,3 +16,23 @@ independent Python formatter and injects write/flush failures. Native regression
 `python3 src/tests/newfs_qemu.py` builds a temporary Live test image, runs the
 real utility in QEMU, checks preview leaves data untouched, checks mounted-root
 protection, and compares the resulting disk image with the Python formatter.
+
+`gpart bootlayout [-N | -F] [-e esp-MiB] /dev/ada0` prepares a GPT with an EFI
+System Partition and a SilliconFS partition. The default ESP is 256 MiB; the
+minimum supported ESP and root sizes are each 64 MiB. Partition starts are
+aligned to 1 MiB and the root size is a multiple of 4096. Preview is the default;
+-F authorizes replacing both existing GPT copies and the protective MBR.
+The tool accepts only whole SATA device names, obtains distinct UUIDs from
+/dev/urandom, and aborts without writes if randomness is unavailable.
+
+The backup GPT is flushed before the primary, both copies are read back, then
+the protective MBR is written, flushed and verified. Failures stop the operation;
+replacing an existing layout is not a power-loss-atomic operation. Partition
+device nodes are currently discovered at boot, so reboot after using this tool.
+Neither FAT32 nor SilliconFS is formatted by gpart. The project's SilliconFS GPT
+type is 53494c46-5300-4000-8000-4f50454e5349.
+
+`sh src/tests/gpt_write.sh` checks 512/4096-byte sectors, injected failures,
+readback mismatches and independent sgdisk validation. Native end-to-end check:
+`python3 src/tests/gpart_qemu.py` creates GPT in a temporary guest disk, verifies
+it with sgdisk, reboots, and formats the discovered root partition with newfs.

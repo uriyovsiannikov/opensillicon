@@ -1,4 +1,6 @@
 """Run from repository root. All formatting targets temporary images."""
+import sys
+sys.dont_write_bytecode=True
 import importlib.util, os, pathlib, re, subprocess, tempfile, time
 root=pathlib.Path.cwd()
 subprocess.run(['make','-j8','live-iso','src/build/tests/newfs_guest.elf','src/build/populate_root'],check=True)

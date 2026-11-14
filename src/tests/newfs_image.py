@@ -1,3 +1,5 @@
+import sys
+sys.dont_write_bytecode=True
 import importlib.util, pathlib, subprocess, sys, tempfile
 spec=importlib.util.spec_from_file_location('formatter','src/tools/packers/mksilliconfs.py')
 formatter=importlib.util.module_from_spec(spec);spec.loader.exec_module(formatter)
