@@ -486,13 +486,13 @@ ahci_discover(const struct pci_device_info *controller)
 		state->supports_flush_ext = (identify[83] & (1U << 13)) != 0;
 		struct block_device *device = &disks[disk_count];
 		*device = (struct block_device){
-			.name = "ahci0",
+			.name = "ada0",
 			.logical_sector_size = state->sector_size,
 			.sector_count = state->sector_count,
 			.context = state,
 			.operations = &operations
 		};
-		device->name[4] = (char)('0' + disk_count);
+		device->name[3] = (char)('0' + disk_count);
 		state->initialized = true;
 		error = block_device_register(device);
 		if (error != 0) {

@@ -185,6 +185,10 @@ mount_system_root(const struct limine_file *live_root)
 		klog("\n");
 		kernel_halt();
 	}
+	if (live_root != NULL)
+		live_block_device.mounted = true;
+	else
+		ahci_root_device->mounted = true;
 	error = vfs_replace_root(disk_root);
 	vnode_put(disk_root);
 	if (error != 0) {

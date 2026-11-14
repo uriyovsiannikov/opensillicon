@@ -896,7 +896,8 @@ file_seek(void *context, uint64_t current, int64_t offset, int whence,
 		*result = 0;
 		return 0;
 	}
-	if (file->node->type != VNODE_REGULAR)
+	if (file->node->type != VNODE_REGULAR &&
+	    !(file->node->type == VNODE_DEVICE && file->node->operations->seekable))
 		return -VFS_ESPIPE;
 	switch (whence) {
 	case VFS_SEEK_SET:

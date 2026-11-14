@@ -25,6 +25,8 @@ struct block_device {
 	const struct block_device_operations *operations;
 	void *context;
 	bool registered;
+	/* Raw device writes must not bypass a mounted filesystem. */
+	bool mounted;
 };
 
 int block_device_register(struct block_device *device);

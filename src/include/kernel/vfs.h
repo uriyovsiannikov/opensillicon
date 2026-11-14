@@ -48,6 +48,8 @@ struct vfs_dirent {
 };
 
 struct vnode_operations {
+	/* Device nodes opt into byte-offset seeking explicitly. */
+	bool seekable;
 	int (*lookup)(struct vnode *directory, const char *name, size_t name_length,
 	    struct vnode **result);
 	int (*create)(struct vnode *directory, const char *name,

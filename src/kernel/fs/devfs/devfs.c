@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "kernel/devfs.h"
+#include "kernel/block.h"
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/random.h"
@@ -21,7 +23,8 @@ enum devfs_device {
 	DEVFS_NULL,
 	DEVFS_ZERO,
 	DEVFS_RANDOM,
-	DEVFS_URANDOM
+	DEVFS_URANDOM,
+	DEVFS_DISK
 };
 
 struct devfs_node {
@@ -29,6 +32,7 @@ struct devfs_node {
 	struct devfs_node *children;
 	struct devfs_node *next;
 	enum devfs_device device;
+	struct block_device *block;
 	char name[VFS_NAME_MAX + 1];
 };
 
@@ -45,6 +49,48 @@ static const struct vnode_operations devfs_operations = {
 	.readdir = devfs_readdir,
 	.destroy = devfs_destroy
 };
+
+static const struct vnode_operations devfs_disk_operations = {
+	.seekable = true,
+	.read = devfs_read,
+	.write = devfs_write,
+	.destroy = devfs_destroy,
+};
+
+/* Raw disk I/O follows sector boundaries; callers need not align buffers.
+ * Never perform a read/modify/write of neighbouring bytes on their behalf. */
+static int
+devfs_disk_io(struct devfs_node *node, uint64_t offset, void *buffer,
+	size_t length, size_t *transferred, bool write)
+{
+	struct block_device *device = node->block;
+	uint64_t size = device->sector_count * device->logical_sector_size;
+	size_t sector = device->logical_sector_size;
+	*transferred = 0;
+	if (length == 0) return 0;
+	if (offset % sector != 0 || length % sector != 0) return -EINVAL;
+	if (write && device->mounted) return -EBUSY;
+	if (offset >= size) return write ? -ENOSPC : 0;
+	if (length > size - offset) length = (size_t)(size - offset);
+	/* block_read/write require sector-aligned buffers. */
+	void *allocation = kheap_alloc(4096U + 4095U);
+	if (allocation == NULL) return -ENOMEM;
+	void *bounce = (void *)(((uintptr_t)allocation + 4095U) & ~(uintptr_t)4095U);
+	int error = 0;
+	while (*transferred < length) {
+		uint8_t *bytes = (uint8_t *)buffer + *transferred;
+		if (write) memcpy(bounce, bytes, sector);
+		error = write ? block_write(device, offset / sector, 1, bounce) :
+		    block_read(device, offset / sector, 1, bounce);
+		if (error != 0) break;
+		if (!write) memcpy(bytes, bounce, sector);
+		*transferred += sector;
+		offset += sector;
+	}
+	(void)kheap_free(allocation);
+	/* Report completed sectors as a short transfer after a later failure. */
+	return *transferred != 0 ? 0 : error;
+}
 
 static struct devfs_node *
 devfs_from_vnode(struct vnode *vnode)
@@ -156,6 +202,8 @@ devfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 			return -11;
 		*read_length = length;
 		return 0;
+	case DEVFS_DISK:
+		return devfs_disk_io(node, offset, buffer, length, read_length, false);
 	case DEVFS_DIRECTORY:
 		return -DEVFS_EINVAL;
 	}
@@ -188,6 +236,8 @@ devfs_write(struct vnode *vnode, uint64_t offset, const void *buffer,
 	case DEVFS_RANDOM:
 	case DEVFS_URANDOM:
 		return -DEVFS_EINVAL;
+	case DEVFS_DISK:
+		return devfs_disk_io(node, offset, (void *)buffer, length, write_length, true);
 	case DEVFS_DIRECTORY:
 		return -DEVFS_EINVAL;
 	}
@@ -249,6 +299,20 @@ devfs_create_root(void)
 			vnode_put(&root->vnode);
 			return NULL;
 		}
+		*tail = child;
+		tail = &child->next;
+	}
+	for (i = 0; i < block_device_count(); i++) {
+		struct block_device *block = block_device_at(i);
+		struct devfs_node *child = devfs_allocate(block->name, DEVFS_DISK);
+		if (child == NULL) {
+			vnode_put(&root->vnode);
+			return NULL;
+		}
+		child->block = block;
+		child->vnode.operations = &devfs_disk_operations;
+		child->vnode.mode = 0600U;
+		child->vnode.size = block->sector_count * block->logical_sector_size;
 		*tail = child;
 		tail = &child->next;
 	}

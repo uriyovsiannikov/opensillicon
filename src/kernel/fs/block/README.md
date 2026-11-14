@@ -2,7 +2,7 @@ The block layer provides read and write access to block devices for filesystem c
 
 AHCI disk discovery runs during PCI enumeration before selecting the root
 filesystem. It scans SATA ports on up to eight AHCI controllers and registers
-up to seven disks as ahci0 through ahci6, each with independent command and DMA
+up to seven disks as ada0 through ada6, each with independent command and DMA
 storage. One registry slot remains available for the Live RAM disk ram0.
 
 Live boot mounts ram0 and exposes detected SATA disks through /proc/disks and
