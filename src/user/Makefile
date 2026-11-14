@@ -232,9 +232,13 @@ $(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS
 
 NANO_SOURCES := $(shell find src/user/thirdparty/nano/src -type f ! -path '*/.git/*'; find src/user/thirdparty/nano -maxdepth 1 -type f ! -path '*/.git/*')
 
-$(BUILD_DIR)/nano/nano: $(NANO_SOURCES) src/tools/builders/build_nano.sh $(LIBOS_ARCHIVE) \
+NCURSES_DIR := $(BUILD_DIR)/nano/ncurses
+NCURSES_ARCHIVE := $(NCURSES_DIR)/lib/libncurses.a
+
+$(BUILD_DIR)/nano/nano $(NCURSES_ARCHIVE) &: $(NANO_SOURCES) src/tools/builders/build_nano.sh $(LIBOS_ARCHIVE) \
 		$(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
 	sh src/tools/builders/build_nano.sh
+	touch $(NCURSES_ARCHIVE)
 
 HTOP_SOURCES := $(wildcard src/user/thirdparty/htop/*.[ch] \
 	src/user/thirdparty/htop/generic/*.[ch] src/user/thirdparty/htop/unsupported/*.[ch] \
@@ -365,12 +369,19 @@ $(BUILD_DIR)/tests/copy_guest.o: src/tests/copy_guest.c src/user/storage/install
 $(BUILD_DIR)/tests/copy_guest.elf: $(BUILD_DIR)/tests/copy_guest.o $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_ARCHIVE) -o $@
 
-$(BUILD_DIR)/scinstall/scinstall.o: src/user/scinstall/scinstall.c src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
+$(BUILD_DIR)/scinstall/scinstall.o: src/user/scinstall/scinstall.c src/user/scinstall/ui.h src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/scinstall/scinstall.elf: $(BUILD_DIR)/scinstall/scinstall.o $(BUILD_DIR)/storage/install_copy.o \
-		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/newfs.o \
-		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o \
-		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/newfs.o $(LIBOS_ARCHIVE) -o $@
+$(BUILD_DIR)/scinstall/ui.o: src/user/scinstall/ui.c src/user/scinstall/ui.h $(NCURSES_ARCHIVE)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -I$(NCURSES_DIR)/include -c $< -o $@
+
+SCINSTALL_OBJECTS := $(BUILD_DIR)/scinstall/scinstall.o $(BUILD_DIR)/scinstall/ui.o \
+	$(addprefix $(BUILD_DIR)/storage/,install_copy.o encoding.o device.o gpt_write.o newfs.o)
+
+$(BUILD_DIR)/scinstall/scinstall.elf: $(SCINSTALL_OBJECTS) \
+		$(NCURSES_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
+		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o $(SCINSTALL_OBJECTS) \
+		-Wl,--start-group $(NCURSES_ARCHIVE) $(LIBOS_ARCHIVE) -Wl,--end-group -lgcc -o $@

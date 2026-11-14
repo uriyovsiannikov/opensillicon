@@ -14,19 +14,23 @@ system. It replaces the selected disk's existing partition table and contents.
 Installing into existing partitions or alongside another OS is not supported.
 NVMe, USB storage and BIOS boot are not supported by this installation path.
 
-1. Select a disk such as `ada0` or `/dev/ada0`. Check its displayed capacity,
-   model and serial number. Mounted disks cannot be selected for raw writes.
+1. Use Up/Down to highlight a disk and Enter to review it. Check the capacity,
+   model and serial number. The menu marks mounted disks as in use and keeps
+   them unavailable for installation. Esc or Q exits the disk menu.
 2. Review the partition plan and source inventory. The installer checks the
    boot payloads, available space, disk flush support and source files before
    asking for confirmation.
 3. Enter the exact confirmation, such as `ERASE /dev/ada0`. Any other answer
-   cancels without writing partition or filesystem data. `q` cancels at the
-   disk selection prompt.
-4. Wait for GPT creation, root formatting, verified file copying, boot setup,
-   journal saving, unmount and final flush. Only `INSTALLATION COMPLETE` means
-   all stages succeeded.
-5. Remove the Live USB and boot the installed disk. Answer `y` to reboot, or
-   return to the Live console with `n`.
+   cancels without writing partition or filesystem data. Esc also cancels.
+4. The status screen shows GPT creation, root formatting, copy progress,
+   boot setup, journal saving, unmount and final flush. Only
+   `INSTALLATION COMPLETE` means all stages succeeded.
+5. After installation, select **Reboot** or **Return to console** with
+   Left/Right and Enter. Remove the Live USB before booting the installed disk.
+
+The interactive interface uses the ncurses library shared with nano and htop.
+`scinstall --text` uses line prompts. The installer also uses line prompts if
+it cannot initialize the terminal interface.
 
 `scinstall -N /dev/ada0` performs preflight and displays the plan without
 partition or filesystem writes; it requires root in the Live environment.

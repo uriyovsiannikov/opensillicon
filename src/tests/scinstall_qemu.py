@@ -89,17 +89,21 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
                 result=json.loads(self.file.readline())
                 if 'return' in result:return result['return']
                 if 'error' in result:raise RuntimeError(result)
+        def key(self,key):
+            self.command('human-monitor-command',{'command-line':'sendkey '+key});time.sleep(.12)
         def type(self,text):
             for char in text+'\n':
                 key={' ':'spc','/':'slash','\n':'ret','.':'dot','-':'minus','_':'shift-minus'}.get(char,char)
                 if char.isupper():key='shift-'+char.lower()
-                self.command('human-monitor-command',{'command-line':'sendkey '+key});time.sleep(.12)
+                self.key(key)
         def close(self):self.file.close();self.socket.close()
     # A wrong confirmation must leave every byte on both disks unchanged.
     p=start(True)
     try:
-        wait(p,'Target disk (');keys=Input();keys.type('ada0')
-        text=wait(p,'Confirmation:');assert 'INSTALL001' in text and '/dev/ada1' in text
+        wait(p,'Select a target SATA disk');keys=Input()
+        text=wait(p,'INSTALL001');assert '/dev/ada1' in text
+        keys.key('down');wait(p,'GUARD001');keys.key('up');keys.key('ret')
+        wait(p,'ERASE /dev/ada0')
         keys.type('cancel');wait(p,'Installation cancelled; no disk writes.')
         wait(p,'/% ');keys.type('scinstall -N /dev/ada0');wait(p,'root required')
         keys.close()
@@ -108,9 +112,9 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
     print('Cancelled installation and user-console restoration: PASS',flush=True)
     p=start(True)
     try:
-        wait(p,'Target disk (');keys=Input();keys.type('ada0');wait(p,'Confirmation:')
+        wait(p,'Select a target SATA disk');keys=Input();keys.key('ret');wait(p,'ERASE /dev/ada0')
         keys.type('ERASE /dev/ada0');wait(p,'INSTALLATION COMPLETE: /dev/ada0',600)
-        wait(p,'Reboot now?');keys.type('n');wait(p,'/% ')
+        wait(p,'Return to console');keys.key('ret');wait(p,'/% ')
         keys.type('poweroff');p.wait(timeout=20);assert p.returncode==0;keys.close()
     finally:
         print(log.read_text(errors='replace')[-5000:],flush=True);stop(p)

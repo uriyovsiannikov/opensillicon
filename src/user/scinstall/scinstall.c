@@ -14,6 +14,9 @@
 #include "common/uuid.h"
 #include "../storage/storage.h"
 #include "../storage/install_copy.h"
+#include "ui.h"
+
+#define SATA_DISK_LIMIT 7
 #define TARGET "/mnt"
 static FILE *journal;
 static const char *stage = "preflight";
@@ -22,9 +25,15 @@ note(const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	vprintf(format, args);
+	if (ui_active()) {
+		char text[512];
+		vsnprintf(text, sizeof(text), format, args);
+		ui_note(text);
+	} else {
+		vprintf(format, args);
+		fflush(stdout);
+	}
 	va_end(args);
-	fflush(stdout);
 	if (journal) {
 		va_start(args, format);
 		vfprintf(journal, format, args);
@@ -92,30 +101,55 @@ directory(const char *path, unsigned mode)
 		return -errno;
 	return S_ISDIR(st.st_mode) ? 0 : -ENOTDIR;
 }
-static void
-list_disks(void)
+static size_t
+read_disks(struct disk_choice disks[SATA_DISK_LIMIT])
 {
-	puts("Available SATA disks:");
-	for (unsigned i = 0; i < 7; i++) {
-		char path[32], model[41] = {0}, ident[256] = {0};
-		snprintf(path, sizeof(path), "/dev/ada%u", i);
-		struct storage_device d;
-		if (storage_open(&d, path, 0))
+	size_t count = 0;
+	for (unsigned i = 0; i < SATA_DISK_LIMIT; i++) {
+		struct disk_choice *disk = &disks[count];
+		snprintf(disk->path, sizeof(disk->path), "/dev/ada%u", i);
+		struct storage_device device;
+		if (storage_open(&device, disk->path, 0))
 			continue;
 		struct os_disk_partinfo info;
-		if (ioctl(d.fd, DIOCGPARTINFO, &info) == 0) {
-			(void)ioctl(d.fd, DIOCGMODEL, model);
-			(void)ioctl(d.fd, DIOCGIDENT, ident);
-			printf("  %s  %llu MiB  %s  serial=%s%s\n", path,
-			    (unsigned long long)(d.io.bytes / (1024 * 1024)),
-			    model, ident,
-			    (info.flags & OS_DISK_RAW_WRITE_ALLOWED)
-				? ""
-				: "  [IN USE]");
+		if (ioctl(device.fd, DIOCGPARTINFO, &info) == 0) {
+			(void)ioctl(device.fd, DIOCGMODEL, disk->model);
+			(void)ioctl(device.fd, DIOCGIDENT, disk->serial);
+			disk->mib = device.io.bytes / (1024 * 1024);
+			disk->writable = (info.flags & OS_DISK_RAW_WRITE_ALLOWED) &&
+			    !(info.flags & OS_DISK_PARTITION);
+			count++;
 		}
-		storage_close(&d);
+		storage_close(&device);
 	}
+	return count;
 }
+
+static int
+choose_disk(char path[32])
+{
+	struct disk_choice disks[SATA_DISK_LIMIT] = {0};
+	size_t count = read_disks(disks);
+	if (ui_active()) {
+		int selected = ui_choose_disk(disks, count);
+		if (selected < 0)
+			return 1;
+		strcpy(path, disks[selected].path);
+		return 0;
+	}
+	puts("Available SATA disks:");
+	for (size_t i = 0; i < count; i++)
+		printf("  %s  %llu MiB  %s  serial=%s%s\n", disks[i].path,
+		    disks[i].mib, disks[i].model, disks[i].serial,
+		    disks[i].writable ? "" : "  [IN USE]");
+	fputs("Target disk (ada0 or /dev/ada0; q to cancel): ", stdout);
+	fflush(stdout);
+	char answer[128];
+	if (line(answer, sizeof(answer)) || !strcmp(answer, "q"))
+		return 1;
+	return disk_path(answer, path);
+}
+
 static int
 boot_sources(void)
 {
@@ -179,7 +213,9 @@ progress(void *context, const char *path, size_t done, size_t total)
 	    (fprintf(journal, "verified %s\n", path) < 0 ||
 		fflush(journal) != 0))
 		return -EIO;
-	if (done % 20 == 0 || done == total) {
+	if (ui_active()) {
+		ui_progress(done, total);
+	} else if (done % 20 == 0 || done == total) {
 		printf("Copy verified: %u/%u entries\n", (unsigned)done,
 		    (unsigned)total);
 		fflush(stdout);
@@ -239,8 +275,9 @@ int
 main(int argc, char **argv)
 {
 	int preview = argc == 3 && !strcmp(argv[1], "-N");
-	if (argc != 1 && !preview) {
-		fputs("usage: scinstall [-N /dev/ada0]\n", stderr);
+	bool text = argc == 2 && !strcmp(argv[1], "--text");
+	if (argc != 1 && !preview && !text) {
+		fputs("usage: scinstall [--text | -N /dev/ada0]\n", stderr);
 		return 2;
 	}
 	if (geteuid() != 0) {
@@ -260,30 +297,20 @@ main(int argc, char **argv)
 		perror("scinstall log");
 		return 1;
 	}
+	if (!preview && !text)
+		(void)ui_open();
 	note("OpenSillicon Installer - UEFI/GPT, whole SATA disk\n");
-	note(
-	    "All data on the selected disk will be replaced. Log: /tmp/scinstall.log\n");
+	note("All data on the selected disk will be replaced.\n");
 	char answer[128], path[32];
-	if (preview) {
-		if (disk_path(argv[2], path)) {
-			fclose(journal);
-			return 2;
-		}
-	} else {
-		list_disks();
-		fputs("Target disk (ada0 or /dev/ada0; q to cancel): ", stdout);
-		fflush(stdout);
-		if (line(answer, sizeof(answer)) || !strcmp(answer, "q")) {
-			note("Installation cancelled; no disk writes.\n");
-			fclose(journal);
-			return 0;
-		}
-		if (disk_path(answer, path)) {
-			note("Invalid disk name; no disk writes.\n");
-			fclose(journal);
-			return 2;
-		}
+	int selection = preview ? disk_path(argv[2], path) : choose_disk(path);
+	if (selection) {
+		ui_close();
+		note(selection < 0 ? "Invalid disk name; no disk writes.\n" :
+		    "Installation cancelled; no disk writes.\n");
+		fclose(journal);
+		return selection < 0 ? 2 : 0;
 	}
+	ui_reset();
 	struct storage_device d = {.fd = -1};
 	struct os_disk_partinfo original;
 	char model[41] = {0}, ident[256] = {0};
@@ -352,14 +379,22 @@ main(int argc, char **argv)
 	}
 	char confirmation[64];
 	snprintf(confirmation, sizeof(confirmation), "ERASE %s", path);
-	note("To erase this disk, type: %s\nConfirmation: ", confirmation);
-	if (line(answer, sizeof(answer)) || strcmp(answer, confirmation)) {
+	bool confirmed;
+	if (ui_active()) {
+		confirmed = ui_confirm(confirmation);
+	} else {
+		note("To erase this disk, type: %s\nConfirmation: ", confirmation);
+		confirmed = !line(answer, sizeof(answer)) && !strcmp(answer, confirmation);
+	}
+	if (!confirmed) {
+		ui_close();
 		note("Installation cancelled; no disk writes.\n");
 		storage_close(&d);
 		install_tree_free(&tree);
 		fclose(journal);
 		return 0;
 	}
+	note("Rechecking source and target...\n");
 	error = install_tree_recheck(&tree);
 	if (error)
 		goto failed;
@@ -447,10 +482,18 @@ main(int argc, char **argv)
 	note(
 	    "INSTALLATION COMPLETE: %s\nRemove the Live USB before booting the installed system.\n",
 	    path);
-	fputs("Reboot now? [y/N]: ", stdout);
-	fflush(stdout);
-	if (!line(answer, sizeof(answer)) &&
-	    (!strcmp(answer, "y") || !strcmp(answer, "Y"))) {
+	bool reboot_now;
+	if (ui_active()) {
+		reboot_now = ui_reboot();
+		ui_close();
+		note("Installation complete on %s.\n", path);
+	} else {
+		fputs("Reboot now? [y/N]: ", stdout);
+		fflush(stdout);
+		reboot_now = !line(answer, sizeof(answer)) &&
+		    (!strcmp(answer, "y") || !strcmp(answer, "Y"));
+	}
+	if (reboot_now) {
 		stage = "reboot";
 		char *reboot[] = {"/bin/reboot", NULL};
 		(void)run(reboot);
@@ -465,6 +508,10 @@ failed:
 		note(
 		    "Target remains mounted at %s; close files and retry umount (errno %d).\n",
 		    TARGET, errno);
+	if (ui_active()) {
+		ui_wait();
+		ui_close();
+	}
 	if (d.fd >= 0)
 		storage_close(&d);
 	install_tree_free(&tree);
