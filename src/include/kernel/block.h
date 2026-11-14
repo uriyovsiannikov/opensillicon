@@ -20,6 +20,7 @@ struct block_device_operations {
 
 struct block_device {
 	char name[BLOCK_DEVICE_NAME_MAX + 1];
+	char model[41], ident[21];
 	uint32_t logical_sector_size;
 	uint64_t sector_count;
 	const struct block_device_operations *operations;

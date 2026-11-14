@@ -2142,7 +2142,8 @@ syscall_dispatch(struct interrupt_frame *frame)
 			}
 			if (frame->rsi == OS_DIOCGSECTORSIZE ||
 			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH ||
-			    frame->rsi == OS_DIOCGPARTINFO || frame->rsi == OS_DIOCREREADGPT) {
+			    frame->rsi == OS_DIOCGPARTINFO || frame->rsi == OS_DIOCREREADGPT ||
+			    frame->rsi == OS_DIOCGMODEL || frame->rsi == OS_DIOCGIDENT) {
 				if (frame->rsi == OS_DIOCREREADGPT) {
 					struct os_credentials credentials;
 					if (!process_current_credentials(&credentials) || credentials.effective_uid != 0) {
@@ -2150,13 +2151,15 @@ syscall_dispatch(struct interrupt_frame *frame)
 					}
 				}
 
-				union { uint32_t sector; int64_t media; struct os_disk_partinfo part; } value = {0};
+				union { uint32_t sector; int64_t media; struct os_disk_partinfo part; char text[256]; } value = {0};
 				void *payload = frame->rsi == OS_DIOCGSECTORSIZE ?
 				    (void *)&value.sector : frame->rsi == OS_DIOCGPARTINFO ?
-				    (void *)&value.part : (void *)&value.media;
+				    (void *)&value.part : (frame->rsi == OS_DIOCGMODEL || frame->rsi == OS_DIOCGIDENT) ?
+				    (void *)value.text : (void *)&value.media;
 				size_t size = frame->rsi == OS_DIOCGSECTORSIZE ? 4 :
 				    frame->rsi == OS_DIOCGMEDIASIZE ? 8 :
-				    frame->rsi == OS_DIOCGPARTINFO ? sizeof(value.part) : 0;
+				    frame->rsi == OS_DIOCGPARTINFO ? sizeof(value.part) :
+				    frame->rsi == OS_DIOCGMODEL ? 41 : frame->rsi == OS_DIOCGIDENT ? 256 : 0;
 				struct address_space *space = vmm_active_address_space();
 				if (size && !vmm_validate_user_write(space, frame->rdx, size)) {
 					syscall_error(frame, EFAULT);

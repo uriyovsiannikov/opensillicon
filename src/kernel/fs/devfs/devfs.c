@@ -75,6 +75,15 @@ devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
 	}
 	if (request == OS_DIOCGFLUSH) return block_flush(disk);
 	if (argument == NULL) return -EINVAL;
+	if (request == OS_DIOCGMODEL || request == OS_DIOCGIDENT) {
+		struct block_device *whole = disk->parent ? disk->parent : disk;
+		const char *text = request == OS_DIOCGMODEL ? whole->model : whole->ident;
+		size_t size = request == OS_DIOCGMODEL ? 41 : 256;
+		memset(argument, 0, size);
+		if (!text[0]) text = whole->name;
+		memcpy(argument, text, strlen(text));
+		return 0;
+	}
 	if (request == OS_DIOCGPARTINFO) {
 		struct os_disk_partinfo *info = argument;
 		memset(info, 0, sizeof(*info));

@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "arch/x86_64/ahci.h"
+#include "arch/x86_64/ata_identify.h"
 #include "kernel/errno.h"
 #include "kernel/dma.h"
 #include "kernel/pmm.h"
@@ -492,6 +493,8 @@ ahci_discover(const struct pci_device_info *controller)
 			.context = state,
 			.operations = &operations
 		};
+		ata_identify_text(identify, 27, 40, device->model);
+		ata_identify_text(identify, 10, 20, device->ident);
 		device->name[3] = (char)('0' + disk_count);
 		state->initialized = true;
 		error = block_device_register(device);

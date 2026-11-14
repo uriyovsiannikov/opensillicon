@@ -40,6 +40,7 @@ int main(void)
  uint64_t position;
  size_t amount;
  unsigned char bytes[8193];
+ strcpy(disk.model,"Test Disk");strcpy(disk.ident,"SER123");
  assert(block_device_register(&disk)==0);
  assert(block_device_register(&ram)==0);
  struct block_device partition={0};
@@ -91,6 +92,9 @@ int main(void)
  assert(fd_object_write(file,bytes+1,4096,&amount)==0 && amount==4096);
  fd_object_put(file);
  assert(vfs_open("/dev/ada0p1",VFS_O_RDONLY,0,&file)==0);
+ char model[41],ident[256];
+ assert(file->operations->ioctl(file->context,OS_DIOCGMODEL,model)==0 && strcmp(model,"Test Disk")==0);
+ assert(file->operations->ioctl(file->context,OS_DIOCGIDENT,ident)==0 && strcmp(ident,"SER123")==0);
  struct os_disk_partinfo info;
  assert(file->operations->ioctl(file->context,OS_DIOCGPARTINFO,&info)==0);
  assert(info.media_bytes==4096 && info.first_sector==8 && info.partition_number==1);
