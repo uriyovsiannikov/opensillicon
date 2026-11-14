@@ -36,3 +36,13 @@ type is 53494c46-5300-4000-8000-4f50454e5349.
 readback mismatches and independent sgdisk validation. Native end-to-end check:
 `python3 src/tests/gpart_qemu.py` creates GPT in a temporary guest disk, verifies
 it with sgdisk, reboots, and formats the discovered root partition with newfs.
+
+ESP formatting uses FAT32 with two allocation tables, FSInfo and backup boot
+records. It writes /EFI/BOOT/BOOTX64.EFI, /EFI/BOOT/limine.conf, /boot/kernel.elf
+and /boot/init.cpi; Limine can read these files without SilliconFS support.
+The writer uses 512- or 4096-byte logical sectors and one sector per cluster,
+checks FAT32's cluster-count limits, verifies metadata and file payloads, and
+publishes the primary boot record only after data has been flushed.
+`sh src/tests/esp_image.sh` checks both sector sizes with fsck.fat and mcopy,
+compares all boot files, and injects failed writes and flushes. This component
+supports UEFI; it does not install BIOS boot code.

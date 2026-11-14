@@ -29,4 +29,14 @@ struct gpt_layout {
 };
 int gpt_layout_plan(const struct storage_io *, uint32_t esp_mib, struct gpt_layout *);
 int gpt_layout_write(const struct storage_io *, uint32_t esp_mib, const uint8_t uuids[48]);
+struct esp_file {
+ void *context;
+ uint64_t bytes;
+ int (*read)(void *, uint64_t, void *, size_t);
+};
+/* File order: BOOTX64.EFI, limine.conf, kernel.elf, init.cpi. */
+struct fat32_layout { uint32_t sectors, fat_sectors, data_start, clusters; };
+int fat32_plan(const struct storage_io *, struct fat32_layout *);
+int esp_format(const struct storage_io *, uint32_t hidden_sectors, uint32_t serial,
+ const struct esp_file files[4]);
 #endif
