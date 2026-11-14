@@ -2100,12 +2100,15 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			if (frame->rsi == OS_DIOCGSECTORSIZE ||
-			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH) {
-				union { uint32_t sector; int64_t media; } value = {0};
+			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH ||
+			    frame->rsi == OS_DIOCGPARTINFO) {
+				union { uint32_t sector; int64_t media; struct os_disk_partinfo part; } value = {0};
 				void *payload = frame->rsi == OS_DIOCGSECTORSIZE ?
-				    (void *)&value.sector : (void *)&value.media;
+				    (void *)&value.sector : frame->rsi == OS_DIOCGPARTINFO ?
+				    (void *)&value.part : (void *)&value.media;
 				size_t size = frame->rsi == OS_DIOCGSECTORSIZE ? 4 :
-				    frame->rsi == OS_DIOCGMEDIASIZE ? 8 : 0;
+				    frame->rsi == OS_DIOCGMEDIASIZE ? 8 :
+				    frame->rsi == OS_DIOCGPARTINFO ? sizeof(value.part) : 0;
 				struct address_space *space = vmm_active_address_space();
 				if (size && !vmm_validate_user_write(space, frame->rdx, size)) {
 					syscall_error(frame, EFAULT);

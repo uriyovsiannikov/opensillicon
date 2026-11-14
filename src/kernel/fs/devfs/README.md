@@ -24,3 +24,8 @@ only in the syscall layer. Include <sys/disk.h> from libos to use them.
 
 Run `sh src/tests/devfs_disks.sh` for the disk node and permission regression
 checks, including 512/4096-byte sector I/O and mounted-disk protection.
+
+OpenSillicon's DIOCGPARTINFO extension returns fixed-width media geometry,
+parent name, GPT type/unique UUID and mounted/raw-write flags. It is distinct
+from FreeBSD's standard disk ioctls. installboot uses it to require an actual
+EFI System Partition and to set the FAT BPB's hidden-sector count correctly.

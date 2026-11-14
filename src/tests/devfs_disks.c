@@ -42,6 +42,9 @@ int main(void)
  unsigned char bytes[8193];
  assert(block_device_register(&disk)==0);
  assert(block_device_register(&ram)==0);
+ struct block_device partition={0};
+ assert(block_partition_register(&partition,&disk,8,8,1)==0);
+ partition.partition_uuid[0]=0x33;
  assert(vfs_init());
  root=ramfs_create_root(); assert(root);
  assert(vfs_mount("/",root)==0); vnode_put(root);
@@ -86,6 +89,15 @@ int main(void)
  assert(vfs_open("/dev/ram0",VFS_O_RDWR,0,&file)==0);
  assert(fd_object_write(file,bytes,512,&amount)==-EINVAL);
  assert(fd_object_write(file,bytes+1,4096,&amount)==0 && amount==4096);
+ fd_object_put(file);
+ assert(vfs_open("/dev/ada0p1",VFS_O_RDONLY,0,&file)==0);
+ struct os_disk_partinfo info;
+ assert(file->operations->ioctl(file->context,OS_DIOCGPARTINFO,&info)==0);
+ assert(info.media_bytes==4096 && info.first_sector==8 && info.partition_number==1);
+ assert(strcmp(info.parent,"ada0")==0 && info.uuid[0]==0x33 && (info.flags&OS_DISK_RAW_WRITE_ALLOWED));
+ disk.mounted=true;
+ assert(file->operations->ioctl(file->context,OS_DIOCGPARTINFO,&info)==0 && !(info.flags&OS_DISK_RAW_WRITE_ALLOWED));
+ disk.mounted=false;
  fd_object_put(file);
  assert(vfs_open("/dev/zero",VFS_O_RDONLY,0,&file)==0);
  assert(fd_object_seek(file,0,SEEK_SET,&position)==-ESPIPE);

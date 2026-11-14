@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/disk.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include "common/uuid.h"
 #include "../storage/storage.h"
@@ -83,6 +85,11 @@ int main(int argc,char **argv)
  }
  struct storage_device device={.fd=-1};
  if(!error)error=storage_open(&device,path,format);
+ struct os_disk_partinfo info;
+ if(!error && ioctl(device.fd,DIOCGPARTINFO,&info)!=0)error=-errno;
+ static const uint8_t esp_type[16]={0x28,0x73,0x2a,0xc1,0x1f,0xf8,0xd2,0x11,0xba,0x4b,0,0xa0,0xc9,0x3e,0xc9,0x3b};
+ if(!error && (!(info.flags&OS_DISK_PARTITION) || memcmp(info.type_uuid,esp_type,16)))error=-EINVAL;
+ if(!error && info.first_sector>UINT32_MAX)error=-EOVERFLOW;
  struct fat32_layout plan;
  if(!error)error=fat32_plan(&device.io,&plan);
  if(!error) {
@@ -93,7 +100,7 @@ int main(int argc,char **argv)
  if(!error) {
   printf("%s: FAT32 EFI partition, %llu bytes, %u-byte sectors\n",path,(unsigned long long)device.io.bytes,device.io.sector);
   printf("Installed root: PARTUUID=%s\n",id);
-  if(format)error=esp_format(&device.io,0,storage_crc32(uuid,sizeof(uuid)),files);
+  if(format)error=esp_format(&device.io,(uint32_t)info.first_sector,storage_crc32(uuid,sizeof(uuid)),files);
   else puts("Preview only. Use -F to format the EFI partition and write the boot files.");
  }
  if(device.fd>=0) { int result=storage_close(&device);if(!error)error=result; }

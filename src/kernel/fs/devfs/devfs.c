@@ -67,6 +67,22 @@ devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
 	struct block_device *disk = node->block;
 	if (request == OS_DIOCGFLUSH) return block_flush(disk);
 	if (argument == NULL) return -EINVAL;
+	if (request == OS_DIOCGPARTINFO) {
+		struct os_disk_partinfo *info = argument;
+		memset(info, 0, sizeof(*info));
+		info->media_bytes = disk->sector_count * disk->logical_sector_size;
+		info->first_sector = disk->first_sector;
+		info->partition_number = disk->partition_number;
+		if (disk->parent) {
+			info->flags |= OS_DISK_PARTITION;
+			memcpy(info->parent, disk->parent->name, strlen(disk->parent->name) + 1);
+		}
+		if (disk->mounted) info->flags |= OS_DISK_MOUNTED;
+		if (block_raw_write_allowed(disk)) info->flags |= OS_DISK_RAW_WRITE_ALLOWED;
+		memcpy(info->uuid, disk->partition_uuid, 16);
+		memcpy(info->type_uuid, disk->partition_type, 16);
+		return 0;
+	}
 	if (request == OS_DIOCGSECTORSIZE) {
 		*(uint32_t *)argument = disk->logical_sector_size;
 		return 0;
