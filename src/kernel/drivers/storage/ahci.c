@@ -116,7 +116,7 @@ wait_port_clear(struct ahci_state *state, uint32_t mask)
 
 static int
 issue_command(struct ahci_state *state, uint8_t command, uint64_t lba, uint16_t sectors,
-	bool write, bool data_command)
+	bool write, uint32_t data_bytes)
 {
 	uint8_t *fis = state->table->command_fis;
 	uint32_t i;
@@ -140,13 +140,13 @@ issue_command(struct ahci_state *state, uint8_t command, uint64_t lba, uint16_t 
 		fis[13] = (uint8_t)(sectors >> 8);
 	}
 	state->headers[0].flags = (uint16_t)(5U | (write ? (1U << 6) : 0));
-	state->headers[0].prdt_length = data_command ? 1 : 0;
+	state->headers[0].prdt_length = data_bytes ? 1 : 0;
 	state->headers[0].transferred = 0;
 	state->table->prdt[0].data_low = (uint32_t)state->buffer_physical;
 	state->table->prdt[0].data_high = (uint32_t)(state->buffer_physical >> 32);
 	state->table->prdt[0].reserved = 0;
 	state->table->prdt[0].byte_count_flags =
-	    data_command ? (state->sector_size - 1U) | (1U << 31) : 0;
+	    data_bytes ? (data_bytes - 1U) | (1U << 31) : 0;
 	mmio_write(state->port, PORT_IS, UINT32_MAX);
 	mmio_write(state->port, PORT_CI, 1U);
 	for (i = 0; i < AHCI_TIMEOUT; i++) {
@@ -162,32 +162,32 @@ issue_command(struct ahci_state *state, uint8_t command, uint64_t lba, uint16_t 
 static int
 ahci_transfer(struct ahci_state *state, uint64_t lba, uint32_t count, void *buffer, bool write)
 {
-	uint32_t i;
 	uint8_t *bytes = buffer;
+	uint32_t capacity = (uint32_t)(PAGE_SIZE / state->sector_size);
 	uint64_t flags = spinlock_lock_irqsave(&ahci_command_lock);
 	if (state->failed) {
 		spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 		return -EIO;
 	}
 
-	for (i = 0; i < count; i++) {
-		int error;
-
+	while (count != 0) {
+		uint32_t sectors = count < capacity ? count : capacity;
+		uint32_t data_bytes = sectors * state->sector_size;
 		if (write)
-			memcpy(state->dma_buffer, bytes + (size_t)i * state->sector_size,
-			    state->sector_size);
-		error = issue_command(state, write ? AHCI_CMD_WRITE_DMA_EXT :
-		    AHCI_CMD_READ_DMA_EXT, lba + i, 1, write, true);
+			memcpy(state->dma_buffer, bytes, data_bytes);
+		int error = issue_command(state, write ? AHCI_CMD_WRITE_DMA_EXT :
+		    AHCI_CMD_READ_DMA_EXT, lba, (uint16_t)sectors, write, data_bytes);
 		if (error != 0) {
-			/* A timeout or task-file error may leave the HBA using the
-			 * shared command table and data buffer. Never reuse them. */
+			/* Leave the command table and buffer alone after failure. */
 			state->failed = true;
 			spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 			return error;
 		}
 		if (!write)
-			memcpy(bytes + (size_t)i * state->sector_size, state->dma_buffer,
-			    state->sector_size);
+			memcpy(bytes, state->dma_buffer, data_bytes);
+		lba += sectors;
+		count -= sectors;
+		bytes += data_bytes;
 	}
 	spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 	return 0;
@@ -222,7 +222,7 @@ device_flush(struct block_device *device)
 	else {
 		error = issue_command(state, state->supports_flush_ext ?
 		    AHCI_CMD_FLUSH_CACHE_EXT : AHCI_CMD_FLUSH_CACHE,
-		    0, 0, false, false);
+		    0, 0, false, 0);
 		if (error != 0)
 			state->failed = true;
 	}
@@ -450,7 +450,7 @@ ahci_discover(const struct pci_device_info *controller)
 		mmio_write(port, PORT_CMD, mmio_read(port, PORT_CMD) | PORT_CMD_FRE);
 		mmio_write(port, PORT_CMD, mmio_read(port, PORT_CMD) | PORT_CMD_ST);
 		state->sector_size = 512;
-		if (issue_command(state, AHCI_CMD_IDENTIFY, 0, 0, false, true) != 0) {
+		if (issue_command(state, AHCI_CMD_IDENTIFY, 0, 0, false, sizeof(identify)) != 0) {
 			if (!release_command_dma(state, port, dma_physical))
 				return disk_count - before;
 			continue;
