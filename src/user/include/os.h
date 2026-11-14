@@ -115,6 +115,7 @@ long u_mkdir(const char *path, uint32_t mode);
 long u_unlink(const char *path, int directory);
 long u_close(uint64_t fd);
 long u_stat_path(const char *path, struct u_stat *status);
+int u_find_command(const char *name, char *path, size_t capacity);
 long u_readdir(uint64_t fd, struct u_dirent *entry);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_udp_socket(uint64_t family, uint64_t type, uint64_t protocol);

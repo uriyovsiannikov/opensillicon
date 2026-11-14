@@ -23,17 +23,19 @@ machine, bind the server to its LAN address and point the client there once:
 pkg repo http://192.168.1.50:8080
 pkg update
 pkg add hello
-/tmp/pkg-1000/bin/hello
+hello
 pkg list
 pkg verify hello
+pkg delete hello
 ```
 
 `pkg repo` writes a single URL to the active prefix's `etc/pkg.conf`.
 In the normal OpenSillicon console (UID 1000), the default prefix is
 `/tmp/pkg-1000` and the file is `/tmp/pkg-1000/etc/pkg.conf`. The directory
 is private to the user. On an installed system it persists on disk; in
-Live mode it lives in RAM. Run installed programs from the prefix's
-`bin` directory.
+Live mode it lives in RAM. The shell and `which` look in the default user
+prefix's `bin` directory after `/bin`. Use an explicit path for programs
+installed under a custom `-r` prefix.
 
 Root defaults to the system prefix and `/etc/pkg.conf`. OpenSillicon looks
 for a config inside the chosen prefix first, then in `/etc/pkg.conf`.
@@ -99,20 +101,22 @@ also have to match the index's archive size, SHA-256, name, and version.
 Existing destination files are never overwritten. VFS now supports
 `O_CREAT | O_EXCL`, which the client uses for records and payload files.
 
-Records live at `/var/db/pkg/<name>.db`. A complete manifest with state
-`incomplete` is written before copying files; the state changes to `installed`
-only after all writes and permission changes succeed. `pkg list`, `info`,
-and `verify` expose incomplete state. Verification checks file length,
-SHA-256, and permission bits. Filesystem writes currently have no userland
-`fsync` API, so this is not a power-loss-atomic transaction.
+Records live at `var/db/pkg/<name>.db` under the installation prefix.
+The client flushes the manifest before writing payloads, then flushes the
+payloads before marking the record installed. These checkpoints allow
+recovery, with no guarantee of atomicity across the whole operation.
+`pkg list` and `pkg info` show incomplete installations and pending deletions.
 
-Version 1 installs new packages only. It has no dependency resolution,
-package replacement, removal, rollback, or post-install hooks. The kernel's
-`unlink`/`rename` operations are not available yet. An interrupted installation
-keeps its record and any written files rather than silently claiming success;
-a repeat install refuses that name. Recovery currently requires restoring a
-known-good disk image or offline filesystem maintenance. Old JSON records
-from the previous placeholder tool are not imported.
+`pkg recover hello` resumes an interrupted installation if the repository
+still serves the original archive. Use `pkg recover ./file.spkg` for a local
+copy. Recovery reuses complete files and can finish partially written files
+when their bytes match the archive and they still have the installer's private
+file mode.
+
+`pkg delete hello` checks each present file against the manifest before
+removing any files. It refuses modified files and leaves directories in place.
+Repeat the same command after an interrupted deletion. Package replacement,
+dependency resolution and post-install hooks are future work.
 
 The transport is plain HTTP for a trusted development host/LAN. SHA-256
 checks detect damaged or inconsistent downloads; this version has no signed
@@ -174,7 +178,7 @@ Each file follows as a 232-byte header and exactly `size` payload bytes:
 | 200 | 32 | Binary SHA-256 of payload |
 
 A database record uses magic `OSDB0001`, replaces the archive length with
-installation state (`0` pending, `1` installed), and retains the package and
+installation state (`0` pending, `1` installed, `2` deleting), and retains the package and
 file headers without payload bytes. Trailing bytes and conflicting paths
 are rejected in both formats.
 

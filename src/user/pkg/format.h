@@ -14,6 +14,7 @@
 #define PKG_INDEX_MAX (256U * 1024U)
 #define PKG_ARCHIVE_MAGIC "OSPKG001"
 #define PKG_RECORD_MAGIC "OSDB0001"
+enum pkg_state { PKG_INCOMPLETE, PKG_INSTALLED, PKG_DELETING };
 struct pkg_file {
 	const char *path;
 	uint32_t mode, size;

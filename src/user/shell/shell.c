@@ -307,16 +307,11 @@ command_external(size_t argc, const char *const argv[], int background,
 				print_error("exec", command);
 				return;
 			}
-		} else {
-			if (u_strlen(command) + 6 >= sizeof(path)) {
-				print_error("exec", command);
-				return;
-			}
-			path[0] = '/'; path[1] = 'b'; path[2] = 'i'; path[3] = 'n';
-			path[4] = '/';
-			for (size_t i = 0; command[i] != '\0'; i++)
-				path[5 + i] = command[i];
-			path[5 + u_strlen(command)] = '\0';
+		} else if (!u_find_command(command, path, sizeof(path))) {
+			u_puts("sh: command not found: ");
+			u_puts(command);
+			u_puts("\n");
+			return;
 		}
 	}
 	if (interactive && u_ioctl(0, U_TIOCCANON, 0) < 0) {

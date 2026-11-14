@@ -71,7 +71,7 @@ const char *pkg_parse(const uint8_t *bytes, size_t size, int record,
 		return "unsupported package format";
 	if (!record && pkg_u32(bytes + 8) != size)
 		return "package length mismatch";
-	if (record && pkg_u32(bytes + 8) > 1)
+	if (record && pkg_u32(bytes + 8) > PKG_DELETING)
 		return "invalid installation state";
 	out->name = (const char *)bytes + 16;
 	out->version = (const char *)bytes + 80;

@@ -16,17 +16,7 @@ resolve_command(const char *command, char *path)
 			return u_normalize_path(cwd, command, path, PATH_SIZE);
 		}
 	}
-	if (u_strlen(command) + 6 >= PATH_SIZE)
-		return 0;
-	path[0] = '/'; path[1] = 'b'; path[2] = 'i'; path[3] = 'n';
-	path[4] = '/';
-	{
-		size_t i;
-		for (i = 0; command[i] != '\0'; i++)
-			path[5 + i] = command[i];
-		path[5 + i] = '\0';
-	}
-	return 1;
+	return u_find_command(command, path, PATH_SIZE);
 }
 
 int
