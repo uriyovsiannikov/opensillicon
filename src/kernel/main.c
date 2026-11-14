@@ -26,6 +26,7 @@
 #include "kernel/syscall.h"
 #include "kernel/elf.h"
 #include "kernel/module.h"
+#include "kernel/e1000_profile.h"
 #include "kernel/driver_api.h"
 #include "kernel/process.h"
 #include "kernel/vfs.h"
@@ -268,6 +269,7 @@ mount_system_root(const struct limine_file *live_root)
 
 static uint64_t pci_device_count;
 static bool qemu_e1000_present;
+static bool i219_present;
 
 #ifdef OPEN_SILLICON_ENABLE_QEMU_VIRTIO_RNG
 static bool virtio_rng_device_found;
@@ -280,9 +282,14 @@ record_pci_device(const struct pci_device_info *device, void *context)
 {
 	(void)context;
 	pci_device_count++;
-	if (device->vendor_id == 0x8086 && device->device_id == 0x100e &&
-	    device->class_code == 2 && device->subclass == 0)
-		qemu_e1000_present = true;
+	if (device->vendor_id == E1000_QEMU_VENDOR_ID &&
+	    (device->header_type & 0x7fU) == 0 && device->class_code == 2 &&
+	    device->subclass == 0 && device->programming_interface == 0) {
+		if (device->device_id == E1000_I219_DEVICE_ID)
+			i219_present = true;
+		else if (device->device_id == E1000_QEMU_DEVICE_ID)
+			qemu_e1000_present = true;
+	}
 	usb_host_record_controller(device);
 #ifdef OPEN_SILLICON_ENABLE_QEMU_VIRTIO_RNG
 	if (virtio_rng_matches_device(device)) {
@@ -714,27 +721,16 @@ virtio_rng_probe_done:
 	initialize_filesystems(&info);
 	klog_status("VFS", true, NULL);
 	mount_system_root(info.live_root);
-	if (info.live_root != NULL && boot_has_option("i219probe")) {
-		enum kernel_module_error result = kernel_module_load_path(
-		    "i219probe", "/boot/modules/i219probe.ko");
-		klog_status("I219-V diagnostics", result == KERNEL_MODULE_OK, NULL);
-	}
-	if (info.live_root != NULL && boot_has_option("i219net")) {
-		enum kernel_module_error result = kernel_module_load_path(
-		    "i219", "/boot/modules/i219.ko");
-		klog_status("I219-V Ethernet test", result == KERNEL_MODULE_OK, NULL);
+	if (i219_present || qemu_e1000_present) {
+		const char *module = i219_present ? "i219" : "e1000";
+		const char *path = i219_present ? "/boot/modules/i219.ko" :
+		    "/boot/modules/e1000.ko";
+		enum kernel_module_error result = kernel_module_load_path(module, path);
+		klog_status(module, result == KERNEL_MODULE_OK, path);
 		if (result != KERNEL_MODULE_OK) {
-			klog("i219: module load error ");
-			klog_u64(result);
-			klog("\n");
-		}
-	} else if (qemu_e1000_present) {
-		enum kernel_module_error result = kernel_module_load_path(
-		    "e1000", "/boot/modules/e1000.ko");
-		klog_status("e1000 module", result == KERNEL_MODULE_OK,
-		    "load from /boot/modules/e1000.ko");
-		if (result != KERNEL_MODULE_OK) {
-			klog("OpenSillicon: e1000 module load error ");
+			klog("OpenSillicon: ");
+			klog(module);
+			klog(" module load error ");
 			klog_u64(result);
 			klog("; boot continues without network\n");
 		}
