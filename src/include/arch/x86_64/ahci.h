@@ -6,7 +6,7 @@
 #include "arch/x86_64/pci.h"
 #include "kernel/block.h"
 
-bool ahci_initialize(const struct pci_device_info *controller,
-	struct block_device *device);
+/* Discover all supported SATA disks, independently of the root mount. */
+size_t ahci_discover(const struct pci_device_info *controller);
 
 #endif

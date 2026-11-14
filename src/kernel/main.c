@@ -48,9 +48,7 @@
 #define MAIN_EEXIST 17
 #define MAIN_ENOTDIR 20
 
-static struct pci_device_info ahci_device;
-static bool ahci_controller_found;
-static struct block_device ahci_block_device;
+static struct block_device *ahci_root_device;
 static struct block_silliconfs_adapter root_adapter;
 
 static void
@@ -86,31 +84,24 @@ initialize_filesystems(const struct boot_info *info)
 	klog("OpenSillicon: initramfs and RAMFS mounted\n");
 }
 
-static const struct silliconfs_device *
-disk_root_device(void)
+static struct vnode *
+mount_disk_root(void)
 {
-	if (!dma_identity_addressing_available()) {
-		klog_status("AHCI", false,
-		    "disabled: required Limine base revision 5+ DMA contract is unavailable; persistent disk root cannot be mounted");
-		kernel_halt();
+	struct vnode *root;
+	/* Select an existing SilliconFS, without formatting any candidate. */
+	for (size_t i = 0; i < block_device_count(); i++) {
+		struct block_device *candidate = block_device_at(i);
+		if (!block_silliconfs_init(&root_adapter, candidate) ||
+		    silliconfs_mount(&root_adapter.filesystem, &root) != 0)
+			continue;
+		ahci_root_device = candidate;
+		klog("OpenSillicon: disk root selected: ");
+		klog(candidate->name);
+		klog("\n");
+		return root;
 	}
-	if (!ahci_controller_found) {
-		klog_status("AHCI", false, "no supported controller found");
-		kernel_halt();
-	}
-	klog("OpenSillicon: probing AHCI root disk\n");
-	if (!ahci_initialize(&ahci_device, &ahci_block_device) ||
-	    !block_silliconfs_init(&root_adapter, &ahci_block_device)) {
-		klog_status("AHCI", false, "disk initialization failed");
-		kernel_halt();
-	}
-	klog("OpenSillicon: AHCI logical sector size ");
-	klog_u64(ahci_block_device.logical_sector_size);
-	klog(" sectors ");
-	klog_u64(ahci_block_device.sector_count);
-	klog("\n");
-	klog_status("AHCI", true, NULL);
-	return &root_adapter.filesystem;
+	klog_status("disk root", false, "no supported disk with a valid SilliconFS found");
+	kernel_halt();
 }
 
 static struct block_device live_block_device;
@@ -177,11 +168,16 @@ mount_system_root(const struct limine_file *live_root)
 		}
 		device = &live_adapter.filesystem;
 	} else {
-		device = disk_root_device();
+		device = NULL;
 	}
 	klog(live_root != NULL ? "OpenSillicon: Mounting Live SilliconFS from RAM\n" :
 	    "OpenSillicon: Mounting SilliconFS from disk\n");
-	error = silliconfs_mount(device, &disk_root);
+	if (device != NULL)
+		error = silliconfs_mount(device, &disk_root);
+	else {
+		disk_root = mount_disk_root();
+		error = 0;
+	}
 	if (error != 0) {
 		klog_status("SilliconFS", false, "root mount failed");
 		klog("OpenSillicon: SilliconFS error ");
@@ -277,9 +273,11 @@ record_pci_device(const struct pci_device_info *device, void *context)
 	}
 #endif
 	if (device->class_code == 0x01 && device->subclass == 0x06 &&
-	    device->programming_interface == 0x01 && !ahci_controller_found) {
-		ahci_device = *device;
-		ahci_controller_found = true;
+	    device->programming_interface == 0x01) {
+		size_t disks = ahci_discover(device);
+		klog("OpenSillicon: AHCI disks discovered: ");
+		klog_u64(disks);
+		klog("\n");
 	}
 	return true;
 }
@@ -697,7 +695,7 @@ virtio_rng_probe_done:
 			klog("; boot continues without network\n");
 		}
 	}
-	if (info.live_root == NULL && block_flush(&ahci_block_device) != 0) {
+	if (info.live_root == NULL && block_flush(ahci_root_device) != 0) {
 		klog("OpenSillicon: root block flush failed\n");
 		kernel_halt();
 	}

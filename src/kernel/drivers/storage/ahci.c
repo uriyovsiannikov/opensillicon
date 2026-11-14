@@ -10,6 +10,9 @@
 
 #define PAGE_SIZE 4096ULL
 #define AHCI_TIMEOUT 10000000U
+#define AHCI_CONTROLLER_MAX 8U
+/* Keep one block registry slot available for the Live RAM disk. */
+#define AHCI_DISK_MAX (BLOCK_DEVICE_MAX - 1U)
 #define AHCI_CAP 0x00U
 #define AHCI_GHC 0x04U
 #define AHCI_PI 0x0cU
@@ -74,7 +77,11 @@ struct ahci_state {
 	bool initialized;
 };
 
-static struct ahci_state state;
+static struct ahci_state states[BLOCK_DEVICE_MAX];
+static struct block_device disks[BLOCK_DEVICE_MAX];
+static size_t disk_count;
+static unsigned int controller_count;
+static bool probing_disabled;
 static struct spinlock ahci_command_lock = SPINLOCK_INITIALIZER;
 
 static uint32_t
@@ -96,26 +103,26 @@ dma_address_valid(uint64_t address, bool address64)
 }
 
 static bool
-wait_port_clear(uint32_t mask)
+wait_port_clear(struct ahci_state *state, uint32_t mask)
 {
 	uint32_t i;
 
 	for (i = 0; i < AHCI_TIMEOUT; i++)
-		if ((mmio_read(state.port, PORT_TFD) & mask) == 0)
+		if ((mmio_read(state->port, PORT_TFD) & mask) == 0)
 			return true;
 	return false;
 }
 
 static int
-issue_command(uint8_t command, uint64_t lba, uint16_t sectors,
+issue_command(struct ahci_state *state, uint8_t command, uint64_t lba, uint16_t sectors,
 	bool write, bool data_command)
 {
-	uint8_t *fis = state.table->command_fis;
+	uint8_t *fis = state->table->command_fis;
 	uint32_t i;
 
-	if (!wait_port_clear(PORT_TFD_BSY | PORT_TFD_DRQ))
+	if (!wait_port_clear(state, PORT_TFD_BSY | PORT_TFD_DRQ))
 		return -ETIMEDOUT;
-	memset(fis, 0, sizeof(state.table->command_fis));
+	memset(fis, 0, sizeof(state->table->command_fis));
 	fis[0] = 0x27;
 	fis[1] = 1U << 7;
 	fis[2] = command;
@@ -131,33 +138,33 @@ issue_command(uint8_t command, uint64_t lba, uint16_t sectors,
 		fis[12] = (uint8_t)sectors;
 		fis[13] = (uint8_t)(sectors >> 8);
 	}
-	state.headers[0].flags = (uint16_t)(5U | (write ? (1U << 6) : 0));
-	state.headers[0].prdt_length = data_command ? 1 : 0;
-	state.headers[0].transferred = 0;
-	state.table->prdt[0].data_low = (uint32_t)state.buffer_physical;
-	state.table->prdt[0].data_high = (uint32_t)(state.buffer_physical >> 32);
-	state.table->prdt[0].reserved = 0;
-	state.table->prdt[0].byte_count_flags =
-	    data_command ? (state.sector_size - 1U) | (1U << 31) : 0;
-	mmio_write(state.port, PORT_IS, UINT32_MAX);
-	mmio_write(state.port, PORT_CI, 1U);
+	state->headers[0].flags = (uint16_t)(5U | (write ? (1U << 6) : 0));
+	state->headers[0].prdt_length = data_command ? 1 : 0;
+	state->headers[0].transferred = 0;
+	state->table->prdt[0].data_low = (uint32_t)state->buffer_physical;
+	state->table->prdt[0].data_high = (uint32_t)(state->buffer_physical >> 32);
+	state->table->prdt[0].reserved = 0;
+	state->table->prdt[0].byte_count_flags =
+	    data_command ? (state->sector_size - 1U) | (1U << 31) : 0;
+	mmio_write(state->port, PORT_IS, UINT32_MAX);
+	mmio_write(state->port, PORT_CI, 1U);
 	for (i = 0; i < AHCI_TIMEOUT; i++) {
-		uint32_t interrupt_status = mmio_read(state.port, PORT_IS);
+		uint32_t interrupt_status = mmio_read(state->port, PORT_IS);
 		if ((interrupt_status & (1U << 30)) != 0)
 			return -EIO;
-		if ((mmio_read(state.port, PORT_CI) & 1U) == 0)
+		if ((mmio_read(state->port, PORT_CI) & 1U) == 0)
 			return 0;
 	}
 	return -ETIMEDOUT;
 }
 
 static int
-ahci_transfer(uint64_t lba, uint32_t count, void *buffer, bool write)
+ahci_transfer(struct ahci_state *state, uint64_t lba, uint32_t count, void *buffer, bool write)
 {
 	uint32_t i;
 	uint8_t *bytes = buffer;
 	uint64_t flags = spinlock_lock_irqsave(&ahci_command_lock);
-	if (state.failed) {
+	if (state->failed) {
 		spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 		return -EIO;
 	}
@@ -166,20 +173,20 @@ ahci_transfer(uint64_t lba, uint32_t count, void *buffer, bool write)
 		int error;
 
 		if (write)
-			memcpy(state.dma_buffer, bytes + (size_t)i * state.sector_size,
-			    state.sector_size);
-		error = issue_command(write ? AHCI_CMD_WRITE_DMA_EXT :
+			memcpy(state->dma_buffer, bytes + (size_t)i * state->sector_size,
+			    state->sector_size);
+		error = issue_command(state, write ? AHCI_CMD_WRITE_DMA_EXT :
 		    AHCI_CMD_READ_DMA_EXT, lba + i, 1, write, true);
 		if (error != 0) {
 			/* A timeout or task-file error may leave the HBA using the
 			 * shared command table and data buffer. Never reuse them. */
-			state.failed = true;
+			state->failed = true;
 			spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 			return error;
 		}
 		if (!write)
-			memcpy(bytes + (size_t)i * state.sector_size, state.dma_buffer,
-			    state.sector_size);
+			memcpy(bytes + (size_t)i * state->sector_size, state->dma_buffer,
+			    state->sector_size);
 	}
 	spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 	return 0;
@@ -189,16 +196,14 @@ static int
 device_read(struct block_device *device, uint64_t lba, uint32_t count,
 	void *buffer)
 {
-	(void)device;
-	return ahci_transfer(lba, count, buffer, false);
+	return ahci_transfer(device->context, lba, count, buffer, false);
 }
 
 static int
 device_write(struct block_device *device, uint64_t lba, uint32_t count,
 	const void *buffer)
 {
-	(void)device;
-	return ahci_transfer(lba, count, (void *)buffer, true);
+	return ahci_transfer(device->context, lba, count, (void *)buffer, true);
 }
 
 static int
@@ -207,18 +212,18 @@ device_flush(struct block_device *device)
 	uint64_t flags;
 	int error;
 
-	(void)device;
-	if (!state.supports_flush)
+	struct ahci_state *state = device->context;
+	if (!state->supports_flush)
 		return -EOPNOTSUPP;
 	flags = spinlock_lock_irqsave(&ahci_command_lock);
-	if (state.failed)
+	if (state->failed)
 		error = -EIO;
 	else {
-		error = issue_command(state.supports_flush_ext ?
+		error = issue_command(state, state->supports_flush_ext ?
 		    AHCI_CMD_FLUSH_CACHE_EXT : AHCI_CMD_FLUSH_CACHE,
 		    0, 0, false, false);
 		if (error != 0)
-			state.failed = true;
+			state->failed = true;
 	}
 	spinlock_unlock_irqrestore(&ahci_command_lock, flags);
 	return error;
@@ -266,7 +271,7 @@ allocate_command_dma(uint64_t physical[4], void *virtual_address[4],
 }
 
 static bool
-release_command_dma(volatile uint32_t *port, const uint64_t physical[4])
+release_command_dma(struct ahci_state *state, volatile uint32_t *port, const uint64_t physical[4])
 {
 	uint32_t command;
 	uint32_t i;
@@ -276,15 +281,19 @@ release_command_dma(volatile uint32_t *port, const uint64_t physical[4])
 	for (i = 0; i < AHCI_TIMEOUT; i++)
 		if ((mmio_read(port, PORT_CMD) & PORT_CMD_CR) == 0)
 			break;
-	if (i == AHCI_TIMEOUT)
+	if (i == AHCI_TIMEOUT) {
+		probing_disabled = true;
 		return false;
+	}
 	command = mmio_read(port, PORT_CMD) & ~PORT_CMD_FRE;
 	mmio_write(port, PORT_CMD, command);
 	for (i = 0; i < AHCI_TIMEOUT; i++)
 		if ((mmio_read(port, PORT_CMD) & PORT_CMD_FR) == 0)
 			break;
-	if (i == AHCI_TIMEOUT || (mmio_read(port, PORT_CI) & 1U) != 0)
+	if (i == AHCI_TIMEOUT || (mmio_read(port, PORT_CI) & 1U) != 0) {
+		probing_disabled = true;
 		return false;
+	}
 	mmio_write(port, PORT_CLB, 0);
 	mmio_write(port, PORT_CLB + 4, 0);
 	mmio_write(port, PORT_FB, 0);
@@ -295,17 +304,16 @@ release_command_dma(volatile uint32_t *port, const uint64_t physical[4])
 			kernel_halt();
 		}
 	}
-	state.headers = NULL;
-	state.table = NULL;
-	state.dma_buffer = NULL;
-	state.buffer_physical = 0;
-	state.port = NULL;
+	state->headers = NULL;
+	state->table = NULL;
+	state->dma_buffer = NULL;
+	state->buffer_physical = 0;
+	state->port = NULL;
 	return true;
 }
 
-bool
-ahci_initialize(const struct pci_device_info *controller,
-	struct block_device *device)
+size_t
+ahci_discover(const struct pci_device_info *controller)
 {
 	uint32_t cap;
 	uint32_t ports;
@@ -320,17 +328,20 @@ ahci_initialize(const struct pci_device_info *controller,
 	uint32_t i;
 	int error;
 
-	if (controller == NULL || device == NULL || state.initialized ||
+	size_t before = disk_count;
+	struct ahci_state *state;
+	if (controller == NULL || probing_disabled || controller_count >= AHCI_CONTROLLER_MAX ||
+	    block_device_count() >= AHCI_DISK_MAX ||
 	    !dma_identity_addressing_available() ||
 	    controller->class_code != 1 || controller->subclass != 6 ||
 	    controller->programming_interface != 1)
-		return false;
+		return disk_count - before;
 	bar = controller->bars[5] & ~0xfULL;
 	if (bar == 0 || (controller->bars[5] & 1U) != 0 ||
 	    (controller->bars[5] & 0x6U) != 0)
-		return false;
+		return disk_count - before;
 	bar_offset = bar & (PAGE_SIZE - 1);
-	virtual_base = (vmm_vmalloc_start() + 0x300000ULL) & ~(PAGE_SIZE - 1);
+	virtual_base = (vmm_vmalloc_start() + 0x300000ULL + controller_count++ * 0x4000ULL) & ~(PAGE_SIZE - 1);
 	mmio_page_count = (size_t)((bar_offset + AHCI_MMIO_SIZE + PAGE_SIZE - 1) /
 	    PAGE_SIZE);
 	if (virtual_base >= vmm_vmalloc_end() ||
@@ -339,7 +350,7 @@ ahci_initialize(const struct pci_device_info *controller,
 	    (mmio_page_count - 1) * PAGE_SIZE ||
 	    !vmm_physical_range_mmio_safe(bar - bar_offset,
 	    mmio_page_count * PAGE_SIZE))
-		return false;
+		return disk_count - before;
 	while (mapped_pages < mmio_page_count) {
 		if (!vmm_map_page(vmm_kernel_address_space(),
 		    virtual_base + mapped_pages * PAGE_SIZE,
@@ -354,11 +365,11 @@ ahci_initialize(const struct pci_device_info *controller,
 					kernel_halt();
 				}
 			}
-			return false;
+			return disk_count - before;
 		}
 		mapped_pages++;
 	}
-	state.registers = (volatile uint32_t *)(uintptr_t)(virtual_base + bar_offset);
+	volatile uint32_t *registers = (volatile uint32_t *)(uintptr_t)(virtual_base + bar_offset);
 	/* The PCI command register is changed only for this AHCI function. */
 	if (!pci_config_write(controller->segment, controller->bus,
 	    controller->device, controller->function, 0x04, 16,
@@ -376,13 +387,12 @@ ahci_initialize(const struct pci_device_info *controller,
 				kernel_halt();
 			}
 		}
-		state.registers = NULL;
-		return false;
+		return disk_count - before;
 	}
-	mmio_write(state.registers, AHCI_GHC,
-	    mmio_read(state.registers, AHCI_GHC) | (1U << 31));
-	cap = mmio_read(state.registers, AHCI_CAP);
-	ports = mmio_read(state.registers, AHCI_PI);
+	mmio_write(registers, AHCI_GHC,
+	    mmio_read(registers, AHCI_GHC) | (1U << 31));
+	cap = mmio_read(registers, AHCI_CAP);
+	ports = mmio_read(registers, AHCI_PI);
 	address64 = (cap & (1U << 31)) != 0;
 	for (port_index = 0; port_index < 32; port_index++) {
 		volatile uint32_t *port;
@@ -394,9 +404,12 @@ ahci_initialize(const struct pci_device_info *controller,
 
 		if ((ports & (1U << port_index)) == 0)
 			continue;
-		port = (volatile uint32_t *)((uintptr_t)state.registers +
+		port = (volatile uint32_t *)((uintptr_t)registers +
 		    AHCI_PORTS + port_index * 0x80U);
-		state.port = port;
+		if (block_device_count() >= AHCI_DISK_MAX) break;
+		state = &states[disk_count];
+		state->registers = registers;
+		state->port = port;
 		ssts = mmio_read(port, PORT_SSTS);
 		if ((ssts & 0xfU) != 3 || ((ssts >> 8) & 0xfU) != 1 ||
 		    mmio_read(port, PORT_SIG) != 0x00000101U)
@@ -406,14 +419,14 @@ ahci_initialize(const struct pci_device_info *controller,
 		    (mmio_read(port, PORT_CMD) & PORT_CMD_CR) != 0; i++)
 			;
 		if (i == AHCI_TIMEOUT)
-			return false;
+			return disk_count - before;
 		mmio_write(port, PORT_CMD, mmio_read(port, PORT_CMD) & ~PORT_CMD_FRE);
 		for (i = 0; i < AHCI_TIMEOUT &&
 		    (mmio_read(port, PORT_CMD) & PORT_CMD_FR) != 0; i++)
 			;
 		if (i == AHCI_TIMEOUT ||
 		    !allocate_command_dma(dma_physical, dma_virtual, address64))
-			return false;
+			return disk_count - before;
 		headers_phys = dma_physical[0];
 		fis_phys = dma_physical[1];
 		table_phys = dma_physical[2];
@@ -422,34 +435,34 @@ ahci_initialize(const struct pci_device_info *controller,
 		fis_virt = dma_virtual[1];
 		table_virt = dma_virtual[2];
 		buffer_virt = dma_virtual[3];
-		state.buffer_physical = buffer_phys;
-		state.headers = headers_virt;
+		state->buffer_physical = buffer_phys;
+		state->headers = headers_virt;
 		(void)fis_virt;
-		state.table = table_virt;
-		state.dma_buffer = buffer_virt;
-		state.headers[0].table_low = (uint32_t)table_phys;
-		state.headers[0].table_high = (uint32_t)(table_phys >> 32);
+		state->table = table_virt;
+		state->dma_buffer = buffer_virt;
+		state->headers[0].table_low = (uint32_t)table_phys;
+		state->headers[0].table_high = (uint32_t)(table_phys >> 32);
 		mmio_write(port, PORT_CLB, (uint32_t)headers_phys);
 		mmio_write(port, PORT_CLB + 4, (uint32_t)(headers_phys >> 32));
 		mmio_write(port, PORT_FB, (uint32_t)fis_phys);
 		mmio_write(port, PORT_FB + 4, (uint32_t)(fis_phys >> 32));
 		mmio_write(port, PORT_CMD, mmio_read(port, PORT_CMD) | PORT_CMD_FRE);
 		mmio_write(port, PORT_CMD, mmio_read(port, PORT_CMD) | PORT_CMD_ST);
-		state.sector_size = 512;
-		if (issue_command(AHCI_CMD_IDENTIFY, 0, 0, false, true) != 0) {
-			if (!release_command_dma(port, dma_physical))
-				return false;
+		state->sector_size = 512;
+		if (issue_command(state, AHCI_CMD_IDENTIFY, 0, 0, false, true) != 0) {
+			if (!release_command_dma(state, port, dma_physical))
+				return disk_count - before;
 			continue;
 		}
-		memcpy(identify, state.dma_buffer, sizeof(identify));
-		state.lba48 = (identify[83] & (1U << 10)) != 0;
-		state.sector_count = state.lba48 ?
+		memcpy(identify, state->dma_buffer, sizeof(identify));
+		state->lba48 = (identify[83] & (1U << 10)) != 0;
+		state->sector_count = state->lba48 ?
 		    ((uint64_t)identify[100] | (uint64_t)identify[101] << 16 |
 		    (uint64_t)identify[102] << 32 | (uint64_t)identify[103] << 48) :
 		    ((uint32_t)identify[60] | (uint32_t)identify[61] << 16);
-		if (state.sector_count == 0 || !state.lba48) {
-			if (!release_command_dma(port, dma_physical))
-				return false;
+		if (state->sector_count == 0 || !state->lba48) {
+			if (!release_command_dma(state, port, dma_physical))
+				return disk_count - before;
 			continue;
 		}
 		if ((identify[106] & 0xc000U) == 0x4000U &&
@@ -457,33 +470,37 @@ ahci_initialize(const struct pci_device_info *controller,
 			uint32_t words = (uint32_t)identify[117] |
 			    (uint32_t)identify[118] << 16;
 			if (words > UINT32_MAX / 2) {
-				if (!release_command_dma(port, dma_physical))
-					return false;
+				if (!release_command_dma(state, port, dma_physical))
+					return disk_count - before;
 				continue;
 			}
-			state.sector_size = words * 2;
+			state->sector_size = words * 2;
 		}
-		if (state.sector_size != 512 && state.sector_size != 4096) {
-			if (!release_command_dma(port, dma_physical))
-				return false;
+		if (state->sector_size != 512 && state->sector_size != 4096) {
+			if (!release_command_dma(state, port, dma_physical))
+				return disk_count - before;
 			continue;
 		}
-		state.supports_flush = (identify[82] & (1U << 12)) != 0 ||
+		state->supports_flush = (identify[82] & (1U << 12)) != 0 ||
 		    (identify[83] & (1U << 13)) != 0;
-		state.supports_flush_ext = (identify[83] & (1U << 13)) != 0;
+		state->supports_flush_ext = (identify[83] & (1U << 13)) != 0;
+		struct block_device *device = &disks[disk_count];
 		*device = (struct block_device){
 			.name = "ahci0",
-			.logical_sector_size = state.sector_size,
-			.sector_count = state.sector_count,
+			.logical_sector_size = state->sector_size,
+			.sector_count = state->sector_count,
+			.context = state,
 			.operations = &operations
 		};
-		state.initialized = true;
+		device->name[4] = (char)('0' + disk_count);
+		state->initialized = true;
 		error = block_device_register(device);
 		if (error != 0) {
-			state.initialized = false;
-			return false;
+			state->initialized = false;
+			probing_disabled = true;
+			return disk_count - before;
 		}
-		return true;
+		disk_count++;
 	}
-	return false;
+	return disk_count - before;
 }
