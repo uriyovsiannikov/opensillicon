@@ -506,29 +506,39 @@ read_logical_block(struct silliconfs *filesystem,
 static int
 allocate_block(struct silliconfs *filesystem, uint32_t *result)
 {
-	uint32_t block;
-	bool allocated;
-	uint8_t zero[SILLICONFS_BLOCK_SIZE];
-	int error;
+	uint8_t map[SILLICONFS_BLOCK_SIZE], zero[SILLICONFS_BLOCK_SIZE];
+	uint32_t first = filesystem->super.data_start;
+	uint32_t total = filesystem->super.total_blocks;
 
 	memset(zero, 0, sizeof(zero));
-	for (block = filesystem->super.data_start;
-	    block < filesystem->super.total_blocks; block++) {
-		error = bitmap_get(filesystem, false, block, &allocated);
+	while (first < total) {
+		uint32_t map_number = filesystem->super.block_bitmap_start + first / 32768U;
+		uint32_t within = first % 32768U;
+		uint32_t count = 32768U - within;
+		if (count > total - first)
+			count = total - first;
+		int error = read_block(filesystem, map_number, map);
 		if (error != 0)
 			return error;
-		if (allocated)
-			continue;
-		error = bitmap_set(filesystem, false, block, true);
-		if (error != 0)
-			return error;
-		error = write_block(filesystem, block, zero);
-		if (error != 0) {
-			(void)bitmap_set(filesystem, false, block, false);
-			return error;
+		for (uint32_t i = 0; i < count; i++) {
+			uint32_t bit = within + i;
+			uint8_t mask = (uint8_t)(1U << (bit % 8));
+			if (map[bit / 8] & mask)
+				continue;
+			map[bit / 8] |= mask;
+			error = write_block(filesystem, map_number, map);
+			if (error != 0)
+				return error;
+			error = write_block(filesystem, first + i, zero);
+			if (error != 0) {
+				map[bit / 8] &= (uint8_t)~mask;
+				(void)write_block(filesystem, map_number, map);
+				return error;
+			}
+			*result = first + i;
+			return 0;
 		}
-		*result = block;
-		return 0;
+		first += count;
 	}
 	return -SFS_ENOSPC;
 }
