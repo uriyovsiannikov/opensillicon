@@ -590,44 +590,7 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	redraw_line(line, *length, *cursor);
 }
 
-static void
-show_keyboard_diagnostics(void)
-{
-	static const char *const prefixes[] = {
-		"OpenSillicon: PS/2", "OpenSillicon: USB", "OpenSillicon: no USB",
-		"OpenSillicon: xHCI", "OpenSillicon: DMA",
-	};
-	long fd = u_open("/tmp/btlog.log", 0);
-	if (fd < 0)
-		return;
 
-	char buffer[256], line[256];
-	size_t length = 0;
-	long count;
-	while ((count = u_read((uint64_t)fd, buffer, sizeof(buffer))) > 0) {
-		for (long i = 0; i < count; i++) {
-			if (buffer[i] != '\n') {
-				if (length < sizeof(line))
-					line[length++] = buffer[i];
-				continue;
-			}
-			for (size_t j = 0; j < sizeof(prefixes) / sizeof(prefixes[0]); j++) {
-				size_t prefix_length = u_strlen(prefixes[j]);
-				size_t matched = 0;
-				while (matched < prefix_length && matched < length &&
-				    line[matched] == prefixes[j][matched])
-					matched++;
-				if (matched == prefix_length) {
-					u_putn(line, length);
-					u_puts("\n");
-					break;
-				}
-			}
-			length = 0;
-		}
-	}
-	(void)u_close((uint64_t)fd);
-}
 
 static int
 read_command_line(char *line)
@@ -917,7 +880,6 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 			if (result == -19) {
 				if (!waiting_for_keyboard) {
 					u_puts("\nOpenSillicon shell: no keyboard controller available\n");
-					show_keyboard_diagnostics();
 					waiting_for_keyboard = true;
 				}
 				(void)u_sleep_ticks(100);

@@ -18,8 +18,6 @@ static uint64_t framebuffer_output_owner;
 static uint64_t console_input_owner;
 static unsigned int tty_columns;
 static unsigned int tty_rows;
-static unsigned int input_timeouts;
-static bool input_diagnostics_shown;
 
 static bool
 console_input_permitted(void)
@@ -128,17 +126,11 @@ tty_read(void *buffer, size_t length, size_t *read_length)
 		if (!tty_keyboard_available())
 			return -TTY_ENODEV;
 		if (console_keyboard_poll(&event)) {
-			input_timeouts = 0;
-			input_diagnostics_shown = true;
 			terminal_key_event(event);
 		} else {
 			__asm__ volatile ("sti; hlt; cli" : : : "memory");
 			if (terminal_raw_mode() && timer_ticks() - wait_start >=
 			    TTY_RAW_READ_TIMEOUT_TICKS) {
-				if (!input_diagnostics_shown && ++input_timeouts == 6) {
-					usb_host_input_diagnostics();
-					input_diagnostics_shown = true;
-				}
 				return -TTY_EAGAIN;
 			}
 		}
