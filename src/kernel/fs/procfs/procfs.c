@@ -8,6 +8,10 @@
 #include "kernel/pmm.h"
 #include "kernel/procfs.h"
 #include "kernel/timer.h"
+#include "kernel/block.h"
+#include "kernel/smp.h"
+#include "kernel/usb_host.h"
+#include "arch/x86_64/pci.h"
 
 #define PROCFS_EINVAL 22
 #define PROCFS_ENOENT 2
@@ -22,7 +26,10 @@ enum procfs_entry {
 	PROCFS_UPTIME,
 	PROCFS_MEMINFO,
 	PROCFS_CPUINFO,
-	PROCFS_MODULES
+	PROCFS_MODULES,
+	PROCFS_PCI,
+	PROCFS_USB,
+	PROCFS_DISKS
 };
 
 struct procfs_node {
@@ -34,6 +41,7 @@ struct procfs_node {
 	uint64_t meminfo_inode;
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
+	uint64_t pci_inode, usb_inode, disks_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
@@ -42,6 +50,8 @@ static int procfs_lookup(struct vnode *, const char *, size_t, struct vnode **);
 static int procfs_read(struct vnode *, uint64_t, void *, size_t, size_t *);
 static int procfs_readdir(struct vnode *, uint64_t, struct vfs_dirent *);
 static void procfs_destroy(struct vnode *);
+static struct procfs_node *procfs_allocate(const char *, enum procfs_entry,
+	enum vnode_type, uint64_t);
 
 static const struct vnode_operations procfs_operations = {
 	.lookup = procfs_lookup,
@@ -83,6 +93,76 @@ append_u64(struct procfs_node *node, uint64_t value)
 	while (length != 0)
 		node->content[node->content_length++] = digits[--length];
 	return true;
+}
+
+static bool
+append_hex(struct procfs_node *node, uint64_t value, unsigned int digits)
+{
+	static const char hex[] = "0123456789abcdef";
+	if (digits > sizeof(node->content) - node->content_length)
+		return false;
+	for (unsigned int i = digits; i != 0; i--)
+		node->content[node->content_length++] = hex[(value >> ((i - 1U) * 4U)) & 15U];
+	return true;
+}
+
+static bool
+procfs_pci_entry(const struct pci_device_info *device, void *context)
+{
+	struct procfs_node *node = context;
+	return append_hex(node, device->segment, 4) && append_text(node, ":") &&
+	    append_hex(node, device->bus, 2) && append_text(node, ":") &&
+	    append_hex(node, device->device, 2) && append_text(node, ".") &&
+	    append_u64(node, device->function) && append_text(node, " class=") &&
+	    append_hex(node, device->class_code, 2) && append_hex(node, device->subclass, 2) &&
+	    append_hex(node, device->programming_interface, 2) && append_text(node, " ") &&
+	    append_hex(node, device->vendor_id, 4) && append_text(node, " ") &&
+	    append_hex(node, device->device_id, 4) && append_text(node, "\n");
+}
+
+static int
+procfs_make_pci(uint64_t inode, struct procfs_node **result)
+{
+	struct procfs_node *node = procfs_allocate("pci", PROCFS_PCI, VNODE_REGULAR, inode);
+	if (node == NULL) return -PROCFS_ENOMEM;
+	if (!pci_enumerate(procfs_pci_entry, node)) {
+		vnode_put(&node->vnode); return -PROCFS_EINVAL;
+	}
+	node->vnode.size = node->content_length; *result = node; return 0;
+}
+
+static int
+procfs_make_usb(uint64_t inode, struct procfs_node **result)
+{
+	struct procfs_node *node = procfs_allocate("usb", PROCFS_USB, VNODE_REGULAR, inode);
+	struct usb_host_device_info devices[USB_HOST_DEVICE_MAX];
+	if (node == NULL) return -PROCFS_ENOMEM;
+	if (!append_text(node, "controllers: ") || !append_u64(node, usb_host_controller_count()) ||
+	    !append_text(node, "\nactive: ") || !append_u64(node, usb_host_available()) ||
+	    !append_text(node, "\n")) goto overflow;
+	size_t count = usb_host_device_snapshot(devices, USB_HOST_DEVICE_MAX);
+	for (size_t i = 0; i < count; i++)
+		if (!append_text(node, devices[i].type) || !append_text(node, " ") ||
+		    !append_u64(node, devices[i].index) || !append_text(node, "\n")) goto overflow;
+	node->vnode.size = node->content_length; *result = node; return 0;
+overflow:
+	vnode_put(&node->vnode); return -PROCFS_EINVAL;
+}
+
+static int
+procfs_make_disks(uint64_t inode, struct procfs_node **result)
+{
+	struct procfs_node *node = procfs_allocate("disks", PROCFS_DISKS, VNODE_REGULAR, inode);
+	if (node == NULL) return -PROCFS_ENOMEM;
+	for (size_t i = 0; i < block_device_count(); i++) {
+		struct block_device *device = block_device_at(i);
+		if (device == NULL || !append_text(node, device->name) || !append_text(node, " ") ||
+		    !append_u64(node, device->sector_count) || !append_text(node, " ") ||
+		    !append_u64(node, device->logical_sector_size) || !append_text(node, "\n")) {
+			vnode_put(&node->vnode); return -PROCFS_EINVAL;
+		}
+	}
+	node->vnode.size = node->content_length; *result = node; return 0;
 }
 
 static struct procfs_node *
@@ -257,7 +337,11 @@ procfs_make_cpuinfo(uint64_t inode, struct procfs_node **result)
 	model = (base_family == 0x06U || base_family == 0x0fU) ?
 	    base_model | (((signature >> 16) & 0x0fU) << 4) : base_model;
 	stepping = signature & 0x0fU;
-	if (!append_text(node, "processor: 0\nvendor_id: ") ||
+	if (!append_text(node, "processors discovered: ") ||
+	    !append_u64(node, smp_discovered_count()) ||
+	    !append_text(node, "\nprocessors online: ") ||
+	    !append_u64(node, smp_online_count()) ||
+	    !append_text(node, "\nprocessor: 0\nvendor_id: ") ||
 	    !append_text(node, vendor) || !append_text(node, "\ncpu family: ") ||
 	    !append_u64(node, family) || !append_text(node, "\nmodel: ") ||
 	    !append_u64(node, model) || !append_text(node, "\nstepping: ") ||
@@ -350,6 +434,24 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 			*result = &modules->vnode;
 		return error;
 	}
+	if (name_length == 3 && memcmp(name, "pci", 3) == 0) {
+		struct procfs_node *entry;
+		error = procfs_make_pci(node->pci_inode, &entry);
+		if (error == 0) *result = &entry->vnode;
+		return error;
+	}
+	if (name_length == 3 && memcmp(name, "usb", 3) == 0) {
+		struct procfs_node *entry;
+		error = procfs_make_usb(node->usb_inode, &entry);
+		if (error == 0) *result = &entry->vnode;
+		return error;
+	}
+	if (name_length == 5 && memcmp(name, "disks", 5) == 0) {
+		struct procfs_node *entry;
+		error = procfs_make_disks(node->disks_inode, &entry);
+		if (error == 0) *result = &entry->vnode;
+		return error;
+	}
 	return -PROCFS_ENOENT;
 }
 
@@ -383,7 +485,7 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
 	static const char *const names[] = {
-		"self", "uptime", "meminfo", "cpuinfo", "modules"
+		"self", "uptime", "meminfo", "cpuinfo", "modules", "pci", "usb", "disks"
 	};
 	struct procfs_node *node;
 
@@ -397,7 +499,8 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	memset(entry, 0, sizeof(*entry));
 	entry->inode = index == 0 ? node->self_inode :
 		index == 1 ? node->uptime_inode : index == 2 ? node->meminfo_inode :
-		index == 3 ? node->cpuinfo_inode : node->modules_inode;
+		index == 3 ? node->cpuinfo_inode : index == 4 ? node->modules_inode :
+		index == 5 ? node->pci_inode : index == 6 ? node->usb_inode : node->disks_inode;
 	entry->mode = 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
@@ -424,9 +527,13 @@ procfs_mount(const char *path)
 	root->meminfo_inode = vfs_allocate_inode();
 	root->cpuinfo_inode = vfs_allocate_inode();
 	root->modules_inode = vfs_allocate_inode();
+	root->pci_inode = vfs_allocate_inode();
+	root->usb_inode = vfs_allocate_inode();
+	root->disks_inode = vfs_allocate_inode();
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
-	    root->modules_inode == 0) {
+	    root->modules_inode == 0 || root->pci_inode == 0 ||
+	    root->usb_inode == 0 || root->disks_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}

@@ -301,6 +301,35 @@ usb_host_available(void)
 	return active;
 }
 
+size_t
+usb_host_controller_count(void)
+{
+	return controller_count;
+}
+
+size_t
+usb_host_device_snapshot(struct usb_host_device_info *entries, size_t capacity)
+{
+	size_t count = 0;
+	static const char keyboard_name[] = "HID keyboard";
+	static const char mouse_name[] = "HID mouse";
+	if (entries == NULL)
+		return 0;
+	for (unsigned int i = 0; i < UX_MAX_DEVICES && count < capacity; i++) {
+		if (keyboards[i].instance != NULL) {
+			for (size_t j = 0; j < sizeof(keyboard_name); j++)
+				entries[count].type[j] = keyboard_name[j];
+			entries[count++].index = i;
+		}
+		if (mice[i].instance != NULL && count < capacity) {
+			for (size_t j = 0; j < sizeof(mouse_name); j++)
+				entries[count].type[j] = mouse_name[j];
+			entries[count++].index = i;
+		}
+	}
+	return count;
+}
+
 bool
 usb_host_keyboard_poll(struct terminal_key_event *event)
 {

@@ -28,7 +28,8 @@ $(BUILD_DIR)/coreutils/svctl.elf: $(BUILD_DIR)/svctl.o $(LIBOS_BUILD_DIR)/crt0.o
 $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/include/os.h | $(BUILD_DIR)
+$(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/include/os.h \
+		src/user/coreutils/deviceconf.h | $(BUILD_DIR)
 	mkdir -p $(@D)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
