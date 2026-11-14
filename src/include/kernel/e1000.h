@@ -33,7 +33,7 @@ enum e1000_failure {
 	E1000_FAILURE_DMA_ALLOC
 };
 
-/* Singleton for the explicitly supported QEMU 82540EM profile. */
+/* Singleton for 82540EM and the opt-in Cannon Point I219-V profile. */
 bool e1000_discover(const struct pci_device_info *device);
 bool e1000_initialize(void);
 struct net_device *e1000_network_device(void);

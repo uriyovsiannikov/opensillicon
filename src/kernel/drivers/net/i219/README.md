@@ -12,6 +12,14 @@ ownership. It does not reset the chip, change PHY settings, or program DMA.
 It does not provide a network interface. A down link at this stage reflects
 the firmware's state and is not a test of driver link negotiation.
 
+A separate Ethernet test entry loads i219.ko. It uses the firmware-configured
+PHY and receive address, drains the MAC, programs the existing e1000 DMA rings
+for legacy descriptors, then attaches CycloneTCP for DHCP. It requires
+identity DMA and a validated BAR. Keep the Ethernet cable connected before
+boot. After boot, use cat /tmp/btlog.log for the i219 lines and ifconfig for
+the assigned address. A successful DHCP exchange exercises both TX and RX.
+The diagnostics entry remains available when this experiment fails.
+
 References:
 - https://github.com/freebsd/freebsd-src/blob/main/sys/dev/e1000/e1000_hw.h
 - https://github.com/freebsd/freebsd-src/blob/main/sys/dev/e1000/e1000_regs.h

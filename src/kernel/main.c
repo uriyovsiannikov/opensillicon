@@ -719,7 +719,16 @@ virtio_rng_probe_done:
 		    "i219probe", "/boot/modules/i219probe.ko");
 		klog_status("I219-V diagnostics", result == KERNEL_MODULE_OK, NULL);
 	}
-	if (qemu_e1000_present) {
+	if (info.live_root != NULL && boot_has_option("i219net")) {
+		enum kernel_module_error result = kernel_module_load_path(
+		    "i219", "/boot/modules/i219.ko");
+		klog_status("I219-V Ethernet test", result == KERNEL_MODULE_OK, NULL);
+		if (result != KERNEL_MODULE_OK) {
+			klog("i219: module load error ");
+			klog_u64(result);
+			klog("\n");
+		}
+	} else if (qemu_e1000_present) {
 		enum kernel_module_error result = kernel_module_load_path(
 		    "e1000", "/boot/modules/e1000.ko");
 		klog_status("e1000 module", result == KERNEL_MODULE_OK,

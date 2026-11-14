@@ -2,6 +2,11 @@
 #include "kernel/e1000.h"
 #include "kernel/e1000_profile.h"
 
+#ifndef E1000_MODULE_DEVICE
+#define E1000_MODULE_DEVICE E1000_QEMU_DEVICE_ID
+#define E1000_MODULE_NAME "e1000"
+#endif
+
 struct probe_result {
 	size_t count;
 	struct pci_device_info device;
@@ -12,7 +17,7 @@ probe(const struct pci_device_info *device, void *context)
 {
 	struct probe_result *result = context;
 	if (device->vendor_id == E1000_QEMU_VENDOR_ID &&
-	    device->device_id == E1000_QEMU_DEVICE_ID &&
+	    device->device_id == E1000_MODULE_DEVICE &&
 	    device->class_code == 2 && device->subclass == 0) {
 		result->count++;
 		result->device = *device;
@@ -33,13 +38,15 @@ module_init(void)
 	/* Once hardware initialization starts, keep this module resident even on
 	 * failure: a failed hardware stop cannot permit freeing DMA callbacks. */
 	if (net_device_start(device) != NET_DEVICE_OK) {
-		klog("e1000: initialization failed; module retained for DMA safety\n");
+		klog(E1000_MODULE_NAME ": initialization failed, stage ");
+		klog_u64(e1000_last_failure());
+		klog("; module retained for DMA safety\n");
 		return 0;
 	}
 	if (!kernel_driver_network_attach(device))
-		klog("e1000: network attachment failed; module retained\n");
+		klog(E1000_MODULE_NAME ": network attachment failed; module retained\n");
 	else
-		klog("e1000: module initialized and network attached\n");
+		klog(E1000_MODULE_NAME ": module initialized and network attached\n");
 	return 0;
 }
 

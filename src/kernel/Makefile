@@ -482,7 +482,8 @@ $(BUILD_DIR)/opensillicon.iso $(BUILD_DIR)/opensillicon-live.iso: \
 		cp '$(LIVE_ROOT_IMAGE)' "$$tree/boot/root.img"; \
 		{ printf 'timeout: 10\n'; entry 'OpenSillicon Live' ''; \
 		  entry 'OpenSillicon Installer' installer; \
-		  entry 'OpenSillicon Live (I219-V diagnostics)' i219probe; } > "$$tree/limine.conf"; \
+		  entry 'OpenSillicon Live (I219-V diagnostics)' i219probe; \
+		  entry 'OpenSillicon Live (I219-V Ethernet test)' i219net; } > "$$tree/limine.conf"; \
 	else \
 		{ printf 'timeout: 10\n'; entry OpenSillicon ''; } > "$$tree/limine.conf"; \
 	fi; \

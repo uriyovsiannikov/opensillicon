@@ -11,6 +11,7 @@
 #include "kernel/netbuf.h"
 #include "kernel/netdev.h"
 #include "kernel/vmm.h"
+#include "kernel/timer.h"
 
 #define PCI_COMMAND_OFFSET 0x04U
 #define PCI_COMMAND_MEMORY 0x0002U
@@ -20,6 +21,11 @@
 #define E1000_REG_STATUS 0x0008U
 #define E1000_REG_ICR 0x00c0U
 #define E1000_REG_IMC 0x00d8U
+#define E1000_REG_RFCTL 0x5008U
+#define E1000_REG_RXCSUM 0x5000U
+#define E1000_RFCTL_EXTENDED (1U << 15)
+#define E1000_CTRL_MASTER_DISABLE (1U << 2)
+#define E1000_STATUS_MASTER_PENDING (1U << 19)
 #define E1000_REG_RCTL 0x0100U
 #define E1000_REG_RAL 0x5400U
 #define E1000_REG_RAH 0x5404U
@@ -105,6 +111,12 @@ struct e1000_instance {
 
 static struct e1000_instance device;
 
+static bool
+is_i219(void)
+{
+	return device.pci.device_id == E1000_I219_DEVICE_ID;
+}
+
 static bool e1000_register_range_valid(uint32_t offset);
 static bool e1000_mmio_read32(void *context, uint32_t offset,
 	uint32_t *value);
@@ -134,7 +146,7 @@ static bool
 e1000_register_range_valid(uint32_t offset)
 {
 	return e1000_register_access_valid(offset, sizeof(uint32_t),
-	    E1000_QEMU_BAR0_APERTURE);
+	    device.mmio.length);
 }
 
 static bool
@@ -182,7 +194,10 @@ bool
 e1000_discover(const struct pci_device_info *pci)
 {
 	if (pci == NULL || pci->vendor_id != E1000_QEMU_VENDOR_ID ||
-	    pci->device_id != E1000_QEMU_DEVICE_ID)
+	    (pci->device_id != E1000_QEMU_DEVICE_ID &&
+	    pci->device_id != E1000_I219_DEVICE_ID) ||
+	    (pci->header_type & 0x7fU) != 0 || pci->class_code != 2 ||
+	    pci->subclass != 0 || pci->programming_interface != 0)
 		return false;
 	if (device.discovered) {
 		device.failure = E1000_FAILURE_DUPLICATE;
@@ -196,7 +211,7 @@ e1000_discover(const struct pci_device_info *pci)
 	device.state = E1000_STATE_DISCOVERED;
 	device.failure = E1000_FAILURE_NONE;
 	device.network_device = (struct net_device){
-		.name = "e1000",
+		.name = is_i219() ? "i219" : "e1000",
 		.operations = &network_operations,
 		.driver_context = &device,
 		.mtu = 1500,
@@ -345,6 +360,37 @@ allocate_rings(void)
 	return true;
 }
 
+/* The experimental CNP path keeps the firmware-configured PHY alive.
+ * Block new transactions and drain the MAC before replacing ring pointers. */
+static bool
+i219_quiesce(void)
+{
+	uint32_t control, status;
+	if (!e1000_read(E1000_REG_CTRL, &control) || control == UINT32_MAX ||
+	    !e1000_write(E1000_REG_IMC, UINT32_MAX) ||
+	    !e1000_write(E1000_REG_RCTL, 0) || !e1000_write(E1000_REG_TCTL, 0) ||
+	    !e1000_write(E1000_REG_CTRL, control | E1000_CTRL_MASTER_DISABLE))
+		return false;
+	uint64_t start = timer_jiffies();
+	do {
+		if (!e1000_read(E1000_REG_STATUS, &status) || status == UINT32_MAX)
+			return false;
+		if (!(status & E1000_STATUS_MASTER_PENDING))
+			return true;
+		timer_wait_for_interrupt();
+	} while (timer_jiffies() - start < 10);
+	return false;
+}
+
+static bool
+i219_legacy_receive(void)
+{
+	uint32_t filter;
+	return e1000_read(E1000_REG_RFCTL, &filter) && filter != UINT32_MAX &&
+	    e1000_write(E1000_REG_RFCTL, filter & ~E1000_RFCTL_EXTENDED) &&
+	    e1000_write(E1000_REG_RXCSUM, 0);
+}
+
 static bool
 program_rings(void)
 {
@@ -356,7 +402,8 @@ program_rings(void)
 	    e1000_read(E1000_REG_ICR, &(uint32_t){0}) &&
 	    e1000_write(E1000_REG_RCTL, 0) &&
 	    e1000_write(E1000_REG_TCTL, 0) &&
-	    e1000_write(E1000_REG_TIPG, E1000_TIPG_82540EM) &&
+	    (is_i219() ? i219_legacy_receive() :
+	    e1000_write(E1000_REG_TIPG, E1000_TIPG_82540EM)) &&
 	    e1000_write(E1000_REG_TDBAL, (uint32_t)tx) &&
 	    e1000_write(E1000_REG_TDBAH, (uint32_t)(tx >> 32)) &&
 	    e1000_write(E1000_REG_TDLEN, E1000_TX_RING_BYTES) &&
@@ -378,6 +425,12 @@ enable_engines(void)
 	    E1000_TCTL_COLLISION_THRESHOLD | E1000_TCTL_COLLISION_DISTANCE;
 	uint32_t readback;
 
+	if (is_i219()) {
+		uint32_t control;
+		if (!e1000_read(E1000_REG_CTRL, &control) || control == UINT32_MAX ||
+		    !e1000_write(E1000_REG_CTRL, control & ~E1000_CTRL_MASTER_DISABLE))
+			return false;
+	}
 	if (!e1000_write(E1000_REG_TCTL, tctl) ||
 	    !e1000_write(E1000_REG_RCTL, rctl) ||
 	    !e1000_read(E1000_REG_TCTL, &readback) ||
@@ -533,6 +586,11 @@ stop_hardware(void)
 	bool timed_out = false;
 
 	device.state = E1000_STATE_STOPPING;
+	if (is_i219()) {
+		bool stopped = i219_quiesce();
+		bool disabled = disable_pci_decode();
+		return stopped && disabled;
+	}
 	if (device.registers == NULL || !e1000_write(E1000_REG_RCTL, 0) ||
 	    !e1000_write(E1000_REG_TCTL, 0))
 		return false;
@@ -574,15 +632,15 @@ e1000_initialize(void)
 		device.state = E1000_STATE_FAILED;
 		return false;
 	}
-	if (!e1000_qemu_profile_validate(&device.pci, &device.resources)) {
-		device.failure = E1000_FAILURE_PROFILE;
-		device.state = E1000_STATE_FAILED;
-		return false;
-	}
 	struct pci_bar_resource probed_bar;
-	if (!pci_bar_probe_size(&device.pci_lease, 0, &probed_bar) ||
-	    probed_bar.base != device.resources.register_mmio.base ||
-	    probed_bar.aperture_size != E1000_QEMU_BAR0_APERTURE) {
+	if ((!is_i219() &&
+	    !e1000_qemu_profile_validate(&device.pci, &device.resources)) ||
+	    !pci_bar_probe_size(&device.pci_lease, 0, &probed_bar) ||
+	    (is_i219() ? (probed_bar.type != PCI_BAR_MEMORY32 ||
+	    probed_bar.aperture_size < 0x6000U ||
+	    probed_bar.aperture_size > E1000_QEMU_BAR0_APERTURE) :
+	    (probed_bar.base != device.resources.register_mmio.base ||
+	    probed_bar.aperture_size != E1000_QEMU_BAR0_APERTURE))) {
 		device.failure = E1000_FAILURE_PROFILE;
 		device.state = E1000_STATE_FAILED;
 		return false;
@@ -596,7 +654,7 @@ e1000_initialize(void)
 		return false;
 	}
 	if (!pci_mmio_map(&device.pci_lease, &device.resources.register_mmio, 0,
-	    E1000_QEMU_BAR0_APERTURE, &device.mmio)) {
+	    (size_t)probed_bar.aperture_size, &device.mmio)) {
 		device.failure = E1000_FAILURE_MAP;
 		device.state = E1000_STATE_FAILED;
 		(void)disable_pci_decode();
@@ -617,10 +675,11 @@ e1000_initialize(void)
 		.context = (void *)device.registers
 	};
 	device.state = E1000_STATE_RESET_IN_PROGRESS;
-	if (!e1000_reset_and_validate(&operations, E1000_RESET_POLL_LIMIT,
-	    &reset_timed_out)) {
-		device.failure = reset_timed_out ? E1000_FAILURE_RESET_TIMEOUT :
-		    E1000_FAILURE_POST_RESET;
+	if (!(is_i219() ? i219_quiesce() :
+	    e1000_reset_and_validate(&operations, E1000_RESET_POLL_LIMIT,
+	    &reset_timed_out))) {
+		device.failure = is_i219() ? E1000_FAILURE_REGISTER :
+		    reset_timed_out ? E1000_FAILURE_RESET_TIMEOUT : E1000_FAILURE_POST_RESET;
 		device.state = E1000_STATE_FAILED;
 		if (disable_pci_decode() && pci_mmio_release(&device.mmio))
 			device.registers = NULL;
@@ -660,7 +719,8 @@ e1000_initialize(void)
 		return false;
 	}
 	device.state = E1000_STATE_DMA_ACTIVE;
-	klog("OpenSillicon: e1000 DMA rings ready TX/RX ");
+	klog(is_i219() ? "i219: DMA rings ready TX/RX " :
+	    "OpenSillicon: e1000 DMA rings ready TX/RX ");
 	klog_u64(E1000_TX_RING_COUNT);
 	klog(" descriptors each; RX buffer ");
 	klog_u64(E1000_DMA_BUFFER_SIZE);
@@ -892,7 +952,7 @@ e1000_link_up_callback(const struct net_device *network_device)
 
 	(void)network_device;
 	return device.state == E1000_STATE_DMA_ACTIVE &&
-	    e1000_read(E1000_REG_STATUS, &status) &&
+	    e1000_read(E1000_REG_STATUS, &status) && status != UINT32_MAX &&
 	    (status & E1000_STATUS_LINK_UP) != 0;
 }
 
