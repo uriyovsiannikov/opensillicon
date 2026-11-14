@@ -267,6 +267,7 @@ mount_system_root(const struct limine_file *live_root)
 }
 
 static uint64_t pci_device_count;
+static bool qemu_e1000_present;
 
 #ifdef OPEN_SILLICON_ENABLE_QEMU_VIRTIO_RNG
 static bool virtio_rng_device_found;
@@ -279,6 +280,9 @@ record_pci_device(const struct pci_device_info *device, void *context)
 {
 	(void)context;
 	pci_device_count++;
+	if (device->vendor_id == 0x8086 && device->device_id == 0x100e &&
+	    device->class_code == 2 && device->subclass == 0)
+		qemu_e1000_present = true;
 	usb_host_record_controller(device);
 #ifdef OPEN_SILLICON_ENABLE_QEMU_VIRTIO_RNG
 	if (virtio_rng_matches_device(device)) {
@@ -715,7 +719,7 @@ virtio_rng_probe_done:
 		    "i219probe", "/boot/modules/i219probe.ko");
 		klog_status("I219-V diagnostics", result == KERNEL_MODULE_OK, NULL);
 	}
-	{
+	if (qemu_e1000_present) {
 		enum kernel_module_error result = kernel_module_load_path(
 		    "e1000", "/boot/modules/e1000.ko");
 		klog_status("e1000 module", result == KERNEL_MODULE_OK,
