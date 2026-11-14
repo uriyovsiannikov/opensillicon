@@ -278,6 +278,30 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	return true;
 }
 
+bool
+acpi_poweroff(void)
+{
+	ACPI_STATUS status;
+	if (rsdp_physical == 0)
+		return false;
+	status = AcpiEnable();
+	if (ACPI_FAILURE(status))
+		return false;
+	status = AcpiEnterSleepStatePrep(ACPI_STATE_S5);
+	if (ACPI_FAILURE(status)) {
+		klog("ACPI: S5 preparation failed\n");
+		return false;
+	}
+	/* ACPICA requires interrupts disabled for the final sleep transition. */
+	uint64_t flags;
+	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
+	status = AcpiEnterSleepState(ACPI_STATE_S5);
+	if ((flags & (1ULL << 9)) != 0)
+		__asm__ volatile ("sti" : : : "memory");
+	(void)status;
+	return false; /* Returning means the firmware did not power off. */
+}
+
 ACPI_STATUS
 AcpiOsInitialize(void)
 {

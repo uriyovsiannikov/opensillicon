@@ -1,3 +1,5 @@
+#include "arch/x86_64/acpi.h"
+#include "kernel/block.h"
 #include "kernel/pty.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -1206,13 +1208,23 @@ syscall_dispatch(struct interrupt_frame *frame)
 		{
 			struct os_credentials credentials;
 			if (!process_current_credentials(&credentials) ||
-			    credentials.effective_uid != 0) {
+			    (credentials.effective_uid != 0 &&
+			    !fd_object_is_console(fd_object_for_descriptor(current_fd_table(), 0)))) {
 				syscall_error(frame, 1U);
 				break;
 			}
 		}
 		if (frame->rdi == POWER_CONTROL_POWEROFF) {
-			/* QEMU/Bochs power-management ports. */
+			/* The local console user can shut down the machine. Flush
+			 * registered disks before invoking firmware S5. */
+			for (size_t i = 0; i < block_device_count(); i++) {
+				if (block_flush(block_device_at(i)) != 0) {
+					syscall_error(frame, EIO);
+					return frame;
+				}
+			}
+			(void)acpi_poweroff();
+			/* Compatibility fallback for emulators without usable ACPI. */
 			__asm__ volatile ("outw %0, %1" : : "a" ((uint16_t)0x2000),
 			    "Nd" ((uint16_t)0x0604));
 			__asm__ volatile ("outw %0, %1" : : "a" ((uint16_t)0x2000),
@@ -1230,9 +1242,8 @@ syscall_dispatch(struct interrupt_frame *frame)
 			syscall_error(frame, ERRNO_EINVAL);
 			break;
 		}
-		/* If firmware did not act, stop this CPU instead of returning success. */
-		for (;;)
-			__asm__ volatile ("cli; hlt" : : : "memory");
+		syscall_error(frame, EIO);
+		break;
 	case SYSCALL_FRAMEBUFFER_INFO:
 		{
 			struct os_framebuffer_info info;
