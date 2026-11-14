@@ -32,6 +32,7 @@
 #include "abi/input.h"
 #include "abi/select.h"
 #include "abi/ioctl.h"
+#include "abi/disk.h"
 #include "arch/x86_64/ps2_keyboard.h"
 
 #define SYSCALL_VECTOR 128U
@@ -2096,6 +2097,26 @@ syscall_dispatch(struct interrupt_frame *frame)
 
 			if (object == NULL) {
 				syscall_error(frame, 9);
+				break;
+			}
+			if (frame->rsi == OS_DIOCGSECTORSIZE ||
+			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH) {
+				union { uint32_t sector; int64_t media; } value = {0};
+				void *payload = frame->rsi == OS_DIOCGSECTORSIZE ?
+				    (void *)&value.sector : (void *)&value.media;
+				size_t size = frame->rsi == OS_DIOCGSECTORSIZE ? 4 :
+				    frame->rsi == OS_DIOCGMEDIASIZE ? 8 : 0;
+				struct address_space *space = vmm_active_address_space();
+				if (size && !vmm_validate_user_write(space, frame->rdx, size)) {
+					syscall_error(frame, EFAULT);
+					break;
+				}
+				int result = object->operations->ioctl ?
+				    object->operations->ioctl(object->context, frame->rsi, payload) : -ENOTTY;
+				if (result != 0) syscall_error(frame, errno_from_kernel(result));
+				else if (size && !vmm_copy_to_user(space, frame->rdx, payload, size))
+					syscall_error(frame, EFAULT);
+				else frame->rax = 0;
 				break;
 			}
 			if (frame->rsi == OS_FIONBIO) {

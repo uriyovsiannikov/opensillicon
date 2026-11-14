@@ -6,6 +6,7 @@
 #include "kernel/vfs.h"
 
 #define VFS_EBADF 9
+#define VFS_ENOTTY 25
 #define VFS_EBUSY 16
 #define VFS_EEXIST 17
 #define VFS_EIO 5
@@ -998,7 +999,16 @@ file_close(void *context)
 	(void)kheap_free(file);
 }
 
+static int
+file_ioctl(void *context, uint64_t request, void *argument)
+{
+	struct vfs_file_context *file = context;
+	if (file->node->operations->ioctl == NULL) return -VFS_ENOTTY;
+	return file->node->operations->ioctl(file->node, request, argument);
+}
+
 static const struct fd_operations vfs_file_operations = {
+	.ioctl = file_ioctl,
 	.read = file_read,
 	.write = file_write,
 	.prepare_write = file_prepare_write,

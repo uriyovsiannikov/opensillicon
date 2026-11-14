@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kernel/block.h"
+#include "abi/disk.h"
 #include "kernel/devfs.h"
 #include "kernel/fd.h"
 #include "kernel/errno.h"
@@ -52,6 +53,11 @@ int main(void)
  assert(vfs_open_as("/dev/ada0",VFS_O_RDWR,0,1000,1000,&file)==-EACCES);
  assert(vfs_open_as("/dev/ada0",VFS_O_RDONLY,0,1000,1000,&file)==-EACCES);
  assert(vfs_open("/dev/ada0",VFS_O_RDWR,0,&file)==0);
+ uint32_t sector_size=0;
+ int64_t media_size=0;
+ assert(file->operations->ioctl(file->context,OS_DIOCGSECTORSIZE,&sector_size)==0 && sector_size==512);
+ assert(file->operations->ioctl(file->context,OS_DIOCGMEDIASIZE,&media_size)==0 && media_size==16384);
+ assert(file->operations->ioctl(file->context,OS_DIOCGFLUSH,NULL)==0);
  memset(bytes+1,0xa5,1024);
  assert(fd_object_seek(file,512,SEEK_SET,&position)==0 && position==512);
  assert(fd_object_write(file,bytes+1,1024,&amount)==0 && amount==1024);

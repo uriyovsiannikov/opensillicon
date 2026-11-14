@@ -17,8 +17,10 @@ writes at or beyond the end return ENOSPC, and requests crossing the end return
 a short transfer. Raw writes to a disk hosting the mounted root filesystem
 return EBUSY, including ram0. Filesystem I/O continues through the block layer.
 Other character devices remain non-seekable. Disk nodes are populated when
-devfs mounts; partition nodes, hotplug updates and BSD disk ioctls are not yet
-implemented.
+devfs mounts; hotplug updates are not yet implemented. GPT partitions are exposed as
+/dev/ada0p1 and so forth. DIOCGSECTORSIZE, DIOCGMEDIASIZE and DIOCGFLUSH use
+FreeBSD-compatible request numbers and payload sizes; user pointers are copied
+only in the syscall layer. Include <sys/disk.h> from libos to use them.
 
 Run `sh src/tests/devfs_disks.sh` for the disk node and permission regression
 checks, including 512/4096-byte sector I/O and mounted-disk protection.

@@ -25,6 +25,8 @@ struct fd_metadata {
 };
 
 struct fd_operations {
+	/* Kernel buffers only; the syscall layer handles user copies. */
+	int (*ioctl)(void *context, uint64_t request, void *argument);
 	int (*read)(void *context, uint64_t offset, void *buffer, size_t length,
 	    size_t *read_length);
 	int (*write)(void *context, uint64_t offset, const void *buffer,

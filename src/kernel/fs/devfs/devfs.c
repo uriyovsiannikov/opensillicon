@@ -4,6 +4,7 @@
 
 #include "kernel/devfs.h"
 #include "kernel/block.h"
+#include "abi/disk.h"
 #include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
@@ -41,6 +42,7 @@ static int devfs_read(struct vnode *, uint64_t, void *, size_t, size_t *);
 static int devfs_write(struct vnode *, uint64_t, const void *, size_t, size_t *);
 static int devfs_readdir(struct vnode *, uint64_t, struct vfs_dirent *);
 static void devfs_destroy(struct vnode *);
+static int devfs_disk_ioctl(struct vnode *, uint64_t, void *);
 
 static const struct vnode_operations devfs_operations = {
 	.lookup = devfs_lookup,
@@ -51,11 +53,32 @@ static const struct vnode_operations devfs_operations = {
 };
 
 static const struct vnode_operations devfs_disk_operations = {
+	.ioctl = devfs_disk_ioctl,
 	.seekable = true,
 	.read = devfs_read,
 	.write = devfs_write,
 	.destroy = devfs_destroy,
 };
+
+static int
+devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
+{
+	struct devfs_node *node = vnode->private_data;
+	struct block_device *disk = node->block;
+	if (request == OS_DIOCGFLUSH) return block_flush(disk);
+	if (argument == NULL) return -EINVAL;
+	if (request == OS_DIOCGSECTORSIZE) {
+		*(uint32_t *)argument = disk->logical_sector_size;
+		return 0;
+	}
+	if (request == OS_DIOCGMEDIASIZE) {
+		uint64_t bytes = disk->sector_count * disk->logical_sector_size;
+		if (bytes > INT64_MAX) return -EOVERFLOW;
+		*(int64_t *)argument = (int64_t)bytes;
+		return 0;
+	}
+	return -ENOTTY;
+}
 
 /* Raw disk I/O follows sector boundaries; callers need not align buffers.
  * Never perform a read/modify/write of neighbouring bytes on their behalf. */
