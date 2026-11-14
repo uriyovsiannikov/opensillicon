@@ -394,3 +394,13 @@ $(BUILD_DIR)/tests/copy_guest.o: src/tests/copy_guest.c src/user/storage/install
 
 $(BUILD_DIR)/tests/copy_guest.elf: $(BUILD_DIR)/tests/copy_guest.o $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/coreutils/bsdinstall.o: src/user/coreutils/bsdinstall.c src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/bsdinstall.elf: $(BUILD_DIR)/coreutils/bsdinstall.o $(BUILD_DIR)/storage/install_copy.o \
+		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/newfs.o \
+		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o \
+		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/newfs.o $(LIBOS_ARCHIVE) -o $@
