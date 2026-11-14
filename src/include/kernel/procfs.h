@@ -3,6 +3,7 @@
 
 #include "kernel/vfs.h"
 
+void procfs_set_cmdline(const char *cmdline);
 int procfs_mount(const char *path);
 
 #endif

@@ -29,7 +29,8 @@ enum procfs_entry {
 	PROCFS_MODULES,
 	PROCFS_PCI,
 	PROCFS_USB,
-	PROCFS_DISKS
+	PROCFS_DISKS,
+	PROCFS_CMDLINE
 };
 
 struct procfs_node {
@@ -41,10 +42,18 @@ struct procfs_node {
 	uint64_t meminfo_inode;
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
-	uint64_t pci_inode, usb_inode, disks_inode;
+	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
+
+static char boot_cmdline[1024];
+void procfs_set_cmdline(const char *cmdline)
+{
+ size_t i=0;
+ while(cmdline && cmdline[i] && i<sizeof(boot_cmdline)-1) {boot_cmdline[i]=cmdline[i];i++;}
+ boot_cmdline[i]=0;
+}
 
 static int procfs_lookup(struct vnode *, const char *, size_t, struct vnode **);
 static int procfs_read(struct vnode *, uint64_t, void *, size_t, size_t *);
@@ -456,6 +465,14 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		if (error == 0) *result = &entry->vnode;
 		return error;
 	}
+	if (name_length == 7 && memcmp(name, "cmdline", 7) == 0) {
+		struct procfs_node *entry = procfs_allocate("cmdline", PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
+		if (!entry) return -PROCFS_ENOMEM;
+		if (!append_text(entry, boot_cmdline) || !append_text(entry, "\n")) {
+			vnode_put(&entry->vnode); return -PROCFS_EINVAL;
+		}
+		entry->vnode.size = entry->content_length; *result = &entry->vnode; return 0;
+	}
 	return -PROCFS_ENOENT;
 }
 
@@ -489,7 +506,7 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
 	static const char *const names[] = {
-		"self", "uptime", "meminfo", "cpuinfo", "modules", "pci", "usb", "disks"
+		"self", "uptime", "meminfo", "cpuinfo", "modules", "pci", "usb", "disks", "cmdline"
 	};
 	struct procfs_node *node;
 
@@ -504,7 +521,8 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	entry->inode = index == 0 ? node->self_inode :
 		index == 1 ? node->uptime_inode : index == 2 ? node->meminfo_inode :
 		index == 3 ? node->cpuinfo_inode : index == 4 ? node->modules_inode :
-		index == 5 ? node->pci_inode : index == 6 ? node->usb_inode : node->disks_inode;
+		index == 5 ? node->pci_inode : index == 6 ? node->usb_inode :
+		index == 7 ? node->disks_inode : node->cmdline_inode;
 	entry->mode = 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
@@ -534,10 +552,11 @@ procfs_mount(const char *path)
 	root->pci_inode = vfs_allocate_inode();
 	root->usb_inode = vfs_allocate_inode();
 	root->disks_inode = vfs_allocate_inode();
+	root->cmdline_inode = vfs_allocate_inode();
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
-	    root->usb_inode == 0 || root->disks_inode == 0) {
+	    root->usb_inode == 0 || root->disks_inode == 0 || root->cmdline_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}

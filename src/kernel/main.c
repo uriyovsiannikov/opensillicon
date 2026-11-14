@@ -511,6 +511,7 @@ _start(void)
 		klog("\n");
 		kernel_halt();
 	}
+	procfs_set_cmdline(boot_cmdline());
 	entropy_result = boot_entropy_inspect(
 	    (const struct limine_entropy_response *)(uintptr_t)
 	    entropy_request.response, info.hhdm_offset, info.memmap,
