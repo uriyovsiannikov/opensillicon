@@ -2,6 +2,7 @@
 #define KERNEL_ERRNO_H
 
 /* Linux/POSIX numeric errno values used by the current kernel interfaces. */
+#define ENOENT 2
 #define ESRCH 3
 #define EACCES 13
 #define EBUSY 16

@@ -24,3 +24,13 @@ Run `sh src/tests/block_partitions.sh` and `sh src/tests/gpt_read.sh` for host
 checks. `python3 src/tests/gpt_qemu.py` checks booting a SilliconFS in GPT
 partition 3, alongside other disks; it requires the built ISO/root image,
 sgdisk, QEMU with KVM, and OVMF. All test disk writes target temporary images.
+
+Installed disk boots may specify `root=PARTUUID=<canonical UUID>` in the kernel
+command line. The selector uses GPT UUID byte order, accepts upper/lowercase
+hex digits, and requires exactly one matching partition. Invalid selectors,
+missing targets and duplicate UUIDs halt boot instead of choosing a different
+filesystem. Without a root selector, existing development images retain the
+first-valid-SilliconFS behavior; a Live root module remains authoritative.
+`sh src/tests/root_device.sh` checks parsing/uniqueness and
+`python3 src/tests/root_uuid_qemu.py` boots the selected partition while a
+different valid filesystem is discovered earlier.

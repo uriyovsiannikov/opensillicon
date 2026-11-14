@@ -31,6 +31,7 @@
 #include "kernel/procfs.h"
 #include "kernel/block.h"
 #include "kernel/gpt.h"
+#include "kernel/root_device.h"
 #include "kernel/block_silliconfs.h"
 #include "kernel/silliconfs.h"
 #include "kernel/tty.h"
@@ -51,6 +52,7 @@
 
 static struct block_device *ahci_root_device;
 static struct block_silliconfs_adapter root_adapter;
+static const char *boot_cmdline(void);
 
 static void
 initialize_filesystems(const struct boot_info *info)
@@ -89,9 +91,16 @@ static struct vnode *
 mount_disk_root(void)
 {
 	struct vnode *root;
+	struct block_device *selected;
+	int selection = root_device_select(boot_cmdline(), &selected);
+	if (selection < 0) {
+		klog_status("disk root", false, "invalid, missing or ambiguous PARTUUID selector");
+		kernel_halt();
+	}
 	/* Select an existing SilliconFS, without formatting any candidate. */
 	for (size_t i = 0; i < block_device_count(); i++) {
 		struct block_device *candidate = block_device_at(i);
+		if (selection > 0 && candidate != selected) continue;
 		if (!block_silliconfs_init(&root_adapter, candidate) ||
 		    silliconfs_mount(&root_adapter.filesystem, &root) != 0)
 			continue;
@@ -367,6 +376,12 @@ clear_boot_entropy_values(uint64_t values[BOOT_ENTROPY_MAX_VALUES])
 	volatile uint64_t *current = values;
 	for (size_t i = 0; i < BOOT_ENTROPY_MAX_VALUES; i++)
 		current[i] = 0;
+}
+
+static const char *
+boot_cmdline(void)
+{
+	return cmdline_request.response != NULL ? cmdline_request.response->cmdline : NULL;
 }
 
 static bool
