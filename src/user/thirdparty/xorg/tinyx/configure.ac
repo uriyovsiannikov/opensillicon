@@ -124,9 +124,9 @@ dnl Extensions.
 dnl kdrive and its subsystems
 AC_ARG_ENABLE(kdrive,         AS_HELP_STRING([--enable-kdrive], [Build kdrive servers (default: yes)]), [KDRIVE=$enableval], [KDRIVE=yes])
 AC_ARG_ENABLE(xopensillicon,  AS_HELP_STRING([--enable-xopensillicon], [Build the OpenSillicon framebuffer server (default: no)]), [XOPENSILLICON=$enableval], [XOPENSILLICON=no])
-AC_ARG_VAR([OPEN_SILLICON_LIBS], [Target static runtime libraries for Xopensillicon])
-AC_ARG_VAR([OPEN_SILLICON_CRT0], [Target startup object for Xopensillicon])
-AC_ARG_VAR([OPEN_SILLICON_LDFLAGS], [Target linker flags for Xopensillicon])
+AC_ARG_VAR([OPEN_SILLICON_LIBS], [Target static runtime libraries for X])
+AC_ARG_VAR([OPEN_SILLICON_CRT0], [Target startup object for X])
+AC_ARG_VAR([OPEN_SILLICON_LDFLAGS], [Target linker flags for X])
 if test "x$XOPENSILLICON" = "xyes"; then
 	AC_DEFINE(OPEN_SILLICON, 1, [Build for the OpenSillicon OS backend])
 fi

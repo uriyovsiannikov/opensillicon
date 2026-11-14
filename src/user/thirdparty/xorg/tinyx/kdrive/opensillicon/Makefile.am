@@ -4,12 +4,12 @@ AM_CPPFLAGS = \
 	-I$(abs_top_srcdir)/../../include
 
 noinst_LIBRARIES = libopensillicon.a
-bin_PROGRAMS = Xopensillicon
+bin_PROGRAMS = X
 
 libopensillicon_a_SOURCES = opensillicon.c opensillicon.h
-Xopensillicon_SOURCES = opensilliconinit.c
-Xopensillicon_LDADD = @OPEN_SILLICON_CRT0@ libopensillicon.a \
+X_SOURCES = opensilliconinit.c
+X_LDADD = @OPEN_SILLICON_CRT0@ libopensillicon.a \
 	@KDRIVE_LIBS@ @XSERVER_LIBS@
-Xopensillicon_LDFLAGS = @OPEN_SILLICON_LDFLAGS@
-Xopensillicon_DEPENDENCIES = @OPEN_SILLICON_CRT0@ libopensillicon.a @KDRIVE_LIBS@ \
+X_LDFLAGS = @OPEN_SILLICON_LDFLAGS@
+X_DEPENDENCIES = @OPEN_SILLICON_CRT0@ libopensillicon.a @KDRIVE_LIBS@ \
 	$(filter %.a,@OPEN_SILLICON_LIBS@)

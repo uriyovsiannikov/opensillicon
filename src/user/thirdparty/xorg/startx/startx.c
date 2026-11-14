@@ -42,7 +42,7 @@ static pid_t launch(char *const argv[])
 
 int main(void)
 {
-	char *server_args[] = {"/bin/Xopensillicon", ":0", NULL};
+	char *server_args[] = {"/bin/X", ":0", NULL};
 	char *wm_args[] = {"/bin/twm", "-display", ":0", "-f", "/etc/twmrc", NULL};
 	char *wallpaper_args[] = {"/bin/feh", "--no-fehbg", "--bg-fill",
 	    "/tmp/img1.jpg", NULL};

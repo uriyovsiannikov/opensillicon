@@ -54,7 +54,7 @@ sha256sum "$root/src/build/libos/liblibos.a" "$root/src/build/libos/crt0.o" \
 
 mode=full
 if [ -f "$stamp" ] && cmp -s "$tmp" "$stamp" &&
-	[ -x "$root/src/build/tinyx/target/kdrive/opensillicon/Xopensillicon" ] &&
+	[ -x "$root/src/build/tinyx/target/kdrive/opensillicon/X" ] &&
 	[ -x "$root/src/build/x11/twm/src/twm" ] &&
 	[ -x "$root/src/build/x11/xterm/xterm" ] &&
 	[ -x "$root/src/build/x11/xeyes/xeyes" ] &&

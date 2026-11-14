@@ -335,7 +335,7 @@ void
 ddxUseMsg(void)
 {
 	KdUseMsg();
-	ErrorF("\nXopensillicon uses the boot framebuffer.\n");
+	ErrorF("\nX uses the boot framebuffer.\n");
 }
 
 int

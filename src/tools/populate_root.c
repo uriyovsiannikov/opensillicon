@@ -339,7 +339,7 @@ main(int argc, char **argv)
 		return 1;
 	}
 	if (tinyx_path != NULL &&
-	    (error = add_file("/bin/Xopensillicon", tinyx_path, 0755)) != 0) {
+	    (error = add_file("/bin/X", tinyx_path, 0755)) != 0) {
 		fprintf(stderr, "SilliconFS TinyX population failed: %d\n", error);
 		fclose(image);
 		return 1;

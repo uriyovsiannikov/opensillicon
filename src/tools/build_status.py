@@ -51,7 +51,7 @@ def label_for(target, source):
         "opensillicon.iso": "ISO boot image", "initramfs.cpio": "INITRAMFS",
         "liblibos.a": "LIB libos", "libz.a": "LIB zlib",
         "libfontenc.a": "LIB libfontenc", "libXfont.a": "LIB libXfont",
-        "Xopensillicon": "USER TinyX", ".apps-ready": "USER X11 applications",
+        "X": "USER TinyX", ".apps-ready": "USER X11 applications",
         ".opensillicon-configured": "USER TinyX configure", "nano": "USER nano",
         "pkg-server": "HOST pkg-server", "pkg-host": "HOST pkg-client",
         "pkg-build": "HOST pkg-build", "populate_root": "HOST root image tools",

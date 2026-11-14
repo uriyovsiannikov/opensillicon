@@ -215,7 +215,7 @@ $(TINYX_CONFIG_STAMP): $(TINYX_SOURCES) src/user/Makefile src/mk/common.mk \
 $(TINYX_BINARY): $(TINYX_CONFIG_STAMP) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
         $(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
 	$(MAKE) -C $(TINYX_BUILD_DIR)
-	touch $@
+	test -x "$@"
 
 $(TINYX_BINARY): | $(BUILD_DIR)
 
