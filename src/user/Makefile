@@ -286,7 +286,8 @@ $(BUILD_DIR)/dillo/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS
 
 SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 
-$(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
+$(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
+		src/limine/BOOTX64.EFI $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/htop/htop \
@@ -309,6 +310,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/x11/.apps-ready $(BUILD_D
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
 		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
+		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		--module $(BUILD_DIR)/modules/e1000.ko \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
 		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils $(COREUTILS_ELFS); \

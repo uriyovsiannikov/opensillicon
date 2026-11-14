@@ -1,3 +1,4 @@
+OBJCOPY ?= objcopy
 SHELL := /bin/sh
 
 CC := gcc

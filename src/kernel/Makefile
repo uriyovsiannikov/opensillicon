@@ -441,6 +441,12 @@ $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(USBX_KERNEL_OBJECTS) \
 	$(LD) $(KERNEL_LDFLAGS) $(KERNEL_OBJECTS) $(USBX_KERNEL_OBJECTS) \
 		$(BUILD_DIR)/usbx/libusbx.a -o $@
 
+$(BUILD_DIR)/kernel-boot.elf: $(BUILD_DIR)/kernel.elf
+	@set -eu; image=$$(mktemp '$@.tmp.XXXXXX'); \
+	trap 'rm -f "$$image"' EXIT HUP INT TERM; \
+	$(OBJCOPY) --strip-debug '$<' "$$image"; \
+	chmod 644 "$$image"; mv -f "$$image" '$@'
+
 iso: $(BUILD_DIR)/opensillicon.iso
 
 INITRAMFS_INPUTS := $(shell find src/initramfs -print)

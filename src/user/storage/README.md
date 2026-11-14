@@ -47,3 +47,8 @@ publishes the primary boot record only after data has been flushed.
 `sh src/tests/esp_image.sh` checks both sector sizes with fsck.fat and mcopy,
 compares all boot files, and injects failed writes and flushes. This component
 supports UEFI; it does not install BIOS boot code.
+
+Root and Live images include installable boot payloads at /boot/BOOTX64.EFI,
+/boot/kernel.elf and /boot/init.cpi. The packaged kernel removes debug sections
+so it fits SilliconFS's current per-file limit; its entry and loadable contents
+remain identical to the development ELF. The full debug ELF stays in src/build.
