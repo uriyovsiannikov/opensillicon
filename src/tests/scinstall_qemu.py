@@ -51,7 +51,8 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
     config.chmod(0o600)
     menu=config.read_text()
     assert '/ OpenSillicon Live\n' in menu and 'cmdline: installer' in menu
-    config.write_text('timeout: 0\n'+menu[menu.index('/ OpenSillicon Installer\n'):])
+    entry=menu[menu.index('/ OpenSillicon Installer\n'):].split('\n/ ',1)[0]
+    config.write_text('timeout: 0\n'+entry+'\n')
     subprocess.run(['xorriso','-indev','src/build/opensillicon-live.iso','-outdev',str(iso),
       '-map',str(config),'/limine.conf','-boot_image','any','replay'],check=True,
       stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

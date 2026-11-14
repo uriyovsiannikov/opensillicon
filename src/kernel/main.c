@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include <stdint.h>
 #include "limine.h"
 #include "kernel/boot.h"
@@ -389,11 +391,10 @@ boot_cmdline(void)
 }
 
 static bool
-boot_no_smp(void)
+boot_has_option(const char *option)
 {
-	const struct limine_executable_cmdline_response *response =
-	    cmdline_request.response;
-	const char *arg = response != NULL ? response->cmdline : NULL;
+	const char *arg = boot_cmdline();
+	size_t length = strlen(option);
 
 	while (arg != NULL && *arg != '\0') {
 		while (*arg == ' ' || *arg == '\t')
@@ -401,8 +402,7 @@ boot_no_smp(void)
 		const char *end = arg;
 		while (*end != '\0' && *end != ' ' && *end != '\t')
 			end++;
-		if (end - arg == 5 && arg[0] == 'n' && arg[1] == 'o' &&
-		    arg[2] == 's' && arg[3] == 'm' && arg[4] == 'p')
+		if ((size_t)(end - arg) == length && memcmp(arg, option, length) == 0)
 			return true;
 		arg = end;
 	}
@@ -412,7 +412,7 @@ boot_no_smp(void)
 static void
 report_smp_bootstrap(void)
 {
-	if (boot_no_smp()) {
+	if (boot_has_option("nosmp")) {
 		klog("OpenSillicon: SMP disabled by nosmp; using bootstrap CPU only\n");
 	} else if (stack_size_request.response == NULL) {
 		klog("OpenSillicon: SMP unavailable; Limine stack size request was not honored\n");
@@ -710,6 +710,11 @@ virtio_rng_probe_done:
 	initialize_filesystems(&info);
 	klog_status("VFS", true, NULL);
 	mount_system_root(info.live_root);
+	if (info.live_root != NULL && boot_has_option("i219probe")) {
+		enum kernel_module_error result = kernel_module_load_path(
+		    "i219probe", "/boot/modules/i219probe.ko");
+		klog_status("I219-V diagnostics", result == KERNEL_MODULE_OK, NULL);
+	}
 	{
 		enum kernel_module_error result = kernel_module_load_path(
 		    "e1000", "/boot/modules/e1000.ko");

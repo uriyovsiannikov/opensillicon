@@ -285,7 +285,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
 		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
-		--module $(BUILD_DIR)/modules/e1000.ko \
+		$(foreach module,$(MODULE_OBJECTS),--module $(module)) \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf --scinstall $(BUILD_DIR)/scinstall/scinstall.elf \
 		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils $(COREUTILS_ELFS); \
 	mv -f "$$image_tmp" '$@'
