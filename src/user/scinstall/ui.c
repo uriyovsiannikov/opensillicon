@@ -1,7 +1,9 @@
 #include <curses.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "ui.h"
@@ -71,6 +73,23 @@ frame(const char *title)
 	attroff(A_BOLD);
 }
 
+static int
+read_key(void)
+{
+	for (;;) {
+		errno = 0;
+		int key = getch();
+		if (key != ERR)
+			return key;
+		/* The raw console times out with EAGAIN. Ncurses can also
+		 * return ERR again from its input FIFO without setting errno. */
+		if (errno && errno != EAGAIN && errno != EINTR)
+			return ERR;
+		const struct timespec pause = {.tv_nsec = 10000000};
+		nanosleep(&pause, NULL);
+	}
+}
+
 static bool
 enter(int key)
 {
@@ -108,9 +127,11 @@ ui_choose_disk(const struct disk_choice *disks, size_t count)
 		row(LINES - 2, "Up/Down: select   Enter: review   Esc/Q: exit");
 		refresh();
 
-		int key = getch();
-		if (key == ERR || key == 27 || key == 'q' || key == 'Q')
-			return -1;
+		int key = read_key();
+		if (key == ERR)
+			return -errno;
+		if (key == 27 || key == 'q' || key == 'Q')
+			return UI_DISK_CANCELLED;
 		if (key == KEY_UP && selected > 0)
 			selected--;
 		if (key == KEY_DOWN && selected + 1 < count)
@@ -173,14 +194,14 @@ ui_progress(size_t done, size_t total)
 	refresh();
 }
 
-bool
+int
 ui_confirm(const char *phrase)
 {
 	char answer[64] = {0}, prompt[96];
 	size_t length = 0, overflow = 0;
 	snprintf(prompt, sizeof(prompt), "Type %s to erase this disk.", phrase);
 	curs_set(1);
-	bool confirmed = false;
+	int confirmed = 0;
 	for (;;) {
 		status("Confirm disk erasure");
 		row(3, "All partitions on this disk will be replaced.");
@@ -190,12 +211,16 @@ ui_confirm(const char *phrase)
 		move(LINES - 3, length < (size_t)(COLS - 4) ?
 		    2 + (int)length : COLS - 2);
 		refresh();
-		int key = getch();
+		int key = read_key();
 		if (enter(key)) {
 			confirmed = !overflow && strcmp(answer, phrase) == 0;
 			break;
 		}
-		if (key == 27 || key == ERR)
+		if (key == ERR) {
+			confirmed = -errno;
+			break;
+		}
+		if (key == 27)
 			break;
 		if (key == KEY_BACKSPACE || key == 127 || key == '\b') {
 			if (overflow)
@@ -225,7 +250,7 @@ ui_reboot(void)
 		    "[ Return to console ]   Reboot");
 		row(LINES - 2, "Left/Right: select   Enter: accept   Esc: exit");
 		refresh();
-		int key = getch();
+		int key = read_key();
 		if (key == ERR || key == 27 || key == 'n' || key == 'N')
 			return false;
 		if (key == 'y' || key == 'Y')
@@ -245,5 +270,5 @@ ui_wait(void)
 	status("Installation failed");
 	row(LINES - 2, "Press any key to return to the console.");
 	refresh();
-	(void)getch();
+	(void)read_key();
 }

@@ -132,8 +132,10 @@ choose_disk(char path[32])
 	size_t count = read_disks(disks);
 	if (ui_active()) {
 		int selected = ui_choose_disk(disks, count);
-		if (selected < 0)
+		if (selected == UI_DISK_CANCELLED)
 			return 1;
+		if (selected < 0)
+			return selected;
 		strcpy(path, disks[selected].path);
 		return 0;
 	}
@@ -304,11 +306,17 @@ main(int argc, char **argv)
 	char answer[128], path[32];
 	int selection = preview ? disk_path(argv[2], path) : choose_disk(path);
 	if (selection) {
+		bool terminal_error = ui_active() && selection < 0;
 		ui_close();
-		note(selection < 0 ? "Invalid disk name; no disk writes.\n" :
-		    "Installation cancelled; no disk writes.\n");
+		if (terminal_error)
+			note("Cannot read installer keyboard: %s (errno %d). No disk writes.\n",
+			    strerror(-selection), -selection);
+		else if (selection < 0)
+			note("Invalid disk name; no disk writes.\n");
+		else
+			note("Installation cancelled; no disk writes.\n");
 		fclose(journal);
-		return selection < 0 ? 2 : 0;
+		return terminal_error ? 1 : selection < 0 ? 2 : 0;
 	}
 	ui_reset();
 	struct storage_device d = {.fd = -1};
@@ -379,20 +387,24 @@ main(int argc, char **argv)
 	}
 	char confirmation[64];
 	snprintf(confirmation, sizeof(confirmation), "ERASE %s", path);
-	bool confirmed;
+	int confirmed;
 	if (ui_active()) {
 		confirmed = ui_confirm(confirmation);
 	} else {
 		note("To erase this disk, type: %s\nConfirmation: ", confirmation);
 		confirmed = !line(answer, sizeof(answer)) && !strcmp(answer, confirmation);
 	}
-	if (!confirmed) {
+	if (confirmed <= 0) {
 		ui_close();
-		note("Installation cancelled; no disk writes.\n");
+		if (confirmed < 0)
+			note("Cannot read installer keyboard: %s (errno %d). No disk writes.\n",
+			    strerror(-confirmed), -confirmed);
+		else
+			note("Installation cancelled; no disk writes.\n");
 		storage_close(&d);
 		install_tree_free(&tree);
 		fclose(journal);
-		return 0;
+		return confirmed < 0 ? 1 : 0;
 	}
 	note("Rechecking source and target...\n");
 	error = install_tree_recheck(&tree);

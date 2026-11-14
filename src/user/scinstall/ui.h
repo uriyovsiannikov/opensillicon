@@ -15,11 +15,14 @@ struct disk_choice {
 bool ui_open(void);
 bool ui_active(void);
 void ui_close(void);
+/* A disk index, UI_DISK_CANCELLED, or negative errno. */
+#define UI_DISK_CANCELLED (-256)
 int ui_choose_disk(const struct disk_choice *, size_t count);
 void ui_reset(void);
 void ui_note(const char *);
 void ui_progress(size_t done, size_t total);
-bool ui_confirm(const char *phrase);
+/* 1 confirms, 0 cancels, negative errno reports a read failure. */
+int ui_confirm(const char *phrase);
 bool ui_reboot(void);
 void ui_wait(void);
 

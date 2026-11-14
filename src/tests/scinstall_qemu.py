@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
         while time.monotonic()<deadline:
             text=log.read_text(errors='replace') if log.exists() else ''
             if marker in text:return text
-            if 'INSTALLATION FAILED' in text:raise RuntimeError(text[-6000:])
+            if 'INSTALLATION FAILED' in text or 'Cannot read installer keyboard:' in text:raise RuntimeError(text[-6000:])
             if p.poll() is not None:raise RuntimeError(p.stderr.read().decode()+text[-6000:])
             if time.monotonic()>report:
                 print('Waiting for',repr(marker),':',text[-250:],flush=True);report=time.monotonic()+20
@@ -102,8 +102,10 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
     try:
         wait(p,'Select a target SATA disk');keys=Input()
         text=wait(p,'INSTALL001');assert '/dev/ada1' in text
+        # The console can return EAGAIN while idle in raw mode.
+        time.sleep(3)
         keys.key('down');wait(p,'GUARD001');keys.key('up');keys.key('ret')
-        wait(p,'ERASE /dev/ada0')
+        wait(p,'ERASE /dev/ada0');time.sleep(3)
         keys.type('cancel');wait(p,'Installation cancelled; no disk writes.')
         wait(p,'/% ');keys.type('scinstall -N /dev/ada0');wait(p,'root required')
         keys.close()
@@ -114,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
     try:
         wait(p,'Select a target SATA disk');keys=Input();keys.key('ret');wait(p,'ERASE /dev/ada0')
         keys.type('ERASE /dev/ada0');wait(p,'INSTALLATION COMPLETE: /dev/ada0',600)
-        wait(p,'Return to console');keys.key('ret');wait(p,'/% ')
+        wait(p,'Return to console');time.sleep(3);keys.key('ret');wait(p,'/% ')
         keys.type('poweroff');p.wait(timeout=20);assert p.returncode==0;keys.close()
     finally:
         print(log.read_text(errors='replace')[-5000:],flush=True);stop(p)
