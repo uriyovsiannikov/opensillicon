@@ -30,7 +30,8 @@ enum procfs_entry {
 	PROCFS_PCI,
 	PROCFS_USB,
 	PROCFS_DISKS,
-	PROCFS_CMDLINE
+	PROCFS_CMDLINE,
+	PROCFS_NETPCI
 };
 
 struct procfs_node {
@@ -42,7 +43,7 @@ struct procfs_node {
 	uint64_t meminfo_inode;
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
-	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode;
+	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode, netpci_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
@@ -120,9 +121,8 @@ append_hex(struct procfs_node *node, uint64_t value, unsigned int digits)
 }
 
 static bool
-procfs_pci_entry(const struct pci_device_info *device, void *context)
+procfs_pci_identity(const struct pci_device_info *device, struct procfs_node *node)
 {
-	struct procfs_node *node = context;
 	return append_hex(node, device->segment, 4) && append_text(node, ":") &&
 	    append_hex(node, device->bus, 2) && append_text(node, ":") &&
 	    append_hex(node, device->device, 2) && append_text(node, ".") &&
@@ -130,15 +130,77 @@ procfs_pci_entry(const struct pci_device_info *device, void *context)
 	    append_hex(node, device->class_code, 2) && append_hex(node, device->subclass, 2) &&
 	    append_hex(node, device->programming_interface, 2) && append_text(node, " ") &&
 	    append_hex(node, device->vendor_id, 4) && append_text(node, " ") &&
-	    append_hex(node, device->device_id, 4) && append_text(node, "\n");
+	    append_hex(node, device->device_id, 4);
+}
+
+static bool
+procfs_pci_entry(const struct pci_device_info *device, void *context)
+{
+	struct procfs_node *node = context;
+	return procfs_pci_identity(device, node) && append_text(node, "\n");
+}
+
+static bool
+append_config_id(struct procfs_node *node, const struct pci_device_info *device,
+    uint16_t offset, unsigned int bits)
+{
+	uint32_t value;
+	if (!pci_config_read(device->segment, device->bus, device->device,
+	    device->function, offset, bits, &value))
+		return append_text(node, "unavailable");
+	return append_hex(node, value, bits / 4U);
+}
+
+static bool
+procfs_netpci_entry(const struct pci_device_info *device, void *context)
+{
+	struct procfs_node *node = context;
+	if (device->class_code != 0x02)
+		return true;
+	if (!procfs_pci_identity(device, node) ||
+	    !append_text(node, device->subclass == 0 ? " Ethernet\n" :
+	    " Network controller\n") ||
+	    !append_text(node, "  revision=") ||
+	    !append_config_id(node, device, 0x08, 8) ||
+	    !append_text(node, " command=") ||
+	    !append_hex(node, device->command, 4))
+		return false;
+	/* Subsystem fields and these interrupt offsets apply to type-0 headers. */
+	if ((device->header_type & 0x7fU) == 0 &&
+	    (!append_text(node, " subsystem=") ||
+	    !append_config_id(node, device, 0x2c, 16) ||
+	    !append_text(node, ":") ||
+	    !append_config_id(node, device, 0x2e, 16) ||
+	    !append_text(node, " irq-line=") ||
+	    !append_config_id(node, device, 0x3c, 8) ||
+	    !append_text(node, " irq-pin=") ||
+	    !append_config_id(node, device, 0x3d, 8)))
+		return false;
+	if (!append_text(node, "\n"))
+		return false;
+	for (unsigned int i = 0; i < 6; i++) {
+		struct pci_bar_resource bar;
+		if (!pci_bar_decode(device, i, &bar) || bar.type == PCI_BAR_UNUSED)
+			continue;
+		const char *type = bar.type == PCI_BAR_IO ? " IO 0x" :
+		    bar.type == PCI_BAR_MEMORY64 ? " MMIO64 0x" : " MMIO32 0x";
+		if (!append_text(node, "  BAR") || !append_u64(node, i) ||
+		    !append_text(node, type) ||
+		    !append_hex(node, bar.base, bar.type == PCI_BAR_MEMORY64 ? 16 : 8) ||
+		    !append_text(node, "\n"))
+			return false;
+		i += bar.slots - 1;
+	}
+	return true;
 }
 
 static int
-procfs_make_pci(uint64_t inode, struct procfs_node **result)
+procfs_make_pci(uint64_t inode, struct procfs_node **result, bool network)
 {
-	struct procfs_node *node = procfs_allocate("pci", PROCFS_PCI, VNODE_REGULAR, inode);
+	struct procfs_node *node = procfs_allocate(network ? "netpci" : "pci",
+	    network ? PROCFS_NETPCI : PROCFS_PCI, VNODE_REGULAR, inode);
 	if (node == NULL) return -PROCFS_ENOMEM;
-	if (!pci_enumerate(procfs_pci_entry, node)) {
+	if (!pci_enumerate(network ? procfs_netpci_entry : procfs_pci_entry, node)) {
 		vnode_put(&node->vnode); return -PROCFS_EINVAL;
 	}
 	node->vnode.size = node->content_length; *result = node; return 0;
@@ -451,9 +513,11 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 			*result = &modules->vnode;
 		return error;
 	}
-	if (name_length == 3 && memcmp(name, "pci", 3) == 0) {
+	bool network_pci = name_length == 6 && memcmp(name, "netpci", 6) == 0;
+	if (network_pci || (name_length == 3 && memcmp(name, "pci", 3) == 0)) {
 		struct procfs_node *entry;
-		error = procfs_make_pci(node->pci_inode, &entry);
+		error = procfs_make_pci(network_pci ? node->netpci_inode :
+		    node->pci_inode, &entry, network_pci);
 		if (error == 0) *result = &entry->vnode;
 		return error;
 	}
@@ -516,7 +580,7 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
 	static const char *const names[] = {"self", "uptime", "meminfo",
-	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline"};
+	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline", "netpci"};
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
@@ -535,7 +599,8 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	    : index == 5	  ? node->pci_inode
 	    : index == 6	  ? node->usb_inode
 	    : index == 7	  ? node->disks_inode
-				  : node->cmdline_inode;
+				  : index == 8	  ? node->cmdline_inode
+				  : node->netpci_inode;
 	entry->mode = 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
@@ -566,11 +631,12 @@ procfs_mount(const char *path)
 	root->usb_inode = vfs_allocate_inode();
 	root->disks_inode = vfs_allocate_inode();
 	root->cmdline_inode = vfs_allocate_inode();
+	root->netpci_inode = vfs_allocate_inode();
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
 	    root->usb_inode == 0 || root->disks_inode == 0 ||
-	    root->cmdline_inode == 0) {
+	    root->cmdline_inode == 0 || root->netpci_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}

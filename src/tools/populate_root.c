@@ -433,7 +433,7 @@ main(int argc, char **argv)
 		    "wc", "seq", "mkdir", "rm", "touch", "stat", "basename",
 		    "dirname", "kill", "sleep", "which", "ps",
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
-		    "kldload", "kldunload", "pkg", "pciconf", "usbconf",
+		    "kldload", "kldunload", "pkg", "pciconf", "netconf", "usbconf",
 		    "cpuconf", "blkconf", "newfs_silliconfs", "gpart",
 		    "installboot", "mount", "umount", "sync"};
 		int index;
