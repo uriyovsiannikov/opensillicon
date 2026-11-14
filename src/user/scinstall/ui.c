@@ -121,9 +121,8 @@ ui_choose_disk(const struct disk_choice *disks, size_t count)
 			    disks[selected].serial[0] ? disks[selected].serial :
 			    "unavailable");
 			row(LINES - 4, serial);
-			row(LINES - 3, disks[selected].writable
-			    ? "Review the partition plan before confirming."
-			    : "This disk or one of its partitions is mounted.");
+			if (!disks[selected].writable)
+				row(LINES - 3, "Disk or partition is mounted.");
 		}
 		row(LINES - 2, "Up/Down: select   Enter: review   Esc/Q: exit");
 		refresh();
@@ -207,7 +206,7 @@ ui_confirm(const char *phrase)
 {
 	char answer[64] = {0}, prompt[96];
 	size_t length = 0, overflow = 0;
-	snprintf(prompt, sizeof(prompt), "Type %s to erase this disk.", phrase);
+	snprintf(prompt, sizeof(prompt), "Type %s:", phrase);
 	curs_set(1);
 	int confirmed = 0;
 	for (;;) {
@@ -276,7 +275,7 @@ void
 ui_wait(void)
 {
 	status("Installation failed");
-	row(LINES - 2, "Press any key to return to the console.");
+	row(LINES - 2, "Any key: return to console");
 	refresh();
 	(void)read_key();
 }

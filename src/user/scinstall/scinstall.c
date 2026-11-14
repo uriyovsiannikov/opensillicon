@@ -144,7 +144,7 @@ choose_disk(char path[32])
 		printf("  %s  %llu MiB  %s  serial=%s%s\n", disks[i].path,
 		    disks[i].mib, disks[i].model, disks[i].serial,
 		    disks[i].writable ? "" : "  [IN USE]");
-	fputs("Target disk (ada0 or /dev/ada0; q to cancel): ", stdout);
+	fputs("Target disk: ", stdout);
 	fflush(stdout);
 	char answer[128];
 	if (line(answer, sizeof(answer)) || !strcmp(answer, "q"))
@@ -376,7 +376,7 @@ main(int argc, char **argv)
 		(1024 * 1024)),
 	    inodes);
 	note(
-	    "Source: %u entries, %llu file bytes; permissions and owners preserved\n",
+	    "Source: %u entries, %llu file bytes\n",
 	    (unsigned)tree.count, (unsigned long long)tree.file_bytes);
 	if (preview) {
 		note("Preview complete; no partition or filesystem writes.\n");
@@ -478,8 +478,6 @@ main(int argc, char **argv)
 		goto failed;
 	stage = "installation journal and filesystem flush";
 	note("[6/7] %s\n", stage);
-	note(
-	    "All system files and boot payloads verified. Final unmount/flush follows.\n");
 	error = save_journal();
 	if (error)
 		goto failed;
