@@ -15,33 +15,33 @@ make src/build/pkg/pkg-host src/build/pkg/pkg-server \
 src/build/pkg/pkg-server --repo src/tools/pkg/repo
 ```
 
-The last command runs the C repository server in the foreground on
-`127.0.0.1:8080`. QEMU user networking exposes the host at `10.15.3.2` with
-this project's VM configuration. The normal guest shell runs as UID 1000;
-use a writable installation prefix there:
+The server listens on `127.0.0.1:8080` by default. With the project's QEMU
+network configuration the guest reaches it at `10.15.3.2:8080`. For a physical
+machine, bind the server to its LAN address and point the client there once:
 
 ```sh
-pkg -r /tmp/packages update
-pkg -r /tmp/packages search hello
-pkg -r /tmp/packages install hello
-/tmp/packages/bin/hello
-pkg -r /tmp/packages list
-pkg -r /tmp/packages info hello
-pkg -r /tmp/packages verify hello
+pkg repo http://192.168.1.50:8080
+pkg update
+pkg add hello
+/tmp/pkg-1000/bin/hello
+pkg list
+pkg verify hello
 ```
 
-Without `-r`, package paths are rooted at `/` and write operations require
-root privileges. The manager does not elevate the ordinary shell. With
-`-r`, payloads, cache, configuration and the package database all live under
-that prefix; use the same prefix for subsequent commands. `/tmp` is stored
-on the current SilliconFS disk and is not cleared by the package manager.
+`pkg repo` writes a single URL to the active prefix's `etc/pkg.conf`.
+In the normal OpenSillicon console (UID 1000), the default prefix is
+`/tmp/pkg-1000` and the file is `/tmp/pkg-1000/etc/pkg.conf`. The directory
+is private to the user. On an installed system it persists on disk; in
+Live mode it lives in RAM. Run installed programs from the prefix's
+`bin` directory.
 
-`pkg update` refreshes the repository **index**, not installed applications.
-The default repository is `http://10.15.3.2:8080`. Set another address with
-`pkg -R http://host:port update` and the same option on `install`, or put that
-URL alone on the first and only line of `/etc/pkg.conf`. An optional final
-newline is accepted. Hostnames resolve through the guest's IPv4 DNS API.
-`pkg add /path/to/file.spkg` installs a local archive without a server.
+Root defaults to the system prefix and `/etc/pkg.conf`. OpenSillicon looks
+for a config inside the chosen prefix first, then in `/etc/pkg.conf`.
+The default config points to QEMU's `http://10.15.3.2:8080`. Use `-r` to
+select another prefix or `-R` to override the server for one command.
+
+`pkg update` refreshes the repository index. `pkg install hello` remains an
+alias for `pkg add hello`. Use `pkg add ./file.spkg` for an offline archive.
 
 To run the server with another repository or listen address:
 

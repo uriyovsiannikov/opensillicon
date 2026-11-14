@@ -379,30 +379,95 @@ static int install_remote(const char *name)
 	free(bytes);
 	return result;
 }
-static void load_repository(void)
+#ifndef PKG_HOST
+static int
+select_user_root(uid_t uid)
 {
-	char path[256];
+	static char path[32];
+	struct stat st;
+
+	snprintf(path, sizeof(path), "/tmp/pkg-%u", (unsigned int)uid);
+	if (mkdir(path, 0700) < 0 && errno != EEXIST) {
+		perror("pkg: create user package directory");
+		return 1;
+	}
+	if (stat(path, &st) < 0 || !S_ISDIR(st.st_mode) ||
+	    st.st_uid != uid || (st.st_mode & 0077) != 0)
+		return fail("user package directory must be private and owned by you");
+	root = path;
+	return 0;
+}
+
+#endif
+
+static int
+load_repository_file(const char *path)
+{
 	size_t size;
-	if (rooted(path, "etc/pkg.conf") < 0)
-		return;
 	uint8_t *bytes = pkg_read_file(path, sizeof(configured_repository) - 1, &size);
-	if (!bytes)
-		return;
+	if (!bytes) {
+		if (errno == ENOENT)
+			return 0;
+		perror(path);
+		return -1;
+	}
 	while (size && (bytes[size - 1] == '\n' || bytes[size - 1] == '\r'))
 		size--;
+	if (size < 8 || memcmp(bytes, "http://", 7) ||
+	    memchr(bytes, 0, size) || memchr(bytes, '\r', size) ||
+	    memchr(bytes, '\n', size)) {
+		fprintf(stderr, "pkg: %s must contain one HTTP repository URL\n", path);
+		free(bytes);
+		return -1;
+	}
 	memcpy(configured_repository, bytes, size);
 	configured_repository[size] = 0;
 	free(bytes);
-	if (size)
-		repository = configured_repository;
+	repository = configured_repository;
+	return 1;
 }
+
+static int
+load_repository(void)
+{
+	char path[256];
+	if (rooted(path, "etc/pkg.conf") < 0)
+		return 1;
+	int result = load_repository_file(path);
+#ifndef PKG_HOST
+	if (result == 0 && *root)
+		result = load_repository_file("/etc/pkg.conf");
+#endif
+	return result < 0;
+}
+
+static int
+save_repository(const char *url)
+{
+	char line[256], path[256];
+	int n = snprintf(line, sizeof(line), "%s\n", url);
+	if (n < 9 || (size_t)n >= sizeof(line) || strncmp(url, "http://", 7) ||
+	    strcspn(url, " \t\r\n") != strlen(url))
+		return fail("repository must use http://host:port");
+	if (ensure_directory("etc") < 0 || rooted(path, "etc/pkg.conf") < 0)
+		return 1;
+	if (save_file("etc/pkg.conf", line, (size_t)n) < 0) {
+		perror("pkg: save repository");
+		return 1;
+	}
+	printf("Repository saved in %s\nRun pkg update to fetch its index.\n", path);
+	return 0;
+}
+
 static int usage(void)
 {
 	puts("usage: pkg [-r root] [-R http://host:port] command [argument]");
+	puts("  repo URL          save repository URL in etc/pkg.conf");
 	puts("  update            download repository index");
 	puts("  search [text]     search the downloaded index");
-	puts("  install name      download, verify and install a new package");
+	puts("  add name          download and install a package from the index");
 	puts("  add file.spkg     verify and install a local package");
+	puts("  install name      alias for repository installation");
 	puts("  list              list installed and incomplete packages");
 	puts("  info name         show installed package metadata");
 	puts("  verify name       check installed file hashes and modes");
@@ -414,6 +479,7 @@ int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN);
 #endif
 	const char *repo_override = NULL;
+	const char *root_override = NULL;
 	int arg = 1;
 	while (arg < argc && argv[arg][0] == '-') {
 		if (!strcmp(argv[arg], "--help")) {
@@ -423,8 +489,8 @@ int main(int argc, char **argv)
 		if (arg + 1 >= argc)
 			return usage();
 		if (!strcmp(argv[arg], "-r")) {
-			root = argv[arg + 1];
-			if (root[0] != '/')
+			root_override = argv[arg + 1];
+			if (root_override[0] != '/')
 				return fail("installation root must be absolute");
 		} else if (!strcmp(argv[arg], "-R"))
 			repo_override = argv[arg + 1];
@@ -432,29 +498,36 @@ int main(int argc, char **argv)
 			return usage();
 		arg += 2;
 	}
-	if (!strcmp(root, "/"))
-		root = "";
-	load_repository();
-	if (repo_override)
-		repository = repo_override;
-	if (arg == argc)
-		return list_packages();
-	const char *command = argv[arg++];
+	if (root_override && strcmp(root_override, "/"))
+		root = root_override;
+#ifndef PKG_HOST
+	if (!root_override && geteuid() != 0 && select_user_root(geteuid()))
+		return 1;
+#endif
+	const char *command = arg == argc ? "list" : argv[arg++];
 	int remaining = argc - arg;
 	if (!*root && geteuid() != 0 &&
 	    (!strcmp(command, "update") || !strcmp(command, "install") ||
-	     !strcmp(command, "add")))
-		return fail("system package operations require root; use -r "
-			    "/tmp/packages for a writable installation prefix");
+	     !strcmp(command, "add") || !strcmp(command, "repo")))
+		return fail("system package operations require root; use a writable -r prefix");
+	if (!strcmp(command, "repo") && remaining == 1)
+		return save_repository(argv[arg]);
+	if (repo_override)
+		repository = repo_override;
 	if (!strcmp(command, "update") && remaining == 0)
-		return update_index();
+		return (!repo_override && load_repository()) || update_index();
 	if (!strcmp(command, "list") && remaining == 0)
 		return list_packages();
 	if ((!strcmp(command, "info") || !strcmp(command, "verify")) && remaining == 1)
 		return show_info(argv[arg], !strcmp(command, "verify"));
 	if (!strcmp(command, "install") && remaining == 1)
-		return install_remote(argv[arg]);
+		return (!repo_override && load_repository()) || install_remote(argv[arg]);
 	if (!strcmp(command, "add") && remaining == 1) {
+		const char *operand = argv[arg];
+		size_t length = strlen(operand);
+		if (!strchr(operand, '/') &&
+		    (length < 5 || strcmp(operand + length - 5, ".spkg")))
+			return (!repo_override && load_repository()) || install_remote(operand);
 		size_t size;
 		uint8_t *bytes = pkg_read_file(argv[arg], PKG_MAX_SIZE, &size);
 		if (!bytes) {

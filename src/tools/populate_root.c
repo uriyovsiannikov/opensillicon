@@ -463,9 +463,11 @@ main(int argc, char **argv)
 		    "root:*:0:0:OpenSillicon root:/:/bin/sh\n"
 		    "user:*:1000:1000:OpenSillicon user:/tmp:/bin/sh\n";
 		static const char group[] = "root:*:0:\nuser:*:1000:\n";
+		static const char pkg_conf[] = "http://10.15.3.2:8080\n";
 		static const char resolv_conf[] = "nameserver 10.15.3.3\n";
 		if (add_data("/etc/passwd", passwd, sizeof(passwd) - 1, 0644) != 0 ||
 		    add_data("/etc/group", group, sizeof(group) - 1, 0644) != 0 ||
+		    add_data("/etc/pkg.conf", pkg_conf, sizeof(pkg_conf) - 1, 0644) != 0 ||
 		    add_data("/etc/resolv.conf", resolv_conf,
 		    sizeof(resolv_conf) - 1, 0644) != 0) {
 			fclose(image);
