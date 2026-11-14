@@ -3104,11 +3104,9 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			flags = (uint32_t)frame->r10;
-			if ((flags & NATIVE_AT_SYMLINK_NOFOLLOW) != 0) {
-				syscall_error(frame, EOPNOTSUPP);
-				break;
-			}
-			if (flags != 0) {
+			/* No vnode type represents a symlink yet, so no-follow and
+			 * ordinary lookup are equivalent. Keep all other flags rejected. */
+			if ((flags & ~NATIVE_AT_SYMLINK_NOFOLLOW) != 0) {
 				syscall_error(frame, ERRNO_EINVAL);
 				break;
 			}
