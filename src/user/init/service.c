@@ -19,14 +19,26 @@
 #include "service.h"
 
 #define SERVICE_DIR "/etc/service.d"
+#define LOG_DIR "/var/log/services"
 #define MAX_SERVICES 32
 #define CONFIG_SIZE 2048
 #define LOOP_TICKS 5
 #define RESTART_DELAY_MS 1000
+#define RAPID_EXIT_MS 10000
+#define RAPID_EXIT_LIMIT 5
 #define STOP_TIMEOUT_MS 3000
 #define REQUEST_TIMEOUT_MS 500
 
 enum restart_policy { RESTART_NEVER, RESTART_FAILURE, RESTART_ALWAYS };
+
+struct service_state {
+	bool pending, stopping, has_status, rate_limited, automatic;
+	bool restart_suppressed;
+	unsigned rapid_exits;
+	pid_t pid;
+	int status;
+	uint64_t deadline, started;
+};
 
 struct service {
 	char name[SERVICE_NAME_SIZE];
@@ -35,13 +47,11 @@ struct service {
 	uint32_t uid, gid, priority;
 	enum restart_policy policy;
 	bool enabled, console;
-	bool pending, stopping, has_status;
-	pid_t pid;
-	int status;
-	uint64_t deadline;
+	struct service_state state;
 };
 
 static struct service services[MAX_SERVICES];
+static struct service reloaded[MAX_SERVICES];
 static size_t service_count;
 static int listener = -1;
 static int client = -1;
@@ -273,35 +283,44 @@ compare_services(const void *left, const void *right)
 	return strcmp(a->name, b->name);
 }
 
-static void
-load_services(void)
+static bool
+read_services(struct service *table, size_t *count, bool strict)
 {
 	struct stat info;
 	struct dirent *entry;
 
+	*count = 0;
 	if (stat(SERVICE_DIR, &info) < 0) {
-		if (errno == ENOENT) {
+		if (errno == ENOENT && !strict) {
 			/* Images built before service configurations were introduced. */
-			struct service *console = &services[service_count++];
+			struct service *console = &table[(*count)++];
 			strcpy(console->name, "console");
 			parse_command(console, "/bin/sh");
 			console->uid = console->gid = 1000;
 			console->console = console->enabled = true;
 			console->policy = RESTART_ALWAYS;
-		} else
-			report(SERVICE_DIR, "cannot check directory");
-		return;
+			return true;
+		}
+		report(SERVICE_DIR, "cannot check directory");
+		return false;
 	}
 	if (!S_ISDIR(info.st_mode) || info.st_uid != 0 || (info.st_mode & 022) != 0) {
 		report(SERVICE_DIR, "expected a root owned directory");
-		return;
+		return false;
 	}
 	DIR *dir = opendir(SERVICE_DIR);
 	if (dir == NULL) {
 		report(SERVICE_DIR, "cannot open directory");
-		return;
+		return false;
 	}
-	while ((entry = readdir(dir)) != NULL) {
+	bool valid = true;
+	for (;;) {
+		errno = 0;
+		entry = readdir(dir);
+		if (entry == NULL) {
+			valid = valid && errno == 0;
+			break;
+		}
 		size_t length = strlen(entry->d_name);
 		struct service service = {0};
 
@@ -311,16 +330,72 @@ load_services(void)
 		memcpy(service.name, entry->d_name, length - 5);
 		if (!name_valid(service.name) || !read_config(entry->d_name, &service)) {
 			report(entry->d_name, "invalid service configuration");
+			valid = false;
 			continue;
 		}
-		if (service_count == MAX_SERVICES) {
+		if (*count == MAX_SERVICES) {
 			report(SERVICE_DIR, "too many services");
+			valid = false;
 			break;
 		}
-		services[service_count++] = service;
+		table[(*count)++] = service;
 	}
 	closedir(dir);
-	qsort(services, service_count, sizeof(services[0]), compare_services);
+	qsort(table, *count, sizeof(table[0]), compare_services);
+	return valid;
+}
+
+static struct service *
+find_service(struct service *table, size_t count, const char *name)
+{
+	for (size_t i = 0; i < count; i++)
+		if (strcmp(table[i].name, name) == 0)
+			return &table[i];
+	return NULL;
+}
+
+static const char *
+reload_services(uint64_t now)
+{
+	size_t count;
+
+	if (installer_console != NULL)
+		return "reload unavailable during installation\n";
+	if (!read_services(reloaded, &count, true))
+		return "invalid service configuration; reload rejected\n";
+	for (size_t i = 0; i < service_count; i++) {
+		const struct service *old = &services[i];
+		if (old->state.pid != 0 && !find_service(reloaded, count, old->name))
+			return "stop a running service before removing its configuration\n";
+	}
+	for (size_t i = 0; i < count; i++) {
+		struct service *next = &reloaded[i];
+		const struct service *old =
+		    find_service(services, service_count, next->name);
+		if (old != NULL)
+			next->state = old->state;
+		if (old != NULL && old->enabled && !next->enabled) {
+			next->state.pending = false;
+			next->state.restart_suppressed = true;
+		}
+		if (next->state.pending && next->state.automatic &&
+		    (next->policy == RESTART_NEVER ||
+		    (next->policy == RESTART_FAILURE && next->state.status == 0)))
+			next->state.pending = false;
+		if ((old == NULL || !old->enabled) && next->enabled) {
+			next->state.restart_suppressed = false;
+			if (next->state.pid == 0) {
+				next->state.pending = true;
+				next->state.automatic = false;
+				next->state.rate_limited = false;
+				next->state.rapid_exits = 0;
+				next->state.deadline = now;
+			}
+		}
+	}
+	memcpy(services, reloaded, count * sizeof(services[0]));
+	service_count = count;
+	return NULL;
 }
 
 static uint64_t
@@ -335,23 +410,74 @@ now_ms(void)
 static void
 schedule_after_exit(struct service *service, int status, uint64_t now)
 {
-	service->pid = 0;
-	service->has_status = true;
-	service->status = status;
-	if (!service->stopping) {
-		service->pending = service->policy == RESTART_ALWAYS ||
-		    (service->policy == RESTART_FAILURE && status != 0);
-		service->deadline = now + RESTART_DELAY_MS;
+	service->state.pid = 0;
+	service->state.has_status = true;
+	service->state.status = status;
+	if (!service->state.stopping) {
+		service->state.pending = !service->state.restart_suppressed &&
+		    (service->policy == RESTART_ALWAYS ||
+		    (service->policy == RESTART_FAILURE && status != 0));
+		service->state.automatic = service->state.pending;
+		if (service->state.pending && !service->console) {
+			if (now - service->state.started >= RAPID_EXIT_MS)
+				service->state.rapid_exits = 0;
+			else if (++service->state.rapid_exits >= RAPID_EXIT_LIMIT) {
+				service->state.pending = false;
+				service->state.rate_limited = true;
+				report(service->name, "restart limit reached");
+			}
+		} else {
+			service->state.rapid_exits = 0;
+		}
+		service->state.deadline = now + RESTART_DELAY_MS;
 	} else {
-		service->deadline = now;
+		service->state.deadline = now;
 	}
-	service->stopping = false;
+	service->state.stopping = false;
+}
+
+static bool
+open_log_directory(const char *path)
+{
+	struct stat info;
+	return (mkdir(path, 0755) == 0 || errno == EEXIST) &&
+	    stat(path, &info) == 0 && S_ISDIR(info.st_mode) &&
+	    info.st_uid == 0 && (info.st_mode & 022) == 0;
+}
+
+static int
+open_service_log(const char *name)
+{
+	char path[sizeof(LOG_DIR) + SERVICE_NAME_SIZE + sizeof(".log")];
+	struct stat info;
+	if (!open_log_directory("/var/log") || !open_log_directory(LOG_DIR))
+		return -1;
+	snprintf(path, sizeof(path), "%s/%s.log", LOG_DIR, name);
+	if (stat(path, &info) == 0) {
+		if (!S_ISREG(info.st_mode) || info.st_uid != 0 ||
+		    (info.st_mode & 077) != 0)
+			return -1;
+	} else if (errno != ENOENT) {
+		return -1;
+	}
+	int fd = open(path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
+	if (fd < 0)
+		return -1;
+	/* One open description is shared by stdout and stderr. The old
+	 * process has been reaped before we seek to the end for a new run. */
+	if (lseek(fd, 0, SEEK_END) < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
 }
 
 static void
 start_service(struct service *service, uint64_t now)
 {
-	service->pending = false;
+	service->state.pending = false;
+	service->state.automatic = false;
+	service->state.started = now;
 	pid_t pid = fork();
 
 	if (pid < 0) {
@@ -373,6 +499,15 @@ start_service(struct service *service, uint64_t now)
 				_exit(126);
 			if (input != 0)
 				close(input);
+			int log = open_service_log(service->name);
+			if (log < 0) {
+				report(service->name, "cannot open service log");
+				_exit(126);
+			}
+			if (dup2(log, 1) < 0 || dup2(log, 2) < 0)
+				_exit(126);
+			if (log > 2)
+				close(log);
 		}
 		if (setgid(service->gid) < 0 || setuid(service->uid) < 0) {
 			report(service->name, "cannot set service credentials");
@@ -387,7 +522,7 @@ start_service(struct service *service, uint64_t now)
 		report(service->name, "exec failed");
 		_exit(127);
 	}
-	service->pid = pid;
+	service->state.pid = pid;
 }
 
 static void
@@ -399,12 +534,12 @@ reap_services(uint64_t now)
 	while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
 		for (size_t i = 0; i < service_count; i++) {
 			struct service *service = &services[i];
-			if (service->pid == pid) {
+			if (service->state.pid == pid) {
 				if (service == installer_console) {
 					*service = saved_console;
 					installer_console = NULL;
-					service->pending = service->enabled;
-					service->deadline = now;
+					service->state.pending = service->enabled;
+					service->state.deadline = now;
 					report("installer",
 					    "returned; restoring user console");
 					break;
@@ -422,12 +557,12 @@ advance_services(uint64_t now)
 	for (size_t i = 0; i < service_count; i++) {
 		struct service *service = &services[i];
 
-		if (now < service->deadline)
+		if (now < service->state.deadline)
 			continue;
-		if (service->stopping) {
-			(void)kill(service->pid, SIGKILL);
-			service->deadline = now + STOP_TIMEOUT_MS;
-		} else if (service->pending && service->pid == 0) {
+		if (service->state.stopping) {
+			(void)kill(service->state.pid, SIGKILL);
+			service->state.deadline = now + STOP_TIMEOUT_MS;
+		} else if (service->state.pending && service->state.pid == 0) {
 			start_service(service, now);
 		}
 	}
@@ -469,13 +604,14 @@ open_listener(void)
 static int
 format_status(char *out, size_t size, const struct service *service)
 {
-	const char *state = service->stopping ? "stopping" :
-	    service->pid != 0 ? "running" :
-	    service->pending ? "pending" : "stopped";
+	const char *state = service->state.stopping ? "stopping" :
+	    service->state.pid != 0 ? "running" :
+	    service->state.rate_limited ? "rate-limited" :
+	    service->state.pending ? "pending" : "stopped";
 
 	return snprintf(out, size, "%s: %s pid=%d last-exit=%d\n",
-	    service->name, state, service->pid,
-	    service->has_status ? service->status : -1);
+	    service->name, state, service->state.pid,
+	    service->state.has_status ? service->state.status : -1);
 }
 
 static const char *
@@ -495,13 +631,9 @@ run_request(const struct service_request *request, uint64_t now,
 			    capacity - used, &services[i]);
 		return NULL;
 	}
-	for (size_t i = 0; i < service_count; i++) {
-		if (strcmp(request->name, services[i].name) == 0) {
-			service = &services[i];
-			break;
-		}
-	}
-	if (service == NULL)
+	if (request->operation != SERVICE_RELOAD)
+		service = find_service(services, service_count, request->name);
+	if (request->operation != SERVICE_RELOAD && service == NULL)
 		return "unknown service\n";
 	if (request->operation == SERVICE_STATUS) {
 		format_status(response, capacity, service);
@@ -510,25 +642,40 @@ run_request(const struct service_request *request, uint64_t now,
 	if (getsockopt(client, SOL_SOCKET, SO_PEERCRED, &peer, &length) < 0 ||
 	    length != sizeof(peer) || peer.uid != 0)
 		return "root required\n";
+	if (request->operation == SERVICE_RELOAD) {
+		const char *error = reload_services(now);
+		if (error != NULL)
+			return error;
+		strcpy(response, "configuration reloaded\n");
+		return NULL;
+	}
 	switch (request->operation) {
 	case SERVICE_START:
-		if (service->pid == 0 || service->stopping) {
-			service->pending = true;
-			if (!service->stopping)
-				service->deadline = now;
+		if (service->state.pid == 0 || service->state.stopping) {
+			service->state.restart_suppressed = false;
+			service->state.rate_limited = false;
+			service->state.rapid_exits = 0;
+			service->state.pending = true;
+			service->state.automatic = false;
+			if (!service->state.stopping)
+				service->state.deadline = now;
 		}
 		break;
 	case SERVICE_STOP:
 	case SERVICE_RESTART:
-		if (service->pid != 0 && !service->stopping) {
-			if (kill(service->pid, SIGTERM) < 0 && errno != ESRCH)
+		if (service->state.pid != 0 && !service->state.stopping) {
+			if (kill(service->state.pid, SIGTERM) < 0 && errno != ESRCH)
 				return "cannot signal service\n";
-			service->stopping = true;
-			service->deadline = now + STOP_TIMEOUT_MS;
+			service->state.stopping = true;
+			service->state.deadline = now + STOP_TIMEOUT_MS;
 		}
-		service->pending = request->operation == SERVICE_RESTART;
-		if (!service->stopping)
-			service->deadline = now;
+		service->state.pending = request->operation == SERVICE_RESTART;
+		service->state.restart_suppressed = request->operation == SERVICE_STOP;
+		service->state.automatic = false;
+		service->state.rate_limited = false;
+		service->state.rapid_exits = 0;
+		if (!service->state.stopping)
+			service->state.deadline = now;
 		break;
 	default:
 		return "unknown operation\n";
@@ -582,13 +729,13 @@ done:
 _Noreturn void
 service_manager(void)
 {
-	load_services();
+	(void)read_services(services, &service_count, false);
 	configure_installer_console();
 	listener = open_listener();
 	if (listener < 0)
 		report("svctl", "cannot open control socket");
 	for (size_t i = 0; i < service_count; i++)
-		services[i].pending = services[i].enabled;
+		services[i].state.pending = services[i].enabled;
 	advance_services(now_ms());
 
 	for (;;) {

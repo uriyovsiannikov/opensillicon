@@ -1,6 +1,6 @@
 # Services
 
-PID 1 reads `/etc/service.d/*.conf` once at boot. Each filename gives the
+PID 1 reads `/etc/service.d/*.conf` at boot and on reload. Each filename gives the
 service name, for example `console.conf` defines `console`. Names are up to
 31 ASCII letters, digits, underscores or hyphens. The directory and the files
 must belong to root and cannot be writable by group or others.
@@ -24,11 +24,14 @@ unavailable in this field. Blank lines and lines starting with `#` are ignored.
   ties. Priority orders launches and does not indicate service readiness.
 - `restart` defaults to `never`. `always` also restarts after a clean exit.
   `on-failure` restarts after a nonzero exit status. Automatic restarts wait one
-  second between attempts.
+  second between attempts. After five consecutive automatic restart triggers
+  from runs shorter than ten seconds, a non-console service becomes
+  `rate-limited`. Use `svctl start` or `svctl restart` to clear the limit.
 - `enabled` defaults to `yes`. Set it to `no` for manual startup.
 - `console` defaults to `no`, which uses `/dev/null` for standard input.
-  The bundled console service uses the system terminal. Both modes inherit
-  standard output and standard error from init.
+  Non-console services write stdout and stderr to
+  `/var/log/services/<name>.log`, readable by root. Output is appended on
+  each run. The bundled console service keeps all three terminal streams.
 
 ```sh
 svctl list
@@ -36,15 +39,22 @@ svctl status console
 svctl start myservice
 svctl stop myservice
 svctl restart myservice
+svctl reload
 ```
 
-Any user can query status. The last three commands require effective UID 0.
+Any user can query status. Changing service state or reloading requires effective UID 0.
 The default console runs as UID 1000. An accepted command schedules an action.
 Use `svctl status` to see the resulting process state and last exit code.
 Stopping sends SIGTERM to the service process, then SIGKILL after three
 seconds if it is still running. A manual stop suppresses automatic restart.
 Services should stay in the foreground because init supervises the process
-it launched. Live config reload is unavailable.
+it launched.
+
+`svctl reload` validates the entire configuration before applying it. Running
+processes keep their PIDs and streams. Changed launch settings apply at the
+next start. Newly enabled services are queued in priority order. Stop a
+running service before removing its configuration file. Disabling a service
+on reload leaves its current process running and suppresses automatic restarts.
 
 To build a separate disk image with the console config and `/bin/svctl`:
 

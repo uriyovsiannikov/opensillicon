@@ -15,7 +15,7 @@ main(int argc, char **argv)
 	} commands[] = {
 		{ "list", SERVICE_LIST }, { "status", SERVICE_STATUS },
 		{ "start", SERVICE_START }, { "stop", SERVICE_STOP },
-		{ "restart", SERVICE_RESTART }
+		{ "restart", SERVICE_RESTART }, { "reload", SERVICE_RELOAD }
 	};
 	const struct sockaddr_un address = { .sun_family = AF_UNIX,
 	    .sun_path = SERVICE_SOCKET };
@@ -27,7 +27,8 @@ main(int argc, char **argv)
 	if (argc == 2 || argc == 3) {
 		for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
 			if (strcmp(argv[1], commands[i].name) == 0 &&
-			    argc == (commands[i].operation == SERVICE_LIST ? 2 : 3)) {
+			    argc == (commands[i].operation == SERVICE_LIST ||
+			    commands[i].operation == SERVICE_RELOAD ? 2 : 3)) {
 				request.operation = commands[i].operation;
 				break;
 			}
@@ -35,7 +36,7 @@ main(int argc, char **argv)
 	}
 	if (request.operation == 0 ||
 	    (argc == 3 && strlen(argv[2]) >= sizeof(request.name))) {
-		fprintf(stderr, "usage: svctl list | svctl {status|start|stop|restart} service\n");
+		fprintf(stderr, "usage: svctl {list|reload} | svctl {status|start|stop|restart} service\n");
 		return 2;
 	}
 	if (argc == 3)

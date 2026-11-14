@@ -9,7 +9,8 @@ enum service_operation {
 	SERVICE_STATUS,
 	SERVICE_START,
 	SERVICE_STOP,
-	SERVICE_RESTART
+	SERVICE_RESTART,
+	SERVICE_RELOAD
 };
 
 struct service_request {
