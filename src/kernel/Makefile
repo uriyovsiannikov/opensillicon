@@ -480,10 +480,10 @@ $(BUILD_DIR)/opensillicon.iso $(BUILD_DIR)/opensillicon-live.iso: \
 	}; \
 	if [ '$(@F)' = opensillicon-live.iso ]; then \
 		cp '$(LIVE_ROOT_IMAGE)' "$$tree/boot/root.img"; \
-		{ printf 'timeout: 3\n'; entry 'OpenSillicon Live' ''; \
+		{ printf 'timeout: 10\n'; entry 'OpenSillicon Live' ''; \
 		  entry 'OpenSillicon Installer' installer; } > "$$tree/limine.conf"; \
 	else \
-		{ printf 'timeout: 0\n'; entry OpenSillicon ''; } > "$$tree/limine.conf"; \
+		{ printf 'timeout: 10\n'; entry OpenSillicon ''; } > "$$tree/limine.conf"; \
 	fi; \
 	$(XORRISO) -as mkisofs -R -r -J \
 		--efi-boot limine/limine-uefi-cd.bin \

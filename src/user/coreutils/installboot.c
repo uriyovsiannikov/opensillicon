@@ -95,7 +95,7 @@ main(int argc, char **argv)
 	uuid_format(uuid, id);
 	char config[512];
 	int length = snprintf(config, sizeof(config),
-	    "timeout: 0\n/OpenSillicon\n protocol: limine\n path: boot():/boot/kernel.elf\n module_path: boot():/boot/init.cpi\n module_string: initramfs\n resolution: 1920x1080x32\n cmdline: root=PARTUUID=%s\n",
+	    "timeout: 10\n/OpenSillicon\n protocol: limine\n path: boot():/boot/kernel.elf\n module_path: boot():/boot/init.cpi\n module_string: initramfs\n resolution: 1920x1080x32\n cmdline: root=PARTUUID=%s\n",
 	    id);
 	if (length < 0 || (size_t)length >= sizeof(config))
 		return 1;
