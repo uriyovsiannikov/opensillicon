@@ -387,3 +387,10 @@ $(BUILD_DIR)/tests/mount_guest.o: src/tests/mount_guest.c | $(BUILD_DIR)
 
 $(BUILD_DIR)/tests/mount_guest.elf: $(BUILD_DIR)/tests/mount_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/tests/copy_guest.o: src/tests/copy_guest.c src/user/storage/install_copy.h | $(BUILD_DIR)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/tests/copy_guest.elf: $(BUILD_DIR)/tests/copy_guest.o $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_ARCHIVE) -o $@

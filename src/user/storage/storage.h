@@ -14,6 +14,7 @@ struct storage_device { int fd; struct storage_io io; };
 int storage_open(struct storage_device *, const char *path, int writable);
 int storage_close(struct storage_device *);
 uint32_t storage_crc32(const void *, size_t);
+uint32_t storage_crc32_update(uint32_t previous,const void *,size_t);
 void storage_le16(void *, uint16_t);
 void storage_le32(void *, uint32_t);
 void storage_le64(void *, uint64_t);

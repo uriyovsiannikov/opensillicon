@@ -73,3 +73,22 @@ Temporary target filesystems can now be mounted in the Live session:
 mount -t silliconfs /dev/ada0p2 /mnt; then use umount /mnt after closing files.
 Both commands require root. sync reports errors flushing mounted devices;
 fsync is available to the installer for per-file durability checks.
+
+The install-copy component scans source directories breadth-first without
+holding a descriptor per recursion level, computes content CRCs and conservative
+space requirements, and detects unsupported objects/oversized paths before disk
+changes. A second scan can revalidate the inventory before destructive stages.
+Copy verifies source metadata/content against that inventory, writes new files
+with exclusive creation, preserves UID/GID and all supported mode bits, fsyncs
+files and verifies destination content. Directory ownership/modes are applied
+last, children before parents. SilliconFS currently has no symlinks, hard links
+or persistent timestamps; these are not synthesized by the copier.
+
+/dev, /proc, /init, /mnt and /var/run are copied as empty directories. /tmp keeps
+only the packaged img1.jpg background. This avoids copying devices, the mounted
+initramfs, installation targets, control sockets and transient logs.
+
+sh src/tests/install_copy.sh checks content/permissions, runtime exclusions,
+source changes and rejection of host symlinks. python3 src/tests/copy_qemu.py
+checks the real libos/VFS path, indirect-block files, preserved UID/GID and mode
+bits, then unmounts/remounts the target to verify the persisted results.
