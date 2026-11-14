@@ -263,7 +263,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		$(BUILD_DIR)/htop/htop \
 		$(BUILD_DIR)/startx.elf \
 		$(BUILD_DIR)/populate_root \
-		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf \
+		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
 		other/img1.jpg \
 		src/user/thirdparty/xorg/fonts/gallant.bdf src/user/thirdparty/xorg/fonts/fonts.dir \
 		src/user/thirdparty/xorg/startx/system.twmrc \
@@ -282,7 +282,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		--module $(BUILD_DIR)/modules/e1000.ko \
-		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
+		--svctl $(BUILD_DIR)/coreutils/svctl.elf --scinstall $(BUILD_DIR)/scinstall/scinstall.elf \
 		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils $(COREUTILS_ELFS); \
 	mv -f "$$image_tmp" '$@'
 
@@ -365,11 +365,11 @@ $(BUILD_DIR)/tests/copy_guest.o: src/tests/copy_guest.c src/user/storage/install
 $(BUILD_DIR)/tests/copy_guest.elf: $(BUILD_DIR)/tests/copy_guest.o $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_ARCHIVE) -o $@
 
-$(BUILD_DIR)/coreutils/bsdinstall.o: src/user/coreutils/bsdinstall.c src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
+$(BUILD_DIR)/scinstall/scinstall.o: src/user/scinstall/scinstall.c src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/coreutils/bsdinstall.elf: $(BUILD_DIR)/coreutils/bsdinstall.o $(BUILD_DIR)/storage/install_copy.o \
+$(BUILD_DIR)/scinstall/scinstall.elf: $(BUILD_DIR)/scinstall/scinstall.o $(BUILD_DIR)/storage/install_copy.o \
 		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(BUILD_DIR)/storage/gpt_write.o $(BUILD_DIR)/storage/newfs.o \
 		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o \

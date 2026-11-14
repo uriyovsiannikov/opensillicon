@@ -196,7 +196,7 @@ save_journal(void)
 		return error;
 	if (fflush(journal) != 0)
 		return -errno;
-	int source = open("/tmp/bsdinstall.log", O_RDONLY);
+	int source = open("/tmp/scinstall.log", O_RDONLY);
 	if (source < 0)
 		return -errno;
 	int output = open(
@@ -240,29 +240,29 @@ main(int argc, char **argv)
 {
 	int preview = argc == 3 && !strcmp(argv[1], "-N");
 	if (argc != 1 && !preview) {
-		fputs("usage: bsdinstall [-N /dev/ada0]\n", stderr);
+		fputs("usage: scinstall [-N /dev/ada0]\n", stderr);
 		return 2;
 	}
 	if (geteuid() != 0) {
 		fputs(
-		    "bsdinstall: select OpenSillicon Installer in the Live boot menu (root required).\n",
+		    "scinstall: select OpenSillicon Installer in the Live boot menu (root required).\n",
 		    stderr);
 		return 1;
 	}
 	if (!live_root()) {
 		fputs(
-		    "bsdinstall: installation is allowed only from the Live RAM root.\n",
+		    "scinstall: installation is allowed only from the Live RAM root.\n",
 		    stderr);
 		return 1;
 	}
-	journal = fopen("/tmp/bsdinstall.log", "w");
+	journal = fopen("/tmp/scinstall.log", "w");
 	if (!journal) {
-		perror("bsdinstall log");
+		perror("scinstall log");
 		return 1;
 	}
 	note("OpenSillicon Installer - UEFI/GPT, whole SATA disk\n");
 	note(
-	    "All data on the selected disk will be replaced. Log: /tmp/bsdinstall.log\n");
+	    "All data on the selected disk will be replaced. Log: /tmp/scinstall.log\n");
 	char answer[128], path[32];
 	if (preview) {
 		if (disk_path(argv[2], path)) {
@@ -459,7 +459,7 @@ main(int argc, char **argv)
 	return 0;
 failed:
 	note(
-	    "INSTALLATION FAILED at %s (errno %d), path=%s. See /tmp/bsdinstall.log\n",
+	    "INSTALLATION FAILED at %s (errno %d), path=%s. See /tmp/scinstall.log\n",
 	    stage, -error, tree.failed_path);
 	if (mounted && unmount(TARGET, 0) != 0)
 		note(

@@ -143,6 +143,7 @@ main(int argc, char **argv)
 	const char *htop_path = NULL;
 	const char *dillo_path = NULL;
 	const char *svctl_path = NULL;
+	const char *scinstall_path = NULL;
 	const char *boot_files[3] = {NULL, NULL, NULL};
 	const char *service_paths[32];
 	size_t service_count = 0;
@@ -152,7 +153,7 @@ main(int argc, char **argv)
 
 	if (argc < 4) {
 		fprintf(stderr,
-		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
 		    argv[0]);
 		return 2;
 	}
@@ -206,6 +207,9 @@ main(int argc, char **argv)
 			if (service_count == sizeof(service_paths) / sizeof(service_paths[0]))
 				return 2;
 			service_paths[service_count++] = argv[++arg];
+		} else if (strcmp(argv[arg], "--scinstall") == 0 && arg + 1 < argc) {
+			if (scinstall_path != NULL) return 2;
+			scinstall_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--coreutils") == 0) {
 			if (coreutils_start != 0) return 2;
 			coreutils_start = arg + 1;
@@ -255,6 +259,12 @@ main(int argc, char **argv)
 	if (svctl_path != NULL &&
 	    (error = add_file("/bin/svctl", svctl_path, 0755)) != 0) {
 		fprintf(stderr, "svctl installation failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (scinstall_path != NULL &&
+	    (error = add_file("/bin/scinstall", scinstall_path, 0755)) != 0) {
+		fprintf(stderr, "scinstall installation failed: %d\n", error);
 		fclose(image);
 		return 1;
 	}
@@ -425,7 +435,7 @@ main(int argc, char **argv)
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
 		    "kldload", "kldunload", "pkg", "pciconf", "usbconf",
 		    "cpuconf", "blkconf", "newfs_silliconfs", "gpart",
-		    "installboot", "mount", "umount", "sync", "bsdinstall"};
+		    "installboot", "mount", "umount", "sync"};
 		int index;
 		if (coreutils_count !=
 		    (int)(sizeof(names) / sizeof(names[0]))) {

@@ -95,7 +95,7 @@ configure_installer_console(void)
 	saved_console = *installer_console;
 	memset(
 	    installer_console->command, 0, sizeof(installer_console->command));
-	strcpy(installer_console->command, "/bin/bsdinstall");
+	strcpy(installer_console->command, "/bin/scinstall");
 	installer_console->argc = 1;
 	installer_console->uid = installer_console->gid = 0;
 	installer_console->policy = RESTART_NEVER;

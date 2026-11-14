@@ -3,7 +3,7 @@
 Build the self-contained image with `make -j8 live-iso`, then boot
 `src/build/opensillicon-live.iso` using UEFI. Select **OpenSillicon Installer**
 in the Limine menu. The normal Live entry starts the usual user console.
-Only the Installer entry starts `bsdinstall` as root, and only with a mounted
+Only the Installer entry starts `scinstall` as root, and only with a mounted
 Live RAM root. Exiting or cancelling restores the normal user console.
 
 The installer supports a complete SATA disk accessible through AHCI. It creates
@@ -28,7 +28,7 @@ NVMe, USB storage and BIOS boot are not supported by this installation path.
 5. Remove the Live USB and boot the installed disk. Answer `y` to reboot, or
    return to the Live console with `n`.
 
-`bsdinstall -N /dev/ada0` performs preflight and displays the plan without
+`scinstall -N /dev/ada0` performs preflight and displays the plan without
 partition or filesystem writes; it requires root in the Live environment.
 
 The installer preserves file contents, UID/GID and supported permission bits.
@@ -41,7 +41,7 @@ firmware NVRAM entry is required. Its configuration selects the new root by
 GPT partition UUID. The installed root is on disk, without the Live RAM module.
 
 During installation, diagnostics and child-tool output are recorded in
-`/tmp/bsdinstall.log` in RAM. A copy is saved at `/var/log/install.log` on the
+`/tmp/scinstall.log` in RAM. A copy is saved at `/var/log/install.log` on the
 target before final unmount. The installed copy records file and boot setup
 verification; final unmount/flush results remain in the Live journal. On error,
 the installer reports the failed stage and errno, attempts to unmount the target,
@@ -51,7 +51,7 @@ restart installation from the Live image.
 
 # Verification
 
-Run `python3 src/tests/bsdinstall_qemu.py` from the repository root. It uses only
+Run `python3 src/tests/scinstall_qemu.py` from the repository root. It uses only
 temporary disk images: cancellation must leave both disks unchanged; installation
 must populate a blank disk while leaving a second disk unchanged. Independent
 GPT/FAT checks verify the boot payloads and root UUID, then two disk-only UEFI

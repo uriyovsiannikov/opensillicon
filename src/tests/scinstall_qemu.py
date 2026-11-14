@@ -38,7 +38,7 @@ def inventory(image,base=0):
                 walk(child,path.rstrip('/')+'/'+name)
         walk(1,'/')
     return result
-with tempfile.TemporaryDirectory(prefix='bsdinstall-') as directory:
+with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
     d=pathlib.Path(directory);disk=d/'target.img';guard=d/'guard.img'
     iso=d/'installer.iso';log=d/'serial';qmp=d/'qmp'
     for path,size in [(disk,1024*1024*1024),(guard,64*1024*1024)]:
@@ -101,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix='bsdinstall-') as directory:
         wait(p,'Target disk (');keys=Input();keys.type('ada0')
         text=wait(p,'Confirmation:');assert 'INSTALL001' in text and '/dev/ada1' in text
         keys.type('cancel');wait(p,'Installation cancelled; no disk writes.')
-        wait(p,'/% ');keys.type('bsdinstall -N /dev/ada0');wait(p,'root required')
+        wait(p,'/% ');keys.type('scinstall -N /dev/ada0');wait(p,'root required')
         keys.close()
     finally:stop(p)
     assert digest(disk)==blank_hash and digest(guard)==guard_hash
@@ -150,7 +150,7 @@ with tempfile.TemporaryDirectory(prefix='bsdinstall-') as directory:
         p=start(False)
         try:
             wait(p,'/% ');keys=Input()
-            for name in ['/bin/bsdinstall','/bin/Xopensillicon','/boot/kernel.elf','/var/log/install.log']:
+            for name in ['/bin/scinstall','/bin/Xopensillicon','/boot/kernel.elf','/var/log/install.log']:
                 keys.type('stat '+name);wait(p,'File: '+name)
             if boot==0:keys.type('touch /tmp/persist')
             keys.type('stat /tmp/persist');wait(p,'File: /tmp/persist')

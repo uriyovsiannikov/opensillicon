@@ -68,7 +68,7 @@ ESP with fsck.fat/mcopy, then boots without any ISO twice. A file created on the
 first disk-only boot must survive the second. This test validates boot setup;
 its root files are prepopulated on the host, so it does not claim to test the
 full installer copy stage. The complete blank-disk installation test is
-`python3 src/tests/bsdinstall_qemu.py`; it also compares persisted system
+`python3 src/tests/scinstall_qemu.py`; it also compares persisted system
 contents, ownership and modes with the Live image. See INSTALL.md for usage.
 
 Temporary target filesystems can now be mounted in the Live session:
