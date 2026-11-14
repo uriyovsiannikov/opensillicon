@@ -291,7 +291,7 @@ copy_file(const struct install_tree *tree, const struct install_entry *e,
 	int output = -1;
 	if (!error) {
 		output = open(
-		    destination, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+		    destination, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
 		if (output < 0)
 			error = -errno;
 	}
@@ -327,15 +327,8 @@ copy_file(const struct install_tree *tree, const struct install_entry *e,
 		error = -EAGAIN;
 	if (!error &&
 	    (fchown(output, e->uid, e->gid) != 0 ||
-		fchmod(output, e->mode & 07777) != 0 || fsync(output) != 0))
+		fchmod(output, e->mode & 07777) != 0))
 		error = -errno;
-	if (!error && lseek(output, 0, SEEK_SET) != 0)
-		error = -errno;
-	uint32_t verify = 0;
-	if (!error)
-		error = checksum_fd(output, e->size, &verify);
-	if (!error && verify != e->crc)
-		error = -EIO;
 	if (output >= 0 && close(output) != 0 && !error)
 		error = -errno;
 	if (close(input) != 0 && !error)
@@ -381,6 +374,60 @@ install_tree_copy(struct install_tree *tree, const char *target,
 		tree->failed_path[0] = 0;
 	return error;
 }
+int
+install_tree_verify(struct install_tree *tree, const char *target,
+    int (*progress)(void *, const char *, size_t, size_t), void *context)
+{
+	int error = install_tree_target_check(tree, target);
+	if (error)
+		return error;
+
+	/* SilliconFS fsync flushes the backing device, including directory metadata. */
+	strcpy(tree->failed_path, "/");
+	int root = open(target, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (root < 0)
+		return -errno;
+	error = fsync(root) == 0 ? 0 : -errno;
+	if (close(root) != 0 && !error)
+		error = -errno;
+
+	for (size_t i = 0; !error && i < tree->count; i++) {
+		const struct install_entry *entry = &tree->entries[i];
+		char path[INSTALL_PATH_MAX];
+		struct stat st;
+
+		strcpy(tree->failed_path, entry->path);
+		error = join(path, target, entry->path);
+		if (!error)
+			error = metadata(path, &st);
+		if (error)
+			break;
+		if (st.st_mode != entry->mode || st.st_uid != entry->uid ||
+		    st.st_gid != entry->gid) {
+			error = -EIO;
+			break;
+		}
+		if (S_ISREG(entry->mode)) {
+			uint32_t crc;
+			int fd = open(path, O_RDONLY | O_NOFOLLOW);
+			if (fd < 0) {
+				error = -errno;
+				break;
+			}
+			error = checksum_fd(fd, entry->size, &crc);
+			if (close(fd) != 0 && !error)
+				error = -errno;
+			if (!error && crc != entry->crc)
+				error = -EIO;
+		}
+		if (!error && progress)
+			error = progress(context, entry->path, i + 1, tree->count);
+	}
+	if (!error)
+		tree->failed_path[0] = 0;
+	return error;
+}
+
 void
 install_tree_free(struct install_tree *tree)
 {

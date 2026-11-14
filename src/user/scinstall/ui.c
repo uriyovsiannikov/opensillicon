@@ -14,7 +14,8 @@
 static SCREEN *screen;
 static char messages[MESSAGE_ROWS][MESSAGE_WIDTH];
 static size_t message_count;
-static size_t copied, to_copy;
+static const char *progress_label;
+static size_t progress_done, progress_total;
 
 bool
 ui_open(void)
@@ -145,7 +146,7 @@ void
 ui_reset(void)
 {
 	message_count = 0;
-	copied = to_copy = 0;
+	ui_clear_progress();
 }
 
 static void
@@ -154,11 +155,11 @@ status(const char *title)
 	frame(title);
 	for (size_t i = 0; i < message_count; i++)
 		row(4 + (int)i, messages[i]);
-	if (to_copy) {
+	if (progress_total) {
 		char text[64];
-		snprintf(text, sizeof(text), "Files checked: %u/%u (%u%%)",
-		    (unsigned)copied, (unsigned)to_copy,
-		    (unsigned)(copied * 100 / to_copy));
+		snprintf(text, sizeof(text), "%s: %u/%u (%u%%)", progress_label,
+		    (unsigned)progress_done, (unsigned)progress_total,
+		    (unsigned)(progress_done * 100 / progress_total));
 		row(LINES - 4, text);
 	}
 }
@@ -186,12 +187,19 @@ ui_note(const char *text)
 }
 
 void
-ui_progress(size_t done, size_t total)
+ui_progress(const char *label, size_t done, size_t total)
 {
-	copied = done;
-	to_copy = total;
+	progress_label = label;
+	progress_done = done;
+	progress_total = total;
 	status("Installing system");
 	refresh();
+}
+
+void
+ui_clear_progress(void)
+{
+	progress_total = 0;
 }
 
 int

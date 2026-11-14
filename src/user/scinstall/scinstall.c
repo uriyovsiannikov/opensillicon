@@ -210,15 +210,15 @@ run(char **argv)
 static int
 progress(void *context, const char *path, size_t done, size_t total)
 {
-	(void)context;
+	const char *action = context;
 	if (journal &&
-	    (fprintf(journal, "verified %s\n", path) < 0 ||
+	    (fprintf(journal, "%s %s\n", action, path) < 0 ||
 		fflush(journal) != 0))
 		return -EIO;
 	if (ui_active()) {
-		ui_progress(done, total);
+		ui_progress(action, done, total);
 	} else if (done % 20 == 0 || done == total) {
-		printf("Copy verified: %u/%u entries\n", (unsigned)done,
+		printf("%s: %u/%u entries\n", action, (unsigned)done,
 		    (unsigned)total);
 		fflush(stdout);
 	}
@@ -425,7 +425,7 @@ main(int argc, char **argv)
 		goto failed;
 	storage_close(&d);
 	stage = "GPT creation";
-	note("[1/6] %s\n", stage);
+	note("[1/7] %s\n", stage);
 	char *gpart[] = {"/bin/gpart", "bootlayout", "-F", path, NULL};
 	error = run(gpart);
 	if (error)
@@ -447,7 +447,7 @@ main(int argc, char **argv)
 	note("Root PARTUUID=%s\n", uuid);
 	snprintf(inode_text, sizeof(inode_text), "%u", inodes);
 	stage = "root filesystem creation";
-	note("[2/6] %s\n", stage);
+	note("[2/7] %s\n", stage);
 	char *newfs[] = {
 	    "/bin/newfs_silliconfs", "-F", "-i", inode_text, root_path, NULL};
 	error = run(newfs);
@@ -459,19 +459,25 @@ main(int argc, char **argv)
 		goto failed;
 	}
 	mounted = 1;
-	stage = "verified system copy";
-	note("[3/6] %s\n", stage);
-	error = install_tree_copy(&tree, TARGET, progress, NULL);
+	stage = "copying system files";
+	note("[3/7] %s\n", stage);
+	error = install_tree_copy(&tree, TARGET, progress, "Copied");
+	if (error)
+		goto failed;
+	stage = "verifying written files";
+	ui_clear_progress();
+	note("[4/7] %s\n", stage);
+	error = install_tree_verify(&tree, TARGET, progress, "Verified");
 	if (error)
 		goto failed;
 	stage = "UEFI boot installation";
-	note("[4/6] %s\n", stage);
+	note("[5/7] %s\n", stage);
 	char *boot[] = {"/bin/installboot", "-F", "-r", uuid, esp_path, NULL};
 	error = run(boot);
 	if (error)
 		goto failed;
 	stage = "installation journal and filesystem flush";
-	note("[5/6] %s\n", stage);
+	note("[6/7] %s\n", stage);
 	note(
 	    "All system files and boot payloads verified. Final unmount/flush follows.\n");
 	error = save_journal();
@@ -483,7 +489,7 @@ main(int argc, char **argv)
 	}
 	mounted = 0;
 	stage = "final disk flush";
-	note("[6/6] %s\n", stage);
+	note("[7/7] %s\n", stage);
 	error = storage_open(&d, path, 0);
 	if (!error && ioctl(d.fd, DIOCGFLUSH) != 0)
 		error = -errno;

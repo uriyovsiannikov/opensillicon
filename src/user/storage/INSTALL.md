@@ -22,8 +22,8 @@ NVMe, USB storage and BIOS boot are not supported by this installation path.
    asking for confirmation.
 3. Enter the exact confirmation, such as `ERASE /dev/ada0`. Any other answer
    cancels without writing partition or filesystem data. Esc also cancels.
-4. The status screen shows GPT creation, root formatting, copy progress,
-   boot setup, journal saving, unmount and final flush. Only
+4. The status screen shows GPT creation, root formatting, separate copy and
+   readback progress, boot setup, journal saving, unmount and final flush. Only
    `INSTALLATION COMPLETE` means all stages succeeded.
 5. After installation, select **Reboot** or **Return to console** with
    Left/Right and Enter. Remove the Live USB before booting the installed disk.

@@ -74,16 +74,17 @@ contents, ownership and modes with the Live image. See INSTALL.md for usage.
 Temporary target filesystems can now be mounted in the Live session:
 mount -t silliconfs /dev/ada0p2 /mnt; then use umount /mnt after closing files.
 Both commands require root. sync reports errors flushing mounted devices;
-fsync is available to the installer for per-file durability checks.
+fsync on the target root directory flushes the backing SilliconFS device.
 
 The install-copy component scans source directories breadth-first without
 holding a descriptor per recursion level, computes content CRCs and conservative
 space requirements, and detects unsupported objects/oversized paths before disk
 changes. A second scan can revalidate the inventory before destructive stages.
 Copy verifies source metadata/content against that inventory, writes new files
-with exclusive creation, preserves UID/GID and all supported mode bits, fsyncs
-files and verifies destination content. Directory ownership/modes are applied
-last, children before parents. SilliconFS currently has no symlinks, hard links
+with exclusive creation and preserves UID/GID and all supported mode bits.
+Directory ownership and modes are applied after copying, children before
+parents. A single target filesystem flush precedes the separate readback pass
+that checks destination content and metadata. SilliconFS currently has no symlinks, hard links
 or persistent timestamps; these are not synthesized by the copier.
 
 /dev, /proc, /init, /mnt and /var/run are copied as empty directories. /tmp keeps

@@ -59,6 +59,7 @@ main(void)
 	struct silliconfs_args args = {"/dev/ada0"};
 	assert(mount("silliconfs", "/mnt", 0, &args) == 0);
 	assert(install_tree_copy(&tree, "/mnt", NULL, NULL) == 0);
+	assert(install_tree_verify(&tree, "/mnt", NULL, NULL) == 0);
 	install_tree_free(&tree);
 	assert(unmount("/mnt", 0) == 0 &&
 	    mount("silliconfs", "/mnt", 0, &args) == 0);

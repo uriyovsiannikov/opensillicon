@@ -19,5 +19,7 @@ int install_tree_recheck(struct install_tree *);
 int install_tree_target_check(const struct install_tree *, const char *target);
 int install_tree_copy(struct install_tree *, const char *target,
     int (*progress)(void *, const char *, size_t, size_t), void *context);
+int install_tree_verify(struct install_tree *, const char *target,
+    int (*progress)(void *, const char *, size_t, size_t), void *context);
 void install_tree_free(struct install_tree *);
 #endif

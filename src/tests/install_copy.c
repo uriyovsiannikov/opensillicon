@@ -33,6 +33,19 @@ main(int argc, char **argv)
 	size_t count = 0;
 	assert(install_tree_copy(&tree, argv[2], progress, &count) == 0 &&
 	    count == tree.count);
+	count = 0;
+	assert(install_tree_verify(&tree, argv[2], progress, &count) == 0 &&
+	    count == tree.count);
+	char installed[512];
+	snprintf(installed, sizeof(installed), "%s/bin/program", argv[2]);
+	int output = open(installed, O_RDWR);
+	unsigned char original;
+	assert(output >= 0 && read(output, &original, 1) == 1);
+	assert(lseek(output, 0, SEEK_SET) == 0 && write(output, "X", 1) == 1);
+	assert(install_tree_verify(&tree, argv[2], NULL, NULL) == -EIO &&
+	    !strcmp(tree.failed_path, "/bin/program"));
+	assert(lseek(output, 0, SEEK_SET) == 0 &&
+	    write(output, &original, 1) == 1 && close(output) == 0);
 	if (!strcmp(argv[3], "change")) {
 		char path[512];
 		snprintf(path, sizeof(path), "%s/bin/program", argv[1]);

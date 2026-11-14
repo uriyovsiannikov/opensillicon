@@ -20,7 +20,8 @@ void ui_close(void);
 int ui_choose_disk(const struct disk_choice *, size_t count);
 void ui_reset(void);
 void ui_note(const char *);
-void ui_progress(size_t done, size_t total);
+void ui_progress(const char *label, size_t done, size_t total);
+void ui_clear_progress(void);
 /* 1 confirms, 0 cancels, negative errno reports a read failure. */
 int ui_confirm(const char *phrase);
 bool ui_reboot(void);
