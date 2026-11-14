@@ -285,7 +285,7 @@ $(BUILD_DIR)/dillo/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS
 
 SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 
-$(ROOT_IMAGE): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
+$(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/htop/htop \
@@ -310,23 +310,5 @@ $(ROOT_IMAGE): $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DI
 		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
 		--module $(BUILD_DIR)/modules/e1000.ko \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
-		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils \
-		$(BUILD_DIR)/coreutils/ls.elf $(BUILD_DIR)/coreutils/cat.elf \
-		$(BUILD_DIR)/coreutils/echo.elf $(BUILD_DIR)/coreutils/pwd.elf \
-		$(BUILD_DIR)/coreutils/true.elf $(BUILD_DIR)/coreutils/false.elf \
-		$(BUILD_DIR)/coreutils/clear.elf $(BUILD_DIR)/coreutils/uname.elf \
-		$(BUILD_DIR)/coreutils/fetch.elf $(BUILD_DIR)/coreutils/head.elf \
-		$(BUILD_DIR)/coreutils/tail.elf $(BUILD_DIR)/coreutils/wc.elf \
-		$(BUILD_DIR)/coreutils/seq.elf $(BUILD_DIR)/coreutils/stat.elf \
-		$(BUILD_DIR)/coreutils/mkdir.elf $(BUILD_DIR)/coreutils/rm.elf \
-		$(BUILD_DIR)/coreutils/touch.elf \
-		$(BUILD_DIR)/coreutils/basename.elf \
-		$(BUILD_DIR)/coreutils/dirname.elf $(BUILD_DIR)/coreutils/kill.elf \
-		$(BUILD_DIR)/coreutils/sleep.elf $(BUILD_DIR)/coreutils/which.elf \
-		$(BUILD_DIR)/coreutils/ps.elf $(BUILD_DIR)/coreutils/netdiag.elf \
-		$(BUILD_DIR)/coreutils/ping.elf \
-		$(BUILD_DIR)/coreutils/poweroff.elf $(BUILD_DIR)/coreutils/reboot.elf \
-		$(BUILD_DIR)/coreutils/host.elf $(BUILD_DIR)/coreutils/ifconfig.elf \
-		$(BUILD_DIR)/coreutils/kldstat.elf $(BUILD_DIR)/coreutils/kldload.elf \
-		$(BUILD_DIR)/coreutils/kldunload.elf $(BUILD_DIR)/coreutils/pkg.elf; \
+		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils $(COREUTILS_ELFS); \
 	mv -f "$$image_tmp" '$@'

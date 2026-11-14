@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include "include/os.h"
 
 struct shell_startup_phdr {
@@ -588,6 +590,45 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	redraw_line(line, *length, *cursor);
 }
 
+static void
+show_keyboard_diagnostics(void)
+{
+	static const char *const prefixes[] = {
+		"OpenSillicon: PS/2", "OpenSillicon: USB", "OpenSillicon: no USB",
+		"OpenSillicon: xHCI", "OpenSillicon: DMA",
+	};
+	long fd = u_open("/tmp/btlog.log", 0);
+	if (fd < 0)
+		return;
+
+	char buffer[256], line[256];
+	size_t length = 0;
+	long count;
+	while ((count = u_read((uint64_t)fd, buffer, sizeof(buffer))) > 0) {
+		for (long i = 0; i < count; i++) {
+			if (buffer[i] != '\n') {
+				if (length < sizeof(line))
+					line[length++] = buffer[i];
+				continue;
+			}
+			for (size_t j = 0; j < sizeof(prefixes) / sizeof(prefixes[0]); j++) {
+				size_t prefix_length = u_strlen(prefixes[j]);
+				size_t matched = 0;
+				while (matched < prefix_length && matched < length &&
+				    line[matched] == prefixes[j][matched])
+					matched++;
+				if (matched == prefix_length) {
+					u_putn(line, length);
+					u_puts("\n");
+					break;
+				}
+			}
+			length = 0;
+		}
+	}
+	(void)u_close((uint64_t)fd);
+}
+
 static int
 read_command_line(char *line)
 {
@@ -849,16 +890,22 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 		u_puts("usage: sh [-c command] [--xterm]\n");
 		u_exit(2);
 	}
-	if (u_ioctl(0, U_TIOCSRAW, 0) < 0) {
-		u_puts("OpenSillicon shell: cannot enable interactive input mode\n");
+	long input_mode = u_ioctl(0, U_TIOCSRAW, 0);
+	if (input_mode < 0) {
+		u_puts("OpenSillicon shell: cannot enable interactive input mode, errno ");
+		u_put_u64((uint64_t)-input_mode);
+		u_puts("\n");
 		u_exit(1);
 	}
+	bool waiting_for_keyboard = false;
 	for (;;) {
 		int result;
-		u_puts(current_directory);
-		u_puts("# ");
-		cursor_visible = 1;
-		redraw_line(line, 0, 0);
+		if (!waiting_for_keyboard) {
+			u_puts(current_directory);
+			u_puts("# ");
+			cursor_visible = 1;
+			redraw_line(line, 0, 0);
+		}
 		result = read_command_line(line);
 		if (result == 0) {
 			(void)u_ioctl(0, U_TIOCCANON, 0);
@@ -868,6 +915,11 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 			if (result == -2)
 				continue;
 			if (result == -19) {
+				if (!waiting_for_keyboard) {
+					u_puts("\nOpenSillicon shell: no keyboard controller available\n");
+					show_keyboard_diagnostics();
+					waiting_for_keyboard = true;
+				}
 				(void)u_sleep_ticks(100);
 				continue;
 			}
@@ -875,6 +927,7 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 			print_error("read", "stdin");
 			continue;
 		}
+		waiting_for_keyboard = false;
 		if (!run_command(line, 1)) {
 			(void)u_ioctl(0, U_TIOCCANON, 0);
 			u_exit(0);

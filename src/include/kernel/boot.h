@@ -24,6 +24,7 @@ struct boot_info {
 	const struct limine_memmap_response *memmap;
 	const struct limine_framebuffer *framebuffer;
 	const struct limine_file *initramfs;
+	const struct limine_file *live_root;
 	uint64_t rsdp_physical;
 };
 

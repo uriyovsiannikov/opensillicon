@@ -13,6 +13,7 @@ void framebuffer_text_draw(void *context, unsigned int terminal,
 void framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 	unsigned int progress, const char *label);
 void framebuffer_boot_splash_end(void);
+void framebuffer_boot_log_write(const char *buffer, size_t length);
 void framebuffer_panic_screen(const char *diagnostic);
 
 #endif

@@ -227,15 +227,18 @@ opensilliconPollEvents(void)
 	struct os_keyboard_event event;
 	struct os_mouse_event mouse_event;
 	unsigned int scan;
-	uint64_t result = SYSCALL_KEYBOARD_POLL;
+	uint64_t result;
 	unsigned char failed;
 
-	__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
-	    "D" ((uintptr_t)&event), "S" (0) : "rcx", "r11", "memory");
-	if (failed)
-		FatalError("OpenSillicon: keyboard polling failed (errno %lu)\n",
-		    (unsigned long)result);
-	if (!failed && result == 1) {
+	for (unsigned int count = 0; count < 32; count++) {
+		result = SYSCALL_KEYBOARD_POLL;
+		__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
+		    "D" ((uintptr_t)&event), "S" (0) : "rcx", "r11", "memory");
+		if (failed)
+			FatalError("OpenSillicon: keyboard polling failed (errno %lu)\n",
+			    (unsigned long)result);
+		if (result != 1)
+			break;
 		scan = opensilliconScanCode(&event);
 		if (scan <= OPENSILLICON_MAX_SCAN_CODE) {
 			KdEnqueueKeyboardEvent((unsigned char)scan,
@@ -247,22 +250,26 @@ opensilliconPollEvents(void)
 				KdEnqueueKeyboardEvent((unsigned char)scan, 0x80);
 		}
 	}
-	result = SYSCALL_MOUSE_POLL;
-	__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
-	    "D" ((uintptr_t)&mouse_event), "S" (0) : "rcx", "r11", "memory");
-	if (failed && result != ENODEV)
-		FatalError("OpenSillicon: mouse polling failed (errno %lu)\n",
-		    (unsigned long)result);
-	if (!failed && result == 1 && kdMouseInfo != NULL) {
-		unsigned long buttons = 0;
-		if (mouse_event.buttons & 0x01U)
-			buttons |= KD_BUTTON_1;
-		if (mouse_event.buttons & 0x04U)
-			buttons |= KD_BUTTON_2;
-		if (mouse_event.buttons & 0x02U)
-			buttons |= KD_BUTTON_3;
-		KdEnqueueMouseEvent(kdMouseInfo, KD_MOUSE_DELTA | buttons,
-		    mouse_event.dx, mouse_event.dy);
+	for (unsigned int count = 0; count < 32; count++) {
+		result = SYSCALL_MOUSE_POLL;
+		__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
+		    "D" ((uintptr_t)&mouse_event), "S" (0) : "rcx", "r11", "memory");
+		if (failed && result != ENODEV)
+			FatalError("OpenSillicon: mouse polling failed (errno %lu)\n",
+			    (unsigned long)result);
+		if (failed || result != 1)
+			break;
+		if (kdMouseInfo != NULL) {
+			unsigned long buttons = 0;
+			if (mouse_event.buttons & 0x01U)
+				buttons |= KD_BUTTON_1;
+			if (mouse_event.buttons & 0x04U)
+				buttons |= KD_BUTTON_2;
+			if (mouse_event.buttons & 0x02U)
+				buttons |= KD_BUTTON_3;
+			KdEnqueueMouseEvent(kdMouseInfo, KD_MOUSE_DELTA | buttons,
+			    mouse_event.dx, mouse_event.dy);
+		}
 	}
 }
 

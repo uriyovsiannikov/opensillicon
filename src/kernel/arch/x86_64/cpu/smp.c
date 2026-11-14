@@ -584,13 +584,25 @@ smp_verify_work_dispatch(void)
 		if (__atomic_load_n(&cpus[i].state, __ATOMIC_ACQUIRE) == SMP_CPU_ONLINE)
 			expected_mask |= UINT64_C(1) << i;
 	}
-	if (expected_mask == 0 || !address_space_create(&probe.space))
+	if (expected_mask == 0 || !address_space_create(&probe.space)) {
+		klog("OpenSillicon: could not create SMP dispatch probe address space\n");
 		return false;
+	}
 	bool ran = smp_run_on_all_cpus(record_work_dispatch, &probe);
-	bool destroyed = address_space_destroy(&probe.space);
-	if (!ran || !destroyed ||
-	    __atomic_load_n(&probe.seen, __ATOMIC_RELAXED) != expected_mask)
+	if (!address_space_destroy(&probe.space)) {
+		klog("OpenSillicon panic: could not release SMP dispatch probe address space\n");
+		kernel_halt();
+	}
+	if (!ran || __atomic_load_n(&probe.seen, __ATOMIC_RELAXED) != expected_mask) {
+		for (size_t i = 0; i < discovered_count; i++) {
+			if (((expected_mask & ~probe.seen) & (UINT64_C(1) << i)) == 0)
+				continue;
+			klog("OpenSillicon: SMP address-space probe failed on LAPIC ");
+			klog_u64(cpus[i].apic_id);
+			klog("\n");
+		}
 		return false;
+	}
 	klog("OpenSillicon: SMP address-space switches verified on all online CPUs\n");
 	return true;
 }

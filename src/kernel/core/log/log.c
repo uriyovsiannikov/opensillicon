@@ -50,9 +50,15 @@ serial_init(void)
 static void
 serial_putc(char c)
 {
-	while ((inb(COM1 + 5) & 0x20) == 0)
-		;
-	outb(COM1, (uint8_t)c);
+	for (unsigned int attempt = 0; attempt < 100000U; attempt++) {
+		uint8_t status = inb(COM1 + 5);
+		if (status == 0xffU)
+			return;
+		if ((status & 0x20U) != 0) {
+			outb(COM1, (uint8_t)c);
+			return;
+		}
+	}
 }
 
 bool
@@ -92,6 +98,7 @@ log_write(const char *buffer, size_t length)
 		}
 	}
 	if (!boot_log_flushed) {
+		framebuffer_boot_log_write(buffer, length);
 		if (length <= sizeof(boot_log) - boot_log_length) {
 			for (i = 0; i < length; i++)
 				boot_log[boot_log_length++] = buffer[i];
@@ -217,12 +224,12 @@ kernel_halt(void)
 	for (size_t i = 0; i < length; i++)
 		diagnostic[i] = panic_context[(begin + i) % PANIC_CONTEXT_SIZE];
 	diagnostic[length] = '\0';
+	framebuffer_panic_screen(diagnostic);
 	(void)serial_write(serial_header, sizeof(serial_header) - 1U);
 	if (length != 0)
 		(void)serial_write(diagnostic, length);
 	if (length == 0 || diagnostic[length - 1U] != '\n')
 		(void)serial_write("\n", 1);
-	framebuffer_panic_screen(diagnostic);
 	for (;;) {
 		__asm__ volatile ("cli; hlt");
 	}

@@ -18,6 +18,7 @@
 #include "kernel/vmm.h"
 #include "kernel/vfs.h"
 #include "kernel/network_service.h"
+#include "kernel/usb_host.h"
 #include "kernel/cyclone_net.h"
 #include "kernel/udp_socket.h"
 #include "kernel/tcp_socket.h"
@@ -1194,6 +1195,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 	/* Generic syscall safe point: network progress is not tied to UDP calls. */
 	(void)network_service_request(NETWORK_SERVICE_POLL_RX);
 	(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
+	usb_host_poll();
 	process_syscall_retry_begin();
 	frame->rflags &= ~1ULL;
 	process_channel_wait_begin();
@@ -1293,11 +1295,11 @@ syscall_dispatch(struct interrupt_frame *frame)
 				syscall_error(frame, ERRNO_EFAULT);
 				break;
 			}
-			if (!ps2_keyboard_available()) {
+			if (!tty_keyboard_available()) {
 				syscall_error(frame, ERRNO_ENODEV);
 				break;
 			}
-			if (!ps2_keyboard_event_poll(&event)) {
+			if (!ps2_keyboard_event_poll(&event) && !usb_host_keyboard_poll(&event)) {
 				frame->rax = 0;
 				break;
 			}
@@ -1319,6 +1321,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 		{
 			struct os_credentials credentials;
 			struct os_mouse_event output;
+			static uint8_t ps2_buttons, usb_buttons;
 			struct address_space *space = vmm_active_address_space();
 
 			if (!process_current_credentials(&credentials) ||
@@ -1332,14 +1335,19 @@ syscall_dispatch(struct interrupt_frame *frame)
 				syscall_error(frame, EFAULT);
 				break;
 			}
-			if (!ps2_mouse_available()) {
+			if (!ps2_mouse_available() && !usb_host_available()) {
 				syscall_error(frame, ERRNO_ENODEV);
 				break;
 			}
-			if (!ps2_mouse_event_poll(&output)) {
+			if (ps2_mouse_event_poll(&output)) {
+				ps2_buttons = output.buttons;
+			} else if (usb_host_mouse_poll(&output)) {
+				usb_buttons = output.buttons;
+			} else {
 				frame->rax = 0;
 				break;
 			}
+			output.buttons = ps2_buttons | usb_buttons;
 			if (!vmm_copy_to_user(space, frame->rdi, &output,
 			    sizeof(output))) {
 				syscall_error(frame, EFAULT);

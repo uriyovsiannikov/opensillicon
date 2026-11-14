@@ -6,6 +6,11 @@
 
 #define PAGE_SIZE 4096ULL
 
+struct pmm_metadata_range {
+	uint64_t start;
+	uint64_t end;
+};
+
 struct pmm_state {
 	uint8_t *used;
 	uint16_t *dma_pins;
@@ -13,8 +18,7 @@ struct pmm_state {
 	uint64_t free_count;
 	uint64_t usable_count;
 	uint64_t search_hint;
-	uint64_t metadata_start;
-	uint64_t metadata_end;
+	struct pmm_metadata_range metadata[2];
 	const struct limine_memmap_response *memmap;
 	bool initialized;
 };
@@ -70,26 +74,27 @@ bitmap_phys_range(void *bitmap, size_t size, uint64_t hhdm_offset,
 }
 
 static void
-reserve_metadata_pages(uint64_t start, uint64_t end)
+reserve_metadata_pages(struct pmm_metadata_range *range, uint64_t start,
+	uint64_t end)
 {
 	uint64_t first = start / PAGE_SIZE;
 	uint64_t last = end / PAGE_SIZE + (end % PAGE_SIZE != 0);
-	uint64_t frame;
 
-	if (pmm.metadata_end == 0) {
-		pmm.metadata_start = first * PAGE_SIZE;
-		pmm.metadata_end = last * PAGE_SIZE;
-	} else {
-		if (first * PAGE_SIZE < pmm.metadata_start)
-			pmm.metadata_start = first * PAGE_SIZE;
-		if (last * PAGE_SIZE > pmm.metadata_end)
-			pmm.metadata_end = last * PAGE_SIZE;
-	}
-	for (frame = first; frame < last && frame < pmm.frame_count; frame++) {
+	*range = (struct pmm_metadata_range){first * PAGE_SIZE, last * PAGE_SIZE};
+	for (uint64_t frame = first; frame < last && frame < pmm.frame_count; frame++) {
 		if (!bit_is_set(pmm.used, frame))
 			pmm.free_count--;
 		bit_set(pmm.used, frame);
 	}
+}
+
+static bool
+page_is_metadata(uint64_t address)
+{
+	for (size_t i = 0; i < sizeof(pmm.metadata) / sizeof(pmm.metadata[0]); i++)
+		if (address >= pmm.metadata[i].start && address < pmm.metadata[i].end)
+			return true;
+	return false;
 }
 
 static bool
@@ -198,13 +203,13 @@ pmm_init(const struct boot_info *info, struct bootstrap_allocator *bootstrap)
 		pmm = (struct pmm_state){0};
 		return false;
 	}
-	reserve_metadata_pages(start_a, end_a);
+	reserve_metadata_pages(&pmm.metadata[0], start_a, end_a);
 	if (!bitmap_phys_range(pmm.dma_pins, pin_bytes, info->hhdm_offset,
 	    &start_a, &end_a)) {
 		pmm = (struct pmm_state){0};
 		return false;
 	}
-	reserve_metadata_pages(start_a, end_a);
+	reserve_metadata_pages(&pmm.metadata[1], start_a, end_a);
 	pmm.initialized = true;
 	return true;
 }
@@ -256,8 +261,7 @@ pmm_free_page_locked(uint64_t physical_address)
 	uint64_t frame;
 
 	if (!pmm.initialized || (physical_address & (PAGE_SIZE - 1)) != 0 ||
-	    (physical_address >= pmm.metadata_start &&
-	    physical_address < pmm.metadata_end) || !page_is_usable(physical_address))
+	    page_is_metadata(physical_address) || !page_is_usable(physical_address))
 		return false;
 	frame = physical_address / PAGE_SIZE;
 	if (frame >= pmm.frame_count || !bit_is_set(pmm.used, frame) ||
@@ -279,8 +283,7 @@ pmm_page_is_allocated(uint64_t physical_address)
 	    (physical_address & (PAGE_SIZE - 1)) == 0 &&
 	    frame < pmm.frame_count && bit_is_set(pmm.used, frame) &&
 	    page_is_usable(physical_address) &&
-	    !(physical_address >= pmm.metadata_start &&
-	    physical_address < pmm.metadata_end);
+	    !page_is_metadata(physical_address);
 	spinlock_unlock_irqrestore(&pmm_lock, flags);
 	return allocated;
 }
@@ -305,7 +308,7 @@ pmm_dma_pin_contiguous(uint64_t physical_address, size_t page_count)
 		if (!bit_is_set(pmm.used, first + i) ||
 		    pmm.dma_pins[first + i] == UINT16_MAX ||
 		    !page_is_usable(address) ||
-		    (address >= pmm.metadata_start && address < pmm.metadata_end)) {
+		    page_is_metadata(address)) {
 			valid = false;
 			goto out;
 		}
@@ -462,7 +465,7 @@ pmm_free_contiguous_locked(uint64_t physical_address, size_t page_count)
 
 		if (!bit_is_set(pmm.used, first + i) ||
 		    pmm.dma_pins[first + i] != 0 || !page_is_usable(address) ||
-		    (address >= pmm.metadata_start && address < pmm.metadata_end))
+		    page_is_metadata(address))
 			return false;
 	}
 	for (i = 0; i < count; i++)

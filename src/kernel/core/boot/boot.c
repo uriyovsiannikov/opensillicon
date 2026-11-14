@@ -2,7 +2,8 @@
 
 #define PAGE_SIZE 4096U
 #define MAX_MODULES 64U
-#define MODULE_NAME "initramfs"
+#define INITRAMFS_MODULE "initramfs"
+#define LIVE_ROOT_MODULE "live-root"
 
 static bool
 is_power_of_two(size_t value)
@@ -94,36 +95,40 @@ bounded_string_equal(const char *string, const char *expected, size_t limit)
 	return false;
 }
 
-static const struct limine_file *
-find_initramfs(const struct limine_module_response *modules)
+static bool
+parse_modules(const struct limine_module_response *modules,
+	const struct limine_file **initramfs, const struct limine_file **live_root)
 {
-	const struct limine_file *found = NULL;
 	uintptr_t files_address;
 	uint64_t i;
 
 	if (modules == NULL || modules->module_count == 0 ||
 	    modules->module_count > MAX_MODULES || modules->modules == NULL)
-		return NULL;
+		return false;
 	files_address = (uintptr_t)modules->modules;
 	if (modules->module_count > (UINTPTR_MAX - files_address) /
 	    sizeof(*modules->modules))
-		return NULL;
+		return false;
 	for (i = 0; i < modules->module_count; i++) {
 		const struct limine_file *file = modules->modules[i];
 
 		if (file == NULL || file->address == NULL || file->size == 0 ||
 		    file->size > SIZE_MAX || file->size - 1 > UINTPTR_MAX -
 	    (uintptr_t)file->address)
-			return NULL;
-		if (file->string == NULL ||
-		    !bounded_string_equal(file->string, MODULE_NAME,
-	    sizeof(MODULE_NAME)))
-			continue;
-		if (found != NULL)
-			return NULL;
-		found = file;
+			return false;
+		if (bounded_string_equal(file->string, INITRAMFS_MODULE,
+		    sizeof(INITRAMFS_MODULE))) {
+			if (*initramfs != NULL)
+				return false;
+			*initramfs = file;
+		} else if (bounded_string_equal(file->string, LIVE_ROOT_MODULE,
+		    sizeof(LIVE_ROOT_MODULE))) {
+			if (*live_root != NULL)
+				return false;
+			*live_root = file;
+		}
 	}
-	return found;
+	return *initramfs != NULL;
 }
 
 enum boot_info_error
@@ -136,7 +141,8 @@ boot_info_parse(const struct limine_firmware_type_response *firmware,
 	struct boot_info *info)
 {
 	const struct limine_framebuffer *framebuffer = NULL;
-	const struct limine_file *initramfs;
+	const struct limine_file *initramfs = NULL;
+	const struct limine_file *live_root = NULL;
 
 	if (info == NULL)
 		return BOOT_INFO_MISSING_RESPONSE;
@@ -149,8 +155,7 @@ boot_info_parse(const struct limine_firmware_type_response *firmware,
 		return BOOT_INFO_INVALID_HHDM;
 	if (!memmap_valid(memmap))
 		return BOOT_INFO_INVALID_MEMMAP;
-	initramfs = find_initramfs(modules);
-	if (initramfs == NULL)
+	if (!parse_modules(modules, &initramfs, &live_root))
 		return BOOT_INFO_INVALID_MODULE;
 	if (rsdp == NULL || rsdp->address == NULL ||
 	    (uintptr_t)rsdp->address > UINT64_MAX - 36)
@@ -172,6 +177,7 @@ boot_info_parse(const struct limine_firmware_type_response *firmware,
 	info->memmap = memmap;
 	info->framebuffer = framebuffer;
 	info->initramfs = initramfs;
+	info->live_root = live_root;
 	info->rsdp_physical = (uintptr_t)rsdp->address;
 	return BOOT_INFO_OK;
 }

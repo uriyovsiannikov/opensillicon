@@ -6,6 +6,7 @@
 #include "kernel/terminal.h"
 #include "kernel/timer.h"
 #include "kernel/tty.h"
+#include "kernel/usb_host.h"
 
 #define TTY_EAGAIN 11
 #define TTY_ENODEV 19
@@ -17,6 +18,8 @@ static uint64_t framebuffer_output_owner;
 static uint64_t console_input_owner;
 static unsigned int tty_columns;
 static unsigned int tty_rows;
+static unsigned int input_timeouts;
+static bool input_diagnostics_shown;
 
 static bool
 console_input_permitted(void)
@@ -64,7 +67,14 @@ tty_framebuffer_available(void)
 bool
 tty_keyboard_available(void)
 {
-	return ps2_keyboard_available();
+	return ps2_keyboard_available() || usb_host_available();
+}
+
+static bool
+console_keyboard_poll(struct terminal_key_event *event)
+{
+	return (ps2_keyboard_available() && ps2_keyboard_poll(event)) ||
+	    usb_host_keyboard_poll(event);
 }
 
 bool
@@ -86,7 +96,7 @@ tty_input_ready(void)
 	if (!console_input_permitted())
 		return false;
 	for (unsigned int i = 0; i < 32 && !terminal_input_available(); i++) {
-		if (!ps2_keyboard_available() || !ps2_keyboard_poll(&event))
+		if (!console_keyboard_poll(&event))
 			break;
 		terminal_key_event(event);
 	}
@@ -115,15 +125,22 @@ tty_read(void *buffer, size_t length, size_t *read_length)
 			return 0;
 		if (error != -TTY_EAGAIN)
 			return error;
-		if (!ps2_keyboard_available())
+		if (!tty_keyboard_available())
 			return -TTY_ENODEV;
-		if (ps2_keyboard_poll(&event))
+		if (console_keyboard_poll(&event)) {
+			input_timeouts = 0;
+			input_diagnostics_shown = true;
 			terminal_key_event(event);
-		else {
+		} else {
 			__asm__ volatile ("sti; hlt; cli" : : : "memory");
 			if (terminal_raw_mode() && timer_ticks() - wait_start >=
-			    TTY_RAW_READ_TIMEOUT_TICKS)
+			    TTY_RAW_READ_TIMEOUT_TICKS) {
+				if (!input_diagnostics_shown && ++input_timeouts == 6) {
+					usb_host_input_diagnostics();
+					input_diagnostics_shown = true;
+				}
 				return -TTY_EAGAIN;
+			}
 		}
 	}
 }
@@ -217,8 +234,7 @@ tty_set_raw_mode(bool enabled)
 {
 	if (!console_input_permitted())
 		return -1;
-	if (!ps2_keyboard_available())
-		return -25;
+	/* The line discipline belongs to the terminal even without a keyboard. */
 	terminal_set_raw_mode(enabled);
 	return 0;
 }
@@ -235,7 +251,7 @@ tty_console_loop(void)
 	for (;;) {
 		struct terminal_key_event event;
 
-		if (ps2_keyboard_available() && ps2_keyboard_poll(&event))
+		if (console_keyboard_poll(&event))
 			terminal_key_event(event);
 		else
 			__asm__ volatile ("sti; hlt; cli" : : : "memory");

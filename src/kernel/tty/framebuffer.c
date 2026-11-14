@@ -8,11 +8,19 @@
 
 #define FONT_WIDTH 12U
 #define FONT_HEIGHT 22U
+#define BOOT_LOG_ROWS 8U
+#define BOOT_LOG_MAX_COLUMNS 100U
 
 static const struct limine_framebuffer *active_framebuffer;
 static unsigned int framebuffer_columns;
 static unsigned int framebuffer_rows;
 static bool boot_splash_active;
+static uint64_t boot_log_x, boot_log_y;
+static unsigned int boot_log_columns, boot_log_rows;
+static unsigned int boot_log_first, boot_log_row, boot_log_column;
+static char boot_log_lines[BOOT_LOG_ROWS][BOOT_LOG_MAX_COLUMNS + 1U];
+static enum { BOOT_TEXT, BOOT_ESCAPE, BOOT_CSI } boot_log_state;
+static bool boot_log_newline;
 static const uint32_t palette[16] = {
 	0x000000, 0xaa0000, 0x00aa00, 0xaa5500,
 	0x0000aa, 0xaa00aa, 0x00aaaa, 0xaaaaaa,
@@ -104,6 +112,63 @@ boot_fill_rectangle(uint64_t x, uint64_t y, uint64_t width, uint64_t height,
 			put_pixel(column, row, color);
 }
 
+static void
+boot_log_advance(void)
+{
+	if (boot_log_row + 1 < boot_log_rows) {
+		boot_log_row++;
+	} else {
+		boot_log_first = (boot_log_first + 1) % boot_log_rows;
+		boot_fill_rectangle(boot_log_x, boot_log_y,
+		    boot_log_columns * FONT_WIDTH, boot_log_rows * FONT_HEIGHT, 0);
+		for (unsigned int row = 0; row < boot_log_row; row++)
+			boot_draw_text(boot_log_x, boot_log_y + row * FONT_HEIGHT,
+			    boot_log_lines[(boot_log_first + row) % boot_log_rows], 0xaaaaaa);
+	}
+	boot_log_lines[(boot_log_first + boot_log_row) % boot_log_rows][0] = '\0';
+	boot_log_column = 0;
+}
+
+void
+framebuffer_boot_log_write(const char *buffer, size_t length)
+{
+	if (!boot_splash_active || boot_log_rows == 0)
+		return;
+
+	for (size_t i = 0; i < length; i++) {
+		unsigned char c = (unsigned char)buffer[i];
+		if (boot_log_state == BOOT_CSI) {
+			if (c >= '@' && c <= '~')
+				boot_log_state = BOOT_TEXT;
+			continue;
+		}
+		if (boot_log_state == BOOT_ESCAPE) {
+			boot_log_state = c == '[' ? BOOT_CSI : BOOT_TEXT;
+			continue;
+		}
+		if (c == 0x1bU) {
+			boot_log_state = BOOT_ESCAPE;
+			continue;
+		}
+		if (c == '\n') {
+			boot_log_newline = true;
+			continue;
+		}
+		if (c < ' ' || c > '~')
+			continue;
+		if (boot_log_newline || boot_log_column == boot_log_columns) {
+			boot_log_advance();
+			boot_log_newline = false;
+		}
+		char *line = boot_log_lines[(boot_log_first + boot_log_row) % boot_log_rows];
+		char glyph[] = { (char)c, '\0' };
+		boot_draw_text(boot_log_x + boot_log_column * FONT_WIDTH,
+		    boot_log_y + boot_log_row * FONT_HEIGHT, glyph, 0xaaaaaa);
+		line[boot_log_column++] = (char)c;
+		line[boot_log_column] = '\0';
+	}
+}
+
 void
 framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 	unsigned int progress, const char *label)
@@ -134,9 +199,26 @@ framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 		return;
 	for (i = 0; label[i] != '\0'; i++)
 		label_width += FONT_WIDTH;
-	panel_height = logo_height + FONT_HEIGHT + FONT_HEIGHT * 2 + 4;
-	logo_y = framebuffer->height > panel_height ?
-	    (framebuffer->height - panel_height) / 2 : 0;
+	panel_height = logo_height + FONT_HEIGHT * 4 + 4;
+	uint64_t available_rows = framebuffer->height > panel_height ?
+	    (framebuffer->height - panel_height) / FONT_HEIGHT : 0;
+	if (available_rows > BOOT_LOG_ROWS)
+		available_rows = BOOT_LOG_ROWS;
+	uint64_t total_height = panel_height + available_rows * FONT_HEIGHT;
+	logo_y = framebuffer->height > total_height ?
+	    (framebuffer->height - total_height) / 2 : 0;
+	if (!boot_splash_active) {
+		boot_log_columns = framebuffer_columns < BOOT_LOG_MAX_COLUMNS ?
+		    framebuffer_columns : BOOT_LOG_MAX_COLUMNS;
+		boot_log_rows = (unsigned int)available_rows;
+		boot_log_x = (framebuffer->width - boot_log_columns * FONT_WIDTH) / 2;
+		boot_log_y = logo_y + panel_height;
+		boot_log_first = boot_log_row = boot_log_column = 0;
+		boot_log_lines[0][0] = '\0';
+		boot_log_state = BOOT_TEXT;
+		boot_log_newline = false;
+		boot_splash_active = true;
+	}
 	bar_y = logo_y + logo_height + FONT_HEIGHT;
 	label_y = bar_y + FONT_HEIGHT + 4;
 	/* Clear the entire centered panel so shorter status lines cannot leave
@@ -159,7 +241,6 @@ framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 		boot_draw_text(x + (2 + i * 2) * FONT_WIDTH, bar_y, ".", 0xffffff);
 	x = framebuffer->width > label_width ? (framebuffer->width - label_width) / 2 : 0;
 	boot_draw_text(x, label_y, label, 0xffffff);
-	boot_splash_active = true;
 }
 
 void
@@ -181,7 +262,14 @@ framebuffer_text_init(const struct limine_framebuffer *framebuffer,
 	uint64_t green_mask;
 	uint64_t blue_mask;
 
+	if (framebuffer != NULL && active_framebuffer == framebuffer &&
+	    columns != NULL && rows != NULL) {
+		*columns = framebuffer_columns;
+		*rows = framebuffer_rows;
+		return true;
+	}
 	active_framebuffer = NULL;
+	boot_splash_active = false;
 	framebuffer_columns = 0;
 	framebuffer_rows = 0;
 	if (framebuffer == NULL || framebuffer->address == NULL ||

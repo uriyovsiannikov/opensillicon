@@ -430,8 +430,10 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 
 -include $(KERNEL_OBJECTS:.o=.d)
 
-$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) src/kernel/arch/x86_64/boot/linker.ld
-	$(LD) $(KERNEL_LDFLAGS) $(KERNEL_OBJECTS) -o $@
+$(BUILD_DIR)/kernel.elf: $(KERNEL_OBJECTS) $(USBX_KERNEL_OBJECTS) \
+		$(BUILD_DIR)/usbx/libusbx.a src/kernel/arch/x86_64/boot/linker.ld
+	$(LD) $(KERNEL_LDFLAGS) $(KERNEL_OBJECTS) $(USBX_KERNEL_OBJECTS) \
+		$(BUILD_DIR)/usbx/libusbx.a -o $@
 
 iso: $(BUILD_DIR)/opensillicon.iso
 
@@ -440,19 +442,40 @@ INITRAMFS_INPUTS := $(shell find src/initramfs -print)
 $(BUILD_DIR)/initramfs.cpio: src/tools/packers/mkinitramfs.py $(INITRAMFS_INPUTS) | $(BUILD_DIR)
 	python3 src/tools/packers/mkinitramfs.py src/initramfs $@
 
-$(BUILD_DIR)/opensillicon.iso: $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initramfs.cpio \
+live-iso: $(BUILD_DIR)/opensillicon-live.iso
+
+$(BUILD_DIR)/opensillicon-live.iso: $(LIVE_ROOT_IMAGE)
+$(BUILD_DIR)/opensillicon.iso $(BUILD_DIR)/opensillicon-live.iso: \
+		$(BUILD_DIR)/kernel.elf $(BUILD_DIR)/initramfs.cpio \
 		src/limine/BOOTX64.EFI src/limine/limine-uefi-cd.bin src/kernel/Makefile
-	rm -rf $(ISO_ROOT)
-	mkdir -p $(ISO_ROOT)/EFI/BOOT $(ISO_ROOT)/boot $(ISO_ROOT)/limine
-	cp src/limine/BOOTX64.EFI $(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI
-	cp src/limine/limine-uefi-cd.bin $(ISO_ROOT)/limine/limine-uefi-cd.bin
-	cp $(BUILD_DIR)/kernel.elf $(ISO_ROOT)/boot/kernel.elf
-	cp $(BUILD_DIR)/initramfs.cpio $(ISO_ROOT)/boot/initramfs.cpio
-	printf 'timeout: 0\n/ OpenSillicon\n    protocol: limine\n    path: boot():/boot/kernel.elf\n    module_path: boot():/boot/initramfs.cpio\n    module_string: initramfs\n    resolution: 1920x1080x32\n' > $(ISO_ROOT)/limine.conf
+	@set -eu; tree=$$(mktemp -d '$(ISO_ROOT).XXXXXX'); \
+	image=$$(mktemp '$@.tmp.XXXXXX'); \
+	trap 'rm -rf "$$tree"; rm -f "$$image"' EXIT HUP INT TERM; \
+	mkdir -p "$$tree/EFI/BOOT" "$$tree/boot" "$$tree/limine"; \
+	cp src/limine/BOOTX64.EFI "$$tree/EFI/BOOT/BOOTX64.EFI"; \
+	cp src/limine/limine-uefi-cd.bin "$$tree/limine/limine-uefi-cd.bin"; \
+	cp $(BUILD_DIR)/kernel.elf "$$tree/boot/kernel.elf"; \
+	cp $(BUILD_DIR)/initramfs.cpio "$$tree/boot/initramfs.cpio"; \
+	entry() { \
+		printf '/ %s\n    protocol: limine\n    path: boot():/boot/kernel.elf\n    module_path: boot():/boot/initramfs.cpio\n    module_string: initramfs\n    resolution: 1920x1080x32\n' "$$1"; \
+		if [ '$(@F)' = opensillicon-live.iso ]; then \
+			printf '    module_path: boot():/boot/root.img\n    module_string: live-root\n'; \
+		fi; \
+		if [ -n "$$2" ]; then printf '    cmdline: %s\n' "$$2"; fi; \
+	}; \
+	if [ '$(@F)' = opensillicon-live.iso ]; then \
+		cp '$(LIVE_ROOT_IMAGE)' "$$tree/boot/root.img"; \
+		{ printf 'timeout: 5\n'; entry 'OpenSillicon Live' ''; \
+		  entry 'OpenSillicon Live (single CPU)' nosmp; } > "$$tree/limine.conf"; \
+	else \
+		{ printf 'timeout: 0\n'; entry OpenSillicon ''; } > "$$tree/limine.conf"; \
+	fi; \
 	$(XORRISO) -as mkisofs -R -r -J \
 		--efi-boot limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		$(ISO_ROOT) -o $@
+		"$$tree" -o "$$image"; \
+	chmod 644 "$$image"; \
+	mv -f "$$image" '$@'
 
 $(BUILD_DIR)/pty.o: src/kernel/tty/pty.c src/include/kernel/pty.h src/include/kernel/pipe.h \
 		src/include/kernel/fd.h

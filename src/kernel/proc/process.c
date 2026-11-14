@@ -9,6 +9,7 @@
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/network_service.h"
+#include "kernel/usb_host.h"
 #include "kernel/pmm.h"
 #include "kernel/smp.h"
 #include "kernel/spinlock.h"
@@ -1010,6 +1011,7 @@ schedule_from(struct process *after)
 				 * after it has returned to this blocked-syscall idle path. */
 				(void)network_service_request(NETWORK_SERVICE_POLL_RX);
 				(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
+				usb_host_poll();
 				continue;
 			}
 		}

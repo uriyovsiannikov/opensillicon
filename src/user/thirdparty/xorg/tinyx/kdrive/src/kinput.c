@@ -1481,9 +1481,9 @@ KdBlockHandler(int screen, pointer blockData, pointer timeout, pointer readmask)
 	/* if we need to poll for events, do that */
 	if (kdOsFuncs->pollEvents) {
 		(*kdOsFuncs->pollEvents) ();
-		/* The OpenSillicon backend drains a bounded PS/2 input batch here.
-		 * Poll once per timer tick to reduce visible pointer latency. */
-		myTimeout = 10;
+		/* Poll once per timer tick when no input descriptor can wake select. */
+		if (myTimeout == 0 || myTimeout > 10)
+			myTimeout = 10;
 	}
 	if (myTimeout > 0)
 		AdjustWaitForDelay(timeout, myTimeout);
@@ -1500,6 +1500,11 @@ KdWakeupHandler(int screen,
 	int i;
 
 	KdMouseInfo *mi;
+
+	/* Input may arrive during select. Queue it before WaitForSomething
+	 * checks checkForInput, so it is handled in this dispatch cycle. */
+	if (kdInputEnabled && kdOsFuncs->pollEvents)
+		(*kdOsFuncs->pollEvents) ();
 
 	if (kdInputEnabled && result > 0) {
 		for (i = 0; i < kdNumInputFds; i++)
