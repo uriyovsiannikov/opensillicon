@@ -140,6 +140,24 @@ main(int argc, char **argv)
 	assert(fd_object_read(file, data, 7, &n) == 0 && n == 7 &&
 	    strcmp(data, "durable") == 0);
 	fd_object_put(file);
+
+	/* An ELF-sized read crosses the direct/indirect boundary and EOF.
+	 * The allocation bitmap and indirect block should each be read once. */
+	static unsigned char payload[48 * 4096 + 111], loaded[sizeof(payload)];
+	for (size_t i = 0; i < sizeof(payload); i++)
+		payload[i] = (unsigned char)(i ^ (i >> 12));
+	assert(vfs_open("/mnt/program", VFS_O_RDWR | VFS_O_CREAT, 0755,
+	    &file) == 0);
+	assert(fd_object_write(file, payload, sizeof(payload), &n) == 0 &&
+	    n == sizeof(payload));
+	reads = 0;
+	assert(file->operations->read(file->context, 37, loaded, sizeof(loaded),
+	    &n) == 0 && n == sizeof(payload) - 37);
+	assert(memcmp(payload + 37, loaded, n) == 0);
+	printf("SilliconFS reads for a file spanning 49 blocks: %u\n", reads);
+	assert(reads == 53); /* inode map/table, data map, indirect table and data */
+	fd_object_put(file);
+
 	assert(filesystem_unmount("/mnt") == 0);
 	size_t baseline = live;
 	for (size_t i = 0; i < 24; i++) {

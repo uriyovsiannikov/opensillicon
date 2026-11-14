@@ -494,27 +494,65 @@ validate_inode_blocks(struct silliconfs *filesystem,
 	return 0;
 }
 
+/* A file read visits the same allocation map and indirect table repeatedly.
+ * Keep the blocks for that read only; writes need no cache invalidation. */
+struct sfs_read_cache {
+	uint32_t bitmap_block;
+	bool indirect_loaded;
+	uint8_t bitmap[SILLICONFS_BLOCK_SIZE];
+	uint8_t indirect[SILLICONFS_BLOCK_SIZE];
+};
+
 static int
-read_logical_block(struct silliconfs *filesystem,
-	const struct sfs_inode *inode, uint32_t logical, uint8_t *block,
-	uint32_t *physical)
+check_read_block(struct silliconfs *filesystem, uint32_t block,
+    struct sfs_read_cache *cache)
+{
+	bool allocated;
+	if (!cache) {
+		int error = block_allocated(filesystem, block, &allocated);
+		return error != 0 ? error : allocated ? 0 : -SFS_EIO;
+	}
+	if (block < filesystem->super.data_start ||
+	    block >= filesystem->super.total_blocks)
+		return -SFS_EIO;
+	uint32_t bitmap_block = filesystem->super.block_bitmap_start +
+	    block / 32768U;
+	if (cache->bitmap_block != bitmap_block) {
+		int error = read_block(filesystem, bitmap_block, cache->bitmap);
+		if (error != 0)
+			return error;
+		cache->bitmap_block = bitmap_block;
+	}
+	uint32_t bit = block % 32768U;
+	allocated = (cache->bitmap[bit / 8U] & (1U << (bit % 8U))) != 0;
+	return allocated ? 0 : -SFS_EIO;
+}
+
+static int
+read_logical_block_cached(struct silliconfs *filesystem,
+    const struct sfs_inode *inode, uint32_t logical, uint8_t *block,
+    uint32_t *physical, struct sfs_read_cache *cache)
 {
 	uint32_t number = 0;
-	uint8_t indirect[SILLICONFS_BLOCK_SIZE];
 	int error;
 
-	if (logical >= 1036)
+	if (logical >= SFS_DIRECT + SFS_INDIRECT_COUNT)
 		return -SFS_EIO;
 	if (logical < SFS_DIRECT) {
 		number = inode->direct[logical];
 	} else if (inode->indirect != 0) {
-		bool allocated;
-		error = block_allocated(filesystem, inode->indirect, &allocated);
-		if (error != 0 || !allocated)
-			return -SFS_EIO;
-		error = read_block(filesystem, inode->indirect, indirect);
-		if (error != 0)
-			return error;
+		/* The output block can hold the table until we read its data block. */
+		uint8_t *indirect = cache ? cache->indirect : block;
+		if (!cache || !cache->indirect_loaded) {
+			error = check_read_block(filesystem, inode->indirect, cache);
+			if (error != 0)
+				return error;
+			error = read_block(filesystem, inode->indirect, indirect);
+			if (error != 0)
+				return error;
+			if (cache)
+				cache->indirect_loaded = true;
+		}
 		number = get_le32(indirect + (logical - SFS_DIRECT) * 4);
 	}
 	if (physical != NULL)
@@ -523,13 +561,19 @@ read_logical_block(struct silliconfs *filesystem,
 		memset(block, 0, SILLICONFS_BLOCK_SIZE);
 		return 0;
 	}
-	{
-		bool allocated;
-		error = block_allocated(filesystem, number, &allocated);
-		if (error != 0 || !allocated)
-			return -SFS_EIO;
-	}
+	error = check_read_block(filesystem, number, cache);
+	if (error != 0)
+		return error;
 	return read_block(filesystem, number, block);
+}
+
+static int
+read_logical_block(struct silliconfs *filesystem,
+    const struct sfs_inode *inode, uint32_t logical, uint8_t *block,
+    uint32_t *physical)
+{
+	return read_logical_block_cached(filesystem, inode, logical, block,
+	    physical, NULL);
 }
 
 static int
@@ -726,7 +770,11 @@ read_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 	size_t *read_length)
 {
 	uint8_t block[SILLICONFS_BLOCK_SIZE];
+	struct sfs_read_cache cache;
 	size_t total = 0;
+
+	cache.bitmap_block = 0;
+	cache.indirect_loaded = false;
 
 	if ((inode->mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR)
 		return -SFS_EISDIR;
@@ -747,7 +795,8 @@ read_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 
 		if (amount > length - total)
 			amount = length - total;
-		error = read_logical_block(filesystem, inode, logical, block, NULL);
+		error = read_logical_block_cached(filesystem, inode, logical, block,
+		    NULL, &cache);
 		if (error != 0)
 			return error;
 		memcpy((uint8_t *)buffer + total, block + within, amount);
