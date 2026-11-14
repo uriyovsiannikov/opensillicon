@@ -313,3 +313,25 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/x11/.apps-ready $(BUILD_D
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf \
 		$(foreach config,$(SERVICE_CONFIGS),--service '$(config)') --coreutils $(COREUTILS_ELFS); \
 	mv -f "$$image_tmp" '$@'
+
+$(BUILD_DIR)/storage/%.o: src/user/storage/%.c src/user/storage/storage.h | $(BUILD_DIR)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/newfs_silliconfs.o: src/user/coreutils/newfs_silliconfs.c src/user/storage/storage.h
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/newfs_silliconfs.elf: $(BUILD_DIR)/coreutils/newfs_silliconfs.o \
+		$(BUILD_DIR)/storage/newfs.o $(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o \
+		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o \
+		$(BUILD_DIR)/coreutils/newfs_silliconfs.o $(BUILD_DIR)/storage/newfs.o \
+		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/tests/newfs_guest.o: src/tests/newfs_guest.c | $(BUILD_DIR)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/tests/newfs_guest.elf: $(BUILD_DIR)/tests/newfs_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@

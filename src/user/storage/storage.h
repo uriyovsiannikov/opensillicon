@@ -1,0 +1,26 @@
+#ifndef OPENSILLICON_STORAGE_H
+#define OPENSILLICON_STORAGE_H
+#include <stddef.h>
+#include <stdint.h>
+struct storage_io {
+ void *context;
+ uint64_t bytes;
+ uint32_t sector;
+ int (*read)(void *, uint64_t, void *, size_t);
+ int (*write)(void *, uint64_t, const void *, size_t);
+ int (*flush)(void *);
+};
+struct storage_device { int fd; struct storage_io io; };
+int storage_open(struct storage_device *, const char *path, int writable);
+int storage_close(struct storage_device *);
+uint32_t storage_crc32(const void *, size_t);
+void storage_le16(void *, uint16_t);
+void storage_le32(void *, uint32_t);
+void storage_le64(void *, uint64_t);
+struct sfs_layout {
+ uint32_t blocks, inodes, bb_start, bb_count, ib_start, ib_count;
+ uint32_t it_start, it_count, data_start;
+};
+int sfs_plan(const struct storage_io *, uint32_t inodes, struct sfs_layout *);
+int sfs_format(const struct storage_io *, uint32_t inodes);
+#endif
