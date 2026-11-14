@@ -1,11 +1,74 @@
 #include "../include/os.h"
-#include "netdiag_args.h"
+#include <stdbool.h>
 
 #define PING_ETIMEDOUT 110
 #define PING_EHOSTUNREACH 113
 #define PING_EAGAIN 11
 
 static const uint8_t ping_payload[] = "OS-PHASE15.3A-ECHO";
+
+static bool
+parse_ipv4(const char *text, uint8_t address[4])
+{
+	const char *cursor = text;
+	if (cursor == NULL || address == NULL)
+		return false;
+	for (size_t part = 0; part < 4; part++) {
+		unsigned int value = 0;
+		size_t digits = 0;
+		while (*cursor >= '0' && *cursor <= '9') {
+			unsigned int digit = (unsigned int)(*cursor++ - '0');
+			if (value > (255U - digit) / 10U)
+				return false;
+			value = value * 10U + digit;
+			digits++;
+		}
+		if (digits == 0 || (part < 3 && *cursor++ != '.') ||
+		    (part == 3 && *cursor != '\0'))
+			return false;
+		address[part] = (uint8_t)value;
+	}
+	return true;
+}
+
+static bool
+parse_count(const char *text, uint16_t *port)
+{
+	unsigned int value = 0;
+	if (text == NULL || port == NULL || *text == '\0')
+		return false;
+	for (const char *cursor = text; *cursor != '\0'; cursor++) {
+		unsigned int digit;
+
+		if (*cursor < '0' || *cursor > '9')
+			return false;
+		digit = (unsigned int)(*cursor - '0');
+		if (value > (UINT16_MAX - digit) / 10U)
+			return false;
+		value = value * 10U + digit;
+	}
+	if (value == 0)
+		return false;
+	*port = (uint16_t)value;
+	return true;
+}
+
+static bool
+parse_ping_command(size_t argc, const char *const argv[],
+	uint8_t address[4], uint16_t *count)
+{
+	uint16_t parsed_count = 1;
+	if (argv == NULL || address == NULL || count == NULL ||
+	    (argc != 2 && argc != 3) || argv[1] == NULL ||
+	    !parse_ipv4(argv[1], address))
+		return false;
+	if (argc == 3 && !parse_count(argv[2], &parsed_count))
+		return false;
+	if (parsed_count > 4)
+		return false;
+	*count = parsed_count;
+	return true;
+}
 
 static int
 is_help(const char *text)
@@ -97,7 +160,7 @@ user_main(uint64_t argc, char **argv)
 		print_help();
 		return 0;
 	}
-	if (!netdiag_parse_ping_command((size_t)argc,
+	if (!parse_ping_command((size_t)argc,
 	    (const char *const *)argv, destination, &count)) {
 		print_help();
 		return 2;

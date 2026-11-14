@@ -421,7 +421,7 @@ main(int argc, char **argv)
 		static const char *names[] = {"ls", "cat", "echo", "pwd",
 		    "true", "false", "clear", "uname", "fetch", "head", "tail",
 		    "wc", "seq", "mkdir", "rm", "touch", "stat", "basename",
-		    "dirname", "kill", "sleep", "which", "ps", "netdiag",
+		    "dirname", "kill", "sleep", "which", "ps",
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
 		    "kldload", "kldunload", "pkg", "pciconf", "usbconf",
 		    "cpuconf", "blkconf", "newfs_silliconfs", "gpart",

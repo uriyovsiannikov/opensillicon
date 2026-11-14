@@ -44,23 +44,6 @@ $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/user_start.o \
 		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
 		$(BUILD_DIR)/coreutils/$*.o -o $@
 
-$(BUILD_DIR)/coreutils/netdiag.elf: $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/netdiag_args.o $(BUILD_DIR)/coreutils/netdiag.o \
-		src/user/c_linker.ld
-	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/netdiag_args.o $(BUILD_DIR)/coreutils/netdiag.o -o $@
-
-$(BUILD_DIR)/coreutils/netdiag.o: src/user/coreutils/netdiag.c \
-		src/user/coreutils/netdiag_args.h src/user/include/os.h | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(USER_CFLAGS) -Isrc/user -c $< -o $@
-
-$(BUILD_DIR)/netdiag_args.o: src/user/coreutils/netdiag_args.c \
-		src/user/coreutils/netdiag_args.h | $(BUILD_DIR)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/coreutils/host.o: src/user/coreutils/host.c src/user/include/os.h \
 		src/user/libos/include/netdb.h src/user/libos/include/netinet/in.h | $(BUILD_DIR)
 	mkdir -p $(@D)
@@ -72,19 +55,6 @@ $(BUILD_DIR)/coreutils/host.elf: $(BUILD_DIR)/user_start.o \
 	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
 		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
 		$(BUILD_DIR)/coreutils/host.o $(LIBOS_ARCHIVE) -o $@
-
-$(BUILD_DIR)/coreutils/ping.elf: $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/netdiag_args.o $(BUILD_DIR)/coreutils/ping.o \
-		src/user/c_linker.ld
-	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
-		$(BUILD_DIR)/netdiag_args.o $(BUILD_DIR)/coreutils/ping.o -o $@
-
-$(BUILD_DIR)/coreutils/ping.o: src/user/coreutils/ping.c \
-		src/user/coreutils/netdiag_args.h src/user/include/os.h | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(USER_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/init.elf: $(BUILD_DIR)/user_start.o $(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_path.o \
