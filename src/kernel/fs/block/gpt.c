@@ -120,36 +120,45 @@ int gpt_read(struct block_device *disk, struct gpt_table *table)
  return result;
 }
 
+static void partition_destroy(struct block_device *device)
+{ (void)kheap_free(device); }
+
+int gpt_rescan(struct block_device *disk)
+{
+ if(!disk || disk->parent || !disk->registered)return -EINVAL;
+ if(!block_raw_write_allowed(disk))return -EBUSY;
+ struct gpt_table *table=kheap_alloc(sizeof(*table));
+ if(!table)return -ENOMEM;
+ int count=gpt_read(disk,table),error=0;
+ if(count<0) { (void)kheap_free(table);return count; }
+ size_t old=0;
+ for(size_t i=0;i<block_device_count();i++)if(block_device_at(i)->parent==disk)old++;
+ if((size_t)count>=BLOCK_DEVICE_MAX-block_device_count()+old)error=-ENOSPC;
+ struct block_device *parts[GPT_ENTRY_MAX]={0};
+ for(int i=0;!error && i<count;i++) {
+  parts[i]=kheap_alloc(sizeof(*parts[i]));
+  if(!parts[i]) {error=-ENOMEM;break;}
+  memset(parts[i],0,sizeof(*parts[i]));
+  const struct gpt_partition *p=&table->partitions[i];
+  error=block_partition_prepare(parts[i],disk,p->first,p->last-p->first+1,p->number);
+  if(error)break;
+  parts[i]->destroy=partition_destroy;
+  memcpy(parts[i]->partition_uuid,p->uuid,16);memcpy(parts[i]->partition_type,p->type,16);
+ }
+ if(!error)error=block_replace_partitions(disk,parts,(size_t)count);
+ if(error)for(int i=0;i<count;i++)if(parts[i])(void)kheap_free(parts[i]);
+ if(!error && table->degraded) {klog("GPT: using surviving copy on ");klog(disk->name);klog("\n");}
+ (void)kheap_free(table);return error;
+}
+
 void gpt_discover(void)
 {
- static struct block_device partitions[BLOCK_DEVICE_MAX];
- static size_t used;
- size_t disks=block_device_count();
- struct gpt_table *table=kheap_alloc(sizeof(*table));
- if(table==NULL) { klog("GPT: allocation failed\n"); return; }
- for(size_t i=0;i<disks;i++) {
-  struct block_device *disk=block_device_at(i);
-  if(disk->parent) continue;
+ struct block_device *disks[BLOCK_DEVICE_MAX];size_t count=0;
+ for(size_t i=0;i<block_device_count();i++)if(!block_device_at(i)->parent)disks[count++]=block_device_at(i);
+ for(size_t i=0;i<count;i++) {
   bool already=false;
-  for(size_t j=0;j<block_device_count();j++)
-   if(block_device_at(j)->parent==disk) already=true;
-  if(already) continue;
-  int count=gpt_read(disk,table);
-  if(count<0) { klog("GPT: invalid/unreadable table on "); klog(disk->name); klog("\n"); continue; }
-  /* Reserve ram0's slot before publishing any partition from this disk. */
-  if((size_t)count>=BLOCK_DEVICE_MAX-block_device_count()) {
-   klog("GPT: partition registry full\n"); continue;
-  }
-  for(int j=0;j<count;j++) {
-   const struct gpt_partition *p=&table->partitions[j];
-   struct block_device *device=&partitions[used];
-   int error=block_partition_register(device,disk,p->first,p->last-p->first+1,p->number);
-   if(error!=0) { klog("GPT: partition registration failed\n"); break; }
-   memcpy(device->partition_uuid,p->uuid,16);
-   memcpy(device->partition_type,p->type,16);
-   used++;
-  }
-  if(table->degraded) { klog("GPT: using surviving GPT copy on "); klog(disk->name); klog("\n"); }
+  for(size_t j=0;j<block_device_count();j++)if(block_device_at(j)->parent==disks[i])already=true;
+  if(already)continue;
+  if(gpt_rescan(disks[i])!=0) {klog("GPT: invalid/unreadable table on ");klog(disks[i]->name);klog("\n");}
  }
- (void)kheap_free(table);
 }

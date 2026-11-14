@@ -2101,7 +2101,14 @@ syscall_dispatch(struct interrupt_frame *frame)
 			}
 			if (frame->rsi == OS_DIOCGSECTORSIZE ||
 			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH ||
-			    frame->rsi == OS_DIOCGPARTINFO) {
+			    frame->rsi == OS_DIOCGPARTINFO || frame->rsi == OS_DIOCREREADGPT) {
+				if (frame->rsi == OS_DIOCREREADGPT) {
+					struct os_credentials credentials;
+					if (!process_current_credentials(&credentials) || credentials.effective_uid != 0) {
+						syscall_error(frame, 1);break;
+					}
+				}
+
 				union { uint32_t sector; int64_t media; struct os_disk_partinfo part; } value = {0};
 				void *payload = frame->rsi == OS_DIOCGSECTORSIZE ?
 				    (void *)&value.sector : frame->rsi == OS_DIOCGPARTINFO ?

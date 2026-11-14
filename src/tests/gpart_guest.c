@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,14 @@ int main(void)
   assert(lseek(fd,0,SEEK_SET)==0 && read(fd,bytes,512)==512 && bytes[0]==0xcc);
   char *create[]={"/bin/gpart","bootlayout","-F","-e","64","/dev/ada0",NULL};
   assert(run(create)==0);
+  assert(access("/dev/ada0p2",F_OK)==0);
+  int old=open("/dev/ada0p2",O_RDONLY);assert(old>=0);
+  assert(ioctl(fd,DIOCREREADGPT)==0);
+  assert(read(old,bytes,512)==-1 && errno==ENODEV);close(old);
+  int fresh=open("/dev/ada0p2",O_RDONLY);assert(fresh>=0);
+  struct os_disk_partinfo info;
+  assert(ioctl(fresh,DIOCGPARTINFO,&info)==0 && info.partition_number==2);
+  close(fresh);
   assert(lseek(fd,0,SEEK_SET)==0 && read(fd,bytes,512)==512 && bytes[510]==0x55 && bytes[511]==0xaa);
   close(fd);puts("GPART PHASE1 PASS: preview and GPT creation");
  }

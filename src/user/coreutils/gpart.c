@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/disk.h>
+#include <sys/ioctl.h>
 #include "../storage/storage.h"
 static int usage(void)
 {
@@ -51,11 +53,17 @@ int main(int argc,char **argv)
   if(format) {
    uint8_t ids[48];
    if(uuids(ids)!=0) { fputs("gpart: UUID randomness unavailable; disk was not changed\n",stderr); error=-EAGAIN; }
-   else error=gpt_layout_write(&device.io,esp_mib,ids);
+   else {
+    error=gpt_layout_write(&device.io,esp_mib,ids);
+    if(!error && ioctl(device.fd,DIOCREREADGPT)!=0) {
+     error=-errno;
+     fprintf(stderr,"gpart: GPT written but kernel refresh failed; reboot before using partitions\n");
+    }
+   }
   } else puts("Preview only. Use -F to replace this disk's partition tables.");
  }
  int close_error=storage_close(&device); if(!error) error=close_error;
  if(error) { fprintf(stderr,"gpart: failed (errno %d)\n",-error); return 1; }
- if(format) puts("GPT written, flushed and verified. Reboot to discover the new partition devices.");
+ if(format) puts("GPT written, flushed and verified. Partition devices are now available.");
  return 0;
 }

@@ -16,5 +16,6 @@ struct gpt_table {
 };
 /* Read-only validation. Zero means no protective GPT; errors publish nothing. */
 int gpt_read(struct block_device *disk, struct gpt_table *table);
+int gpt_rescan(struct block_device *disk);
 void gpt_discover(void);
 #endif

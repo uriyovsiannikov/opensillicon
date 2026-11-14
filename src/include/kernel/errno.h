@@ -6,6 +6,7 @@
 #define ESRCH 3
 #define EACCES 13
 #define EBUSY 16
+#define ENODEV 19
 #define ENAMETOOLONG 36
 #define EIO 5
 #define E2BIG 7

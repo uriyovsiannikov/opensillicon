@@ -28,8 +28,8 @@ The tool accepts only whole SATA device names, obtains distinct UUIDs from
 
 The backup GPT is flushed before the primary, both copies are read back, then
 the protective MBR is written, flushed and verified. Failures stop the operation;
-replacing an existing layout is not a power-loss-atomic operation. Partition
-device nodes are currently discovered at boot, so reboot after using this tool.
+replacing an existing layout is not a power-loss-atomic operation. After writing, gpart requests a root-only GPT reread and atomically refreshes
+the disk nodes. Newly created partitions can be formatted in the same session.
 Neither FAT32 nor SilliconFS is formatted by gpart. The project's SilliconFS GPT
 type is 53494c46-5300-4000-8000-4f50454e5349.
 

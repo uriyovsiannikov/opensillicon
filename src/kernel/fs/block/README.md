@@ -34,3 +34,9 @@ first-valid-SilliconFS behavior; a Live root module remains authoritative.
 `sh src/tests/root_device.sh` checks parsing/uniqueness and
 `python3 src/tests/root_uuid_qemu.py` boots the selected partition while a
 different valid filesystem is discovered earlier.
+
+Block devices are reference-counted. The registry and devfs disk nodes each hold
+references; dynamically discovered GPT objects release their parent only after
+the last reference disappears. GPT rescan stages new descriptors and prechecks
+registry capacity/names before retiring the old entries. Tests inject allocation
+failures and keep old descriptors alive across replacement.

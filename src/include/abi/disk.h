@@ -6,6 +6,7 @@
 #define OS_DIOCGFLUSH      0x20006487U /* no argument */
 /* OpenSillicon extension: geometry and GPT identity, no user pointers. */
 #include <stdint.h>
+#define OS_DIOCREREADGPT 0x20004f11U /* root-only, no argument */
 #define OS_DIOCGPARTINFO 0x40584f10U
 #define OS_DISK_PARTITION 1U
 #define OS_DISK_MOUNTED 2U

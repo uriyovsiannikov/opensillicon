@@ -32,8 +32,15 @@ struct block_device {
 	uint32_t partition_number;
 	uint8_t partition_uuid[16];
 	uint8_t partition_type[16];
+	uint32_t references;
+	void (*destroy)(struct block_device *);
 };
 
+bool block_device_get(struct block_device *device);
+void block_device_put(struct block_device *device);
+int block_replace_partitions(struct block_device *parent, struct block_device **parts, size_t count);
+int block_partition_prepare(struct block_device *partition, struct block_device *parent,
+ uint64_t first_sector, uint64_t sector_count, uint32_t number);
 bool block_raw_write_allowed(const struct block_device *device);
 int block_partition_register(struct block_device *partition,
 	struct block_device *parent, uint64_t first_sector, uint64_t sector_count,

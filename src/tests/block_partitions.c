@@ -33,5 +33,19 @@ int main(void)
  assert(block_raw_write_allowed(&b));
  a.mounted=false; disk.mounted=true;
  assert(!block_raw_write_allowed(&a) && !block_raw_write_allowed(&b));
+ disk.mounted=false;
+ struct block_device fresh={0};
+ assert(block_partition_prepare(&fresh,&disk,24,8,1)==0);
+ struct block_device *replacement[]={&fresh};
+ assert(block_device_get(&a));
+ assert(block_replace_partitions(&disk,replacement,1)==0);
+ assert(!a.registered && a.references==1 && fresh.registered);
+ assert(block_raw_write_allowed(&fresh));
+ block_device_put(&a);assert(a.references==0);
+ fresh.mounted=true;
+ assert(block_replace_partitions(&disk,NULL,0)==-EBUSY && fresh.registered);
+ fresh.mounted=false;
+ assert(block_replace_partitions(&disk,NULL,0)==0 && !fresh.registered);
+ assert(block_device_count()==1 && disk.references==1);
  puts("block partition boundaries, parent offsets, flush and mounted hierarchy: PASS");
 }

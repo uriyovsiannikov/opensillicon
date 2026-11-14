@@ -17,7 +17,8 @@ writes at or beyond the end return ENOSPC, and requests crossing the end return
 a short transfer. Raw writes to a disk hosting the mounted root filesystem
 return EBUSY, including ram0. Filesystem I/O continues through the block layer.
 Other character devices remain non-seekable. Disk nodes are populated when
-devfs mounts; hotplug updates are not yet implemented. GPT partitions are exposed as
+devfs mounts; GPT rereads can refresh them while the OS is running. Physical
+hotplug updates are not yet implemented. GPT partitions are exposed as
 /dev/ada0p1 and so forth. DIOCGSECTORSIZE, DIOCGMEDIASIZE and DIOCGFLUSH use
 FreeBSD-compatible request numbers and payload sizes; user pointers are copied
 only in the syscall layer. Include <sys/disk.h> from libos to use them.
@@ -29,3 +30,10 @@ OpenSillicon's DIOCGPARTINFO extension returns fixed-width media geometry,
 parent name, GPT type/unique UUID and mounted/raw-write flags. It is distinct
 from FreeBSD's standard disk ioctls. installboot uses it to require an actual
 EFI System Partition and to set the FAT BPB's hidden-sector count correctly.
+
+DIOCREREADGPT is a root-only OpenSillicon extension. It validates and stages all
+new partition objects before replacing the block registry; mounted overlap is
+rejected. Retired objects remain alive while old disk vnodes/descriptors retain
+them, but raw operations on those objects return ENODEV. devfs builds a complete
+replacement list before publishing it. An allocation failure in that namespace
+refresh is reported and can be retried; no disk metadata is written by reread.
