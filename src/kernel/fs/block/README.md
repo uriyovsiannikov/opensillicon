@@ -7,6 +7,20 @@ storage. One registry slot remains available for the Live RAM disk ram0.
 
 Live boot mounts ram0 and exposes detected SATA disks through /proc/disks and
 blkconf without mounting or formatting them. Disk boot selects the first detected
-disk containing a valid whole-disk SilliconFS. Device numbering follows PCI and
-port discovery order; it is not a persistent identity. GPT/MBR partitions, NVMe,
+disk or GPT partition containing a valid SilliconFS. Device numbering follows PCI and
+port discovery order; it is not a persistent identity. Legacy MBR partition discovery, NVMe,
 and USB mass-storage block I/O are not implemented here.
+
+GPT discovery validates protective MBR, header/entry-array CRC32, disk bounds,
+unique partition IDs and non-overlapping ranges. A valid backup is used when
+the primary is damaged; conflicting valid copies are rejected. Discovery never
+repairs or writes metadata. Up to 128 entries of 128..1024 bytes are parsed;
+the registry holds 128 total devices, reserving one slot for ram0. Partitions
+are exposed as /dev/ada0p1, /dev/ada0p2, etc., using their original GPT indexes.
+Raw writes through a parent disk are blocked if a child is mounted, and raw
+writes through a child are blocked if its parent is mounted.
+
+Run `sh src/tests/block_partitions.sh` and `sh src/tests/gpt_read.sh` for host
+checks. `python3 src/tests/gpt_qemu.py` checks booting a SilliconFS in GPT
+partition 3, alongside other disks; it requires the built ISO/root image,
+sgdisk, QEMU with KVM, and OVMF. All test disk writes target temporary images.

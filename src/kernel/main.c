@@ -30,6 +30,7 @@
 #include "kernel/devfs.h"
 #include "kernel/procfs.h"
 #include "kernel/block.h"
+#include "kernel/gpt.h"
 #include "kernel/block_silliconfs.h"
 #include "kernel/silliconfs.h"
 #include "kernel/tty.h"
@@ -625,6 +626,7 @@ _start(void)
 		kernel_halt();
 	}
 	klog_status("PCI", true, NULL);
+	gpt_discover();
 	klog("OpenSillicon: Initializing USB host controllers\n");
 	if (!usb_host_init())
 		klog_status("USBX", false, "host core initialization failed");
