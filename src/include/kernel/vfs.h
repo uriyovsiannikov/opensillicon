@@ -48,6 +48,8 @@ struct vfs_dirent {
 };
 
 struct vnode_operations {
+	int (*can_unmount)(struct vnode *root);
+	int (*sync)(struct vnode *node);
 	/* Device nodes opt into byte-offset seeking explicitly. */
 	bool seekable;
 	int (*ioctl)(struct vnode *node, uint64_t request, void *argument);
@@ -88,6 +90,8 @@ bool vnode_get(struct vnode *node);
 void vnode_put(struct vnode *node);
 uint64_t vfs_allocate_inode(void);
 int vfs_mount(const char *path, struct vnode *root);
+int vfs_unmount_check(const char *path);
+int vfs_unmount(const char *path);
 int vfs_replace_root(struct vnode *root);
 int vfs_lookup(const char *path, struct vnode **result);
 int vfs_lookup_as(const char *path, uint32_t uid, uint32_t gid,

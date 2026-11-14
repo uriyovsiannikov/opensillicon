@@ -53,6 +53,7 @@ int process_set_res_gid(uint32_t real, uint32_t effective, uint32_t saved);
 uint32_t process_umask(uint32_t replacement);
 uint32_t process_get_umask(void);
 int process_chdir(const char *path);
+bool process_directory_busy(const char *canonical_path);
 int process_getcwd(char *buffer, size_t capacity);
 int process_resolve_path(const char *path, char *output, size_t capacity);
 int process_current_snapshot(struct process_snapshot_entry *entry);

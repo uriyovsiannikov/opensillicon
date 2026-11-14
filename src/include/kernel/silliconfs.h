@@ -11,6 +11,7 @@
 struct silliconfs_device {
 	void *context;
 	uint32_t block_count;
+	int (*flush)(void *context);
 	int (*read_block)(void *context, uint32_t block_number, void *block);
 	int (*write_block)(void *context, uint32_t block_number,
 	    const void *block);

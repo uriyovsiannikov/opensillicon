@@ -346,6 +346,9 @@ $(BUILD_DIR)/block.o: src/kernel/fs/block/block.c src/include/kernel/block.h \
 		src/include/kernel/errno.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
+$(BUILD_DIR)/mount.o: src/kernel/fs/block/mount.c src/include/kernel/mount.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
+
 $(BUILD_DIR)/root_device.o: src/kernel/fs/block/root_device.c src/include/kernel/root_device.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
@@ -407,7 +410,7 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 	$(BUILD_DIR)/smp_asm.o \
 	$(BUILD_DIR)/fpu.o $(BUILD_DIR)/lapic.o $(BUILD_DIR)/acpi.o \
 	$(BUILD_DIR)/ioapic.o $(BUILD_DIR)/ahci.o $(BUILD_DIR)/block.o \
-	$(BUILD_DIR)/block_silliconfs.o $(BUILD_DIR)/gpt.o $(BUILD_DIR)/root_device.o \
+	$(BUILD_DIR)/block_silliconfs.o $(BUILD_DIR)/gpt.o $(BUILD_DIR)/root_device.o $(BUILD_DIR)/mount.o \
 	$(BUILD_DIR)/pci.o $(BUILD_DIR)/pci_resource.o $(BUILD_DIR)/dma.o \
 	$(BUILD_DIR)/dma_ring.o $(BUILD_DIR)/netbuf.o $(BUILD_DIR)/netdev.o \
 	$(BUILD_DIR)/udp_socket.o $(BUILD_DIR)/tcp_socket.o \

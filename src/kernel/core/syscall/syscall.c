@@ -1,5 +1,6 @@
 #include "arch/x86_64/acpi.h"
 #include "kernel/block.h"
+#include "kernel/mount.h"
 #include "kernel/pty.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -1205,6 +1206,46 @@ syscall_dispatch(struct interrupt_frame *frame)
 	if (syscall_process_local(&frame))
 		return frame;
 	switch (number) {
+	case SYSCALL_MOUNT:
+	case SYSCALL_UNMOUNT:
+		{
+			struct os_credentials credentials;
+			char source[VFS_PATH_MAX], target[VFS_PATH_MAX];
+			if (!process_current_credentials(&credentials) || credentials.effective_uid != 0) {
+				syscall_error(frame, 1);break;
+			}
+			int result;
+			if (number == SYSCALL_MOUNT) {
+				result = frame->rdx ? -EINVAL : copy_user_string(frame->rdi, source, sizeof(source));
+				if (!result) result = copy_user_string(frame->rsi, target, sizeof(target));
+				if (!result) result = process_resolve_path(source, source, sizeof(source));
+				if (!result) result = process_resolve_path(target, target, sizeof(target));
+				if (!result) result = filesystem_mount(source, target);
+			} else {
+				result = frame->rsi ? -EINVAL : copy_user_string(frame->rdi, target, sizeof(target));
+				if (!result) result = process_resolve_path(target, target, sizeof(target));
+				if (!result) result = filesystem_unmount(target);
+			}
+			if (result) syscall_error(frame, errno_from_kernel(result));
+			else frame->rax = 0;
+		}
+		break;
+	case SYSCALL_FSYNC:
+		{
+			struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
+			int result = !object ? -EBADF : !object->operations->sync ? -EINVAL :
+			    object->operations->sync(object->context);
+			if (result) syscall_error(frame, errno_from_kernel(result));
+			else frame->rax = 0;
+		}
+		break;
+	case SYSCALL_SYNC:
+		{
+			int result = filesystem_sync_all();
+			if (result) syscall_error(frame, errno_from_kernel(result));
+			else frame->rax = 0;
+		}
+		break;
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;

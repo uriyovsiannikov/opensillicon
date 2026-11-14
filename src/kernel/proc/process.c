@@ -1401,6 +1401,24 @@ process_chdir(const char *path)
 	return 0;
 }
 
+bool
+process_directory_busy(const char *path)
+{
+ if(!process_table_owned_here())return true;
+ size_t length=0;while(path[length])length++;
+ struct process *process=process_head;
+ if(!process)return false;
+ do {
+  if(process->state!=PROCESS_ZOMBIE) {
+   size_t i=0;
+   while(i<length && process->current_directory[i]==path[i])i++;
+   if(i==length && (process->current_directory[i]==0 || process->current_directory[i]=='/'))return true;
+  }
+  process=process->next;
+ } while(process!=process_head);
+ return false;
+}
+
 int
 process_getcwd(char *buffer, size_t capacity)
 {

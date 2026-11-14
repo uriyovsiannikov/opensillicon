@@ -17,6 +17,7 @@
 #define SFS_EISDIR 21
 #define SFS_EBUSY 16
 #define SFS_EOVERFLOW 75
+#define SFS_EOPNOTSUPP 95
 #define SFS_DIRECT 12U
 #define SFS_INDIRECT_COUNT 1024U
 #define SFS_ROOT_INODE 1U
@@ -96,7 +97,21 @@ static int sfs_chown(struct vnode *, uint32_t, uint32_t);
 static void sync_vnode(struct sfs_node *, const struct sfs_inode *);
 static int release_inode_storage(struct silliconfs *, uint32_t);
 
+static int sfs_can_unmount(struct vnode *root)
+{
+ struct sfs_node *node=root->private_data;
+ return root->references==1 && node->filesystem->references==1 ? 0 : -SFS_EBUSY;
+}
+static int sfs_sync(struct vnode *vnode)
+{
+ struct sfs_node *node=vnode->private_data;
+ return node->filesystem->device.flush ?
+  node->filesystem->device.flush(node->filesystem->device.context) : -SFS_EOPNOTSUPP;
+}
+
 static const struct vnode_operations sfs_operations = {
+ .can_unmount=sfs_can_unmount,
+ .sync=sfs_sync,
 	.lookup = sfs_lookup,
 	.create = sfs_create,
 	.remove = sfs_remove,

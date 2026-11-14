@@ -40,3 +40,22 @@ references; dynamically discovered GPT objects release their parent only after
 the last reference disappears. GPT rescan stages new descriptors and prechecks
 registry capacity/names before retiring the old entries. Tests inject allocation
 failures and keep old descriptors alive across replacement.
+
+Up to four additional SilliconFS instances can be mounted by root through
+mount -t silliconfs /dev/ada0p2 /mnt. Each owns an aligned block adapter and a
+reference to its device. Mounted ranges block overlapping raw writes and GPT
+rereads. umount rejects open files/directories, nested mounts and process working
+directories beneath the target. It flushes the device before detaching the
+namespace; failed flushes leave the mount active. Only managed SilliconFS mounts
+can be removed through this API; the boot root/devfs/procfs remain protected.
+
+fsync forwards to the filesystem's block flush operation; sync flushes all
+mounted block devices and reports failures. File and inode writes are currently
+synchronous in SilliconFS, so there is no additional delayed metadata cache to
+commit. libos exposes BSD-style mount/unmount and POSIX fsync/sync interfaces,
+plus sync_all for callers that must inspect the error status.
+
+sh src/tests/mount_filesystem.sh checks allocation rollback, busy/nested mounts
+and flush failures. python3 src/tests/mount_qemu.py checks the actual syscalls,
+permissions, working-directory protection, raw writes, and file ownership/data
+persistence across two guest boots.

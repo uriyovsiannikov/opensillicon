@@ -68,3 +68,8 @@ ESP with fsck.fat/mcopy, then boots without any ISO twice. A file created on the
 first disk-only boot must survive the second. This test validates boot setup;
 its root files are prepopulated on the host, so it does not claim to test the
 future full installer copy stage.
+
+Temporary target filesystems can now be mounted in the Live session:
+mount -t silliconfs /dev/ada0p2 /mnt; then use umount /mnt after closing files.
+Both commands require root. sync reports errors flushing mounted devices;
+fsync is available to the installer for per-file durability checks.

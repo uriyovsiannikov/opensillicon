@@ -107,7 +107,7 @@ $(BUILD_DIR)/populate_root: src/tools/populate_root.c src/kernel/fs/vfs/vfs.c \
 		src/tools/populate_root.c src/kernel/fs/vfs/vfs.c src/kernel/fs/silliconfs/silliconfs.c \
 		src/kernel/proc/fd.c -o $@
 
-LIBOS_SOURCES := syscall unistd mman string stat allocator dirent stdio socket select uio fcntl pipe pty termios time poll signal ioctl uname env math random stdlib passwd termcap regex path getopt getopt_long
+LIBOS_SOURCES := mount syscall unistd mman string stat allocator dirent stdio socket select uio fcntl pipe pty termios time poll signal ioctl uname env math random stdlib passwd termcap regex path getopt getopt_long
 LIBOS_OBJECTS := $(addprefix $(LIBOS_BUILD_DIR)/,$(addsuffix .o,$(LIBOS_SOURCES)))
 
 $(LIBOS_BUILD_DIR)/setjmp.o: src/user/libos/src/setjmp.S | $(LIBOS_BUILD_DIR)
@@ -372,4 +372,18 @@ $(BUILD_DIR)/tests/installboot_guest.o: src/tests/installboot_guest.c | $(BUILD_
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/tests/installboot_guest.elf: $(BUILD_DIR)/tests/installboot_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
+
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,mount umount sync)): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,mount umount sync)): $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/coreutils/%.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
+
+$(BUILD_DIR)/tests/mount_guest.o: src/tests/mount_guest.c | $(BUILD_DIR)
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/tests/mount_guest.elf: $(BUILD_DIR)/tests/mount_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
