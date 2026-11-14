@@ -94,13 +94,15 @@ mount_disk_root(void)
 	struct block_device *selected;
 	int selection = root_device_select(boot_cmdline(), &selected);
 	if (selection < 0) {
-		klog_status("disk root", false, "invalid, missing or ambiguous PARTUUID selector");
+		klog_status("disk root", false,
+		    "invalid, missing or ambiguous PARTUUID selector");
 		kernel_halt();
 	}
 	/* Select an existing SilliconFS, without formatting any candidate. */
 	for (size_t i = 0; i < block_device_count(); i++) {
 		struct block_device *candidate = block_device_at(i);
-		if (selection > 0 && candidate != selected) continue;
+		if (selection > 0 && candidate != selected)
+			continue;
 		if (!block_silliconfs_init(&root_adapter, candidate) ||
 		    silliconfs_mount(&root_adapter.filesystem, &root) != 0)
 			continue;
@@ -381,7 +383,9 @@ clear_boot_entropy_values(uint64_t values[BOOT_ENTROPY_MAX_VALUES])
 static const char *
 boot_cmdline(void)
 {
-	return cmdline_request.response != NULL ? cmdline_request.response->cmdline : NULL;
+	return cmdline_request.response != NULL
+	    ? cmdline_request.response->cmdline
+	    : NULL;
 }
 
 static bool

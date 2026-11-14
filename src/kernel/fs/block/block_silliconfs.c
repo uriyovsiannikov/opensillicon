@@ -32,10 +32,11 @@ write_block(void *context, uint32_t block_number, const void *buffer)
 	return error;
 }
 
-static int flush_blocks(void *context)
+static int
+flush_blocks(void *context)
 {
- struct block_silliconfs_adapter *adapter=context;
- return block_flush(adapter->block);
+	struct block_silliconfs_adapter *adapter = context;
+	return block_flush(adapter->block);
 }
 
 bool
@@ -55,12 +56,10 @@ block_silliconfs_init(struct block_silliconfs_adapter *adapter,
 	if (block_count == 0 || block_count > UINT32_MAX)
 		return false;
 	adapter->block = device;
-	adapter->filesystem = (struct silliconfs_device){
-		.context = adapter,
-		.flush = flush_blocks,
-		.block_count = (uint32_t)block_count,
-		.read_block = read_block,
-		.write_block = write_block
-	};
+	adapter->filesystem = (struct silliconfs_device){.context = adapter,
+	    .flush = flush_blocks,
+	    .block_count = (uint32_t)block_count,
+	    .read_block = read_block,
+	    .write_block = write_block};
 	return true;
 }

@@ -97,32 +97,36 @@ static int sfs_chown(struct vnode *, uint32_t, uint32_t);
 static void sync_vnode(struct sfs_node *, const struct sfs_inode *);
 static int release_inode_storage(struct silliconfs *, uint32_t);
 
-static int sfs_can_unmount(struct vnode *root)
+static int
+sfs_can_unmount(struct vnode *root)
 {
- struct sfs_node *node=root->private_data;
- return root->references==1 && node->filesystem->references==1 ? 0 : -SFS_EBUSY;
+	struct sfs_node *node = root->private_data;
+	return root->references == 1 && node->filesystem->references == 1
+	    ? 0
+	    : -SFS_EBUSY;
 }
-static int sfs_sync(struct vnode *vnode)
+static int
+sfs_sync(struct vnode *vnode)
 {
- struct sfs_node *node=vnode->private_data;
- return node->filesystem->device.flush ?
-  node->filesystem->device.flush(node->filesystem->device.context) : -SFS_EOPNOTSUPP;
+	struct sfs_node *node = vnode->private_data;
+	return node->filesystem->device.flush
+	    ? node->filesystem->device.flush(node->filesystem->device.context)
+	    : -SFS_EOPNOTSUPP;
 }
 
 static const struct vnode_operations sfs_operations = {
- .can_unmount=sfs_can_unmount,
- .sync=sfs_sync,
-	.lookup = sfs_lookup,
-	.create = sfs_create,
-	.remove = sfs_remove,
-	.read = sfs_read,
-	.write = sfs_write,
-	.truncate = sfs_truncate,
-	.readdir = sfs_readdir,
-	.destroy = sfs_destroy,
-	.chmod = sfs_chmod,
-	.chown = sfs_chown
-};
+    .can_unmount = sfs_can_unmount,
+    .sync = sfs_sync,
+    .lookup = sfs_lookup,
+    .create = sfs_create,
+    .remove = sfs_remove,
+    .read = sfs_read,
+    .write = sfs_write,
+    .truncate = sfs_truncate,
+    .readdir = sfs_readdir,
+    .destroy = sfs_destroy,
+    .chmod = sfs_chmod,
+    .chown = sfs_chown};
 
 static uint16_t
 get_le16(const uint8_t *bytes)
@@ -512,7 +516,8 @@ allocate_block(struct silliconfs *filesystem, uint32_t *result)
 
 	memset(zero, 0, sizeof(zero));
 	while (first < total) {
-		uint32_t map_number = filesystem->super.block_bitmap_start + first / 32768U;
+		uint32_t map_number =
+		    filesystem->super.block_bitmap_start + first / 32768U;
 		uint32_t within = first % 32768U;
 		uint32_t count = 32768U - within;
 		if (count > total - first)

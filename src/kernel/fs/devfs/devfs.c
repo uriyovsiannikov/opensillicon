@@ -56,11 +56,11 @@ static const struct vnode_operations devfs_operations = {
 };
 
 static const struct vnode_operations devfs_disk_operations = {
-	.ioctl = devfs_disk_ioctl,
-	.seekable = true,
-	.read = devfs_read,
-	.write = devfs_write,
-	.destroy = devfs_destroy,
+    .ioctl = devfs_disk_ioctl,
+    .seekable = true,
+    .read = devfs_read,
+    .write = devfs_write,
+    .destroy = devfs_destroy,
 };
 
 static int
@@ -68,34 +68,43 @@ devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
 {
 	struct devfs_node *node = vnode->private_data;
 	struct block_device *disk = node->block;
-	if (!disk->registered) return -ENODEV;
+	if (!disk->registered)
+		return -ENODEV;
 	if (request == OS_DIOCREREADGPT) {
 		int error = gpt_rescan(disk);
 		return error ? error : devfs_refresh_disks();
 	}
-	if (request == OS_DIOCGFLUSH) return block_flush(disk);
-	if (argument == NULL) return -EINVAL;
+	if (request == OS_DIOCGFLUSH)
+		return block_flush(disk);
+	if (argument == NULL)
+		return -EINVAL;
 	if (request == OS_DIOCGMODEL || request == OS_DIOCGIDENT) {
 		struct block_device *whole = disk->parent ? disk->parent : disk;
-		const char *text = request == OS_DIOCGMODEL ? whole->model : whole->ident;
+		const char *text =
+		    request == OS_DIOCGMODEL ? whole->model : whole->ident;
 		size_t size = request == OS_DIOCGMODEL ? 41 : 256;
 		memset(argument, 0, size);
-		if (!text[0]) text = whole->name;
+		if (!text[0])
+			text = whole->name;
 		memcpy(argument, text, strlen(text));
 		return 0;
 	}
 	if (request == OS_DIOCGPARTINFO) {
 		struct os_disk_partinfo *info = argument;
 		memset(info, 0, sizeof(*info));
-		info->media_bytes = disk->sector_count * disk->logical_sector_size;
+		info->media_bytes =
+		    disk->sector_count * disk->logical_sector_size;
 		info->first_sector = disk->first_sector;
 		info->partition_number = disk->partition_number;
 		if (disk->parent) {
 			info->flags |= OS_DISK_PARTITION;
-			memcpy(info->parent, disk->parent->name, strlen(disk->parent->name) + 1);
+			memcpy(info->parent, disk->parent->name,
+			    strlen(disk->parent->name) + 1);
 		}
-		if (disk->mounted) info->flags |= OS_DISK_MOUNTED;
-		if (block_raw_write_allowed(disk)) info->flags |= OS_DISK_RAW_WRITE_ALLOWED;
+		if (disk->mounted)
+			info->flags |= OS_DISK_MOUNTED;
+		if (block_raw_write_allowed(disk))
+			info->flags |= OS_DISK_RAW_WRITE_ALLOWED;
 		memcpy(info->uuid, disk->partition_uuid, 16);
 		memcpy(info->type_uuid, disk->partition_type, 16);
 		return 0;
@@ -106,7 +115,8 @@ devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
 	}
 	if (request == OS_DIOCGMEDIASIZE) {
 		uint64_t bytes = disk->sector_count * disk->logical_sector_size;
-		if (bytes > INT64_MAX) return -EOVERFLOW;
+		if (bytes > INT64_MAX)
+			return -EOVERFLOW;
 		*(int64_t *)argument = (int64_t)bytes;
 		return 0;
 	}
@@ -120,13 +130,15 @@ devfs_disk_io(struct devfs_node *node, uint64_t offset, void *buffer,
 	size_t length, size_t *transferred, bool write)
 {
 	struct block_device *device = node->block;
-	if (!device->registered) return -ENODEV;
+	if (!device->registered)
+		return -ENODEV;
 	uint64_t size = device->sector_count * device->logical_sector_size;
 	size_t sector = device->logical_sector_size;
 	*transferred = 0;
 	if (length == 0) return 0;
 	if (offset % sector != 0 || length % sector != 0) return -EINVAL;
-	if (write && !block_raw_write_allowed(device)) return -EBUSY;
+	if (write && !block_raw_write_allowed(device))
+		return -EBUSY;
 	if (offset >= size) return write ? -ENOSPC : 0;
 	if (length > size - offset) length = (size_t)(size - offset);
 	/* block_read/write require sector-aligned buffers. */
@@ -197,8 +209,10 @@ devfs_destroy(struct vnode *vnode)
 		vnode_put(&child->vnode);
 		child = next;
 	}
-	if (node->block) block_device_put(node->block);
-	if (node == mounted_root) mounted_root = NULL;
+	if (node->block)
+		block_device_put(node->block);
+	if (node == mounted_root)
+		mounted_root = NULL;
 	(void)kheap_free(node);
 }
 
@@ -331,31 +345,52 @@ devfs_readdir(struct vnode *directory, uint64_t index,
 static struct devfs_node *
 disk_node(struct block_device *block)
 {
- struct devfs_node *node=devfs_allocate(block->name,DEVFS_DISK);
- if(!node)return NULL;
- if(!block_device_get(block)) { vnode_put(&node->vnode);return NULL; }
- node->block=block;node->vnode.operations=&devfs_disk_operations;
- node->vnode.mode=0600;node->vnode.size=block->sector_count*block->logical_sector_size;
- return node;
+	struct devfs_node *node = devfs_allocate(block->name, DEVFS_DISK);
+	if (!node)
+		return NULL;
+	if (!block_device_get(block)) {
+		vnode_put(&node->vnode);
+		return NULL;
+	}
+	node->block = block;
+	node->vnode.operations = &devfs_disk_operations;
+	node->vnode.mode = 0600;
+	node->vnode.size = block->sector_count * block->logical_sector_size;
+	return node;
 }
 
-int devfs_refresh_disks(void)
+int
+devfs_refresh_disks(void)
 {
- if(!mounted_root)return 0;
- struct devfs_node *list=NULL,**tail=&list;
- for(size_t i=0;i<block_device_count();i++) {
-  struct devfs_node *node=disk_node(block_device_at(i));
-  if(!node) {
-   while(list) {struct devfs_node *next=list->next;list->next=NULL;vnode_put(&list->vnode);list=next;}
-   return -ENOMEM;
-  }
-  *tail=node;tail=&node->next;
- }
- struct devfs_node **link=&mounted_root->children;
- while(*link && (*link)->device!=DEVFS_DISK)link=&(*link)->next;
- struct devfs_node *old=*link;*link=list;
- while(old) {struct devfs_node *next=old->next;old->next=NULL;vnode_put(&old->vnode);old=next;}
- return 0;
+	if (!mounted_root)
+		return 0;
+	struct devfs_node *list = NULL, **tail = &list;
+	for (size_t i = 0; i < block_device_count(); i++) {
+		struct devfs_node *node = disk_node(block_device_at(i));
+		if (!node) {
+			while (list) {
+				struct devfs_node *next = list->next;
+				list->next = NULL;
+				vnode_put(&list->vnode);
+				list = next;
+			}
+			return -ENOMEM;
+		}
+		*tail = node;
+		tail = &node->next;
+	}
+	struct devfs_node **link = &mounted_root->children;
+	while (*link && (*link)->device != DEVFS_DISK)
+		link = &(*link)->next;
+	struct devfs_node *old = *link;
+	*link = list;
+	while (old) {
+		struct devfs_node *next = old->next;
+		old->next = NULL;
+		vnode_put(&old->vnode);
+		old = next;
+	}
+	return 0;
 }
 
 static struct vnode *
@@ -407,14 +442,16 @@ devfs_create_root(void)
 int
 devfs_mount(const char *path)
 {
-	if (mounted_root) return -EBUSY;
+	if (mounted_root)
+		return -EBUSY;
 	struct vnode *root = devfs_create_root();
 	int error;
 
 	if (root == NULL)
 		return -DEVFS_ENOMEM;
 	error = vfs_mount(path, root);
-	if (error == 0) mounted_root = devfs_from_vnode(root);
+	if (error == 0)
+		mounted_root = devfs_from_vnode(root);
 	vnode_put(root);
 	return error;
 }

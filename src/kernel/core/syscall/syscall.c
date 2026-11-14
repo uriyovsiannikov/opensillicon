@@ -1207,45 +1207,64 @@ syscall_dispatch(struct interrupt_frame *frame)
 		return frame;
 	switch (number) {
 	case SYSCALL_MOUNT:
-	case SYSCALL_UNMOUNT:
-		{
-			struct os_credentials credentials;
-			char source[VFS_PATH_MAX], target[VFS_PATH_MAX];
-			if (!process_current_credentials(&credentials) || credentials.effective_uid != 0) {
-				syscall_error(frame, 1);break;
-			}
-			int result;
-			if (number == SYSCALL_MOUNT) {
-				result = frame->rdx ? -EINVAL : copy_user_string(frame->rdi, source, sizeof(source));
-				if (!result) result = copy_user_string(frame->rsi, target, sizeof(target));
-				if (!result) result = process_resolve_path(source, source, sizeof(source));
-				if (!result) result = process_resolve_path(target, target, sizeof(target));
-				if (!result) result = filesystem_mount(source, target);
-			} else {
-				result = frame->rsi ? -EINVAL : copy_user_string(frame->rdi, target, sizeof(target));
-				if (!result) result = process_resolve_path(target, target, sizeof(target));
-				if (!result) result = filesystem_unmount(target);
-			}
-			if (result) syscall_error(frame, errno_from_kernel(result));
-			else frame->rax = 0;
+	case SYSCALL_UNMOUNT: {
+		struct os_credentials credentials;
+		char source[VFS_PATH_MAX], target[VFS_PATH_MAX];
+		if (!process_current_credentials(&credentials) ||
+		    credentials.effective_uid != 0) {
+			syscall_error(frame, 1);
+			break;
 		}
-		break;
-	case SYSCALL_FSYNC:
-		{
-			struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
-			int result = !object ? -EBADF : !object->operations->sync ? -EINVAL :
-			    object->operations->sync(object->context);
-			if (result) syscall_error(frame, errno_from_kernel(result));
-			else frame->rax = 0;
+		int result;
+		if (number == SYSCALL_MOUNT) {
+			result = frame->rdx ? -EINVAL
+					    : copy_user_string(frame->rdi,
+						  source, sizeof(source));
+			if (!result)
+				result = copy_user_string(
+				    frame->rsi, target, sizeof(target));
+			if (!result)
+				result = process_resolve_path(
+				    source, source, sizeof(source));
+			if (!result)
+				result = process_resolve_path(
+				    target, target, sizeof(target));
+			if (!result)
+				result = filesystem_mount(source, target);
+		} else {
+			result = frame->rsi ? -EINVAL
+					    : copy_user_string(frame->rdi,
+						  target, sizeof(target));
+			if (!result)
+				result = process_resolve_path(
+				    target, target, sizeof(target));
+			if (!result)
+				result = filesystem_unmount(target);
 		}
-		break;
-	case SYSCALL_SYNC:
-		{
-			int result = filesystem_sync_all();
-			if (result) syscall_error(frame, errno_from_kernel(result));
-			else frame->rax = 0;
-		}
-		break;
+		if (result)
+			syscall_error(frame, errno_from_kernel(result));
+		else
+			frame->rax = 0;
+	} break;
+	case SYSCALL_FSYNC: {
+		struct fd_object *object =
+		    fd_object_for_descriptor(current_fd_table(), frame->rdi);
+		int result = !object ? -EBADF
+		    : !object->operations->sync
+		    ? -EINVAL
+		    : object->operations->sync(object->context);
+		if (result)
+			syscall_error(frame, errno_from_kernel(result));
+		else
+			frame->rax = 0;
+	} break;
+	case SYSCALL_SYNC: {
+		int result = filesystem_sync_all();
+		if (result)
+			syscall_error(frame, errno_from_kernel(result));
+		else
+			frame->rax = 0;
+	} break;
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;
@@ -2141,36 +2160,65 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			if (frame->rsi == OS_DIOCGSECTORSIZE ||
-			    frame->rsi == OS_DIOCGMEDIASIZE || frame->rsi == OS_DIOCGFLUSH ||
-			    frame->rsi == OS_DIOCGPARTINFO || frame->rsi == OS_DIOCREREADGPT ||
-			    frame->rsi == OS_DIOCGMODEL || frame->rsi == OS_DIOCGIDENT) {
+			    frame->rsi == OS_DIOCGMEDIASIZE ||
+			    frame->rsi == OS_DIOCGFLUSH ||
+			    frame->rsi == OS_DIOCGPARTINFO ||
+			    frame->rsi == OS_DIOCREREADGPT ||
+			    frame->rsi == OS_DIOCGMODEL ||
+			    frame->rsi == OS_DIOCGIDENT) {
 				if (frame->rsi == OS_DIOCREREADGPT) {
 					struct os_credentials credentials;
-					if (!process_current_credentials(&credentials) || credentials.effective_uid != 0) {
-						syscall_error(frame, 1);break;
+					if (!process_current_credentials(
+						&credentials) ||
+					    credentials.effective_uid != 0) {
+						syscall_error(frame, 1);
+						break;
 					}
 				}
 
-				union { uint32_t sector; int64_t media; struct os_disk_partinfo part; char text[256]; } value = {0};
-				void *payload = frame->rsi == OS_DIOCGSECTORSIZE ?
-				    (void *)&value.sector : frame->rsi == OS_DIOCGPARTINFO ?
-				    (void *)&value.part : (frame->rsi == OS_DIOCGMODEL || frame->rsi == OS_DIOCGIDENT) ?
-				    (void *)value.text : (void *)&value.media;
-				size_t size = frame->rsi == OS_DIOCGSECTORSIZE ? 4 :
-				    frame->rsi == OS_DIOCGMEDIASIZE ? 8 :
-				    frame->rsi == OS_DIOCGPARTINFO ? sizeof(value.part) :
-				    frame->rsi == OS_DIOCGMODEL ? 41 : frame->rsi == OS_DIOCGIDENT ? 256 : 0;
-				struct address_space *space = vmm_active_address_space();
-				if (size && !vmm_validate_user_write(space, frame->rdx, size)) {
+				union {
+					uint32_t sector;
+					int64_t media;
+					struct os_disk_partinfo part;
+					char text[256];
+				} value = {0};
+				void *payload = frame->rsi == OS_DIOCGSECTORSIZE
+				    ? (void *)&value.sector
+				    : frame->rsi == OS_DIOCGPARTINFO
+				    ? (void *)&value.part
+				    : (frame->rsi == OS_DIOCGMODEL ||
+					  frame->rsi == OS_DIOCGIDENT)
+				    ? (void *)value.text
+				    : (void *)&value.media;
+				size_t size = frame->rsi == OS_DIOCGSECTORSIZE
+				    ? 4
+				    : frame->rsi == OS_DIOCGMEDIASIZE ? 8
+				    : frame->rsi == OS_DIOCGPARTINFO
+				    ? sizeof(value.part)
+				    : frame->rsi == OS_DIOCGMODEL ? 41
+				    : frame->rsi == OS_DIOCGIDENT ? 256
+								  : 0;
+				struct address_space *space =
+				    vmm_active_address_space();
+				if (size &&
+				    !vmm_validate_user_write(
+					space, frame->rdx, size)) {
 					syscall_error(frame, EFAULT);
 					break;
 				}
-				int result = object->operations->ioctl ?
-				    object->operations->ioctl(object->context, frame->rsi, payload) : -ENOTTY;
-				if (result != 0) syscall_error(frame, errno_from_kernel(result));
-				else if (size && !vmm_copy_to_user(space, frame->rdx, payload, size))
+				int result = object->operations->ioctl
+				    ? object->operations->ioctl(
+					  object->context, frame->rsi, payload)
+				    : -ENOTTY;
+				if (result != 0)
+					syscall_error(
+					    frame, errno_from_kernel(result));
+				else if (size &&
+				    !vmm_copy_to_user(
+					space, frame->rdx, payload, size))
 					syscall_error(frame, EFAULT);
-				else frame->rax = 0;
+				else
+					frame->rax = 0;
 				break;
 			}
 			if (frame->rsi == OS_FIONBIO) {
@@ -3107,8 +3155,9 @@ syscall_dispatch(struct interrupt_frame *frame)
 				break;
 			}
 			flags = (uint32_t)frame->r10;
-			/* No vnode type represents a symlink yet, so no-follow and
-			 * ordinary lookup are equivalent. Keep all other flags rejected. */
+			/* No vnode type represents a symlink yet, so no-follow
+			 * and ordinary lookup are equivalent. Keep all other
+			 * flags rejected. */
 			if ((flags & ~NATIVE_AT_SYMLINK_NOFOLLOW) != 0) {
 				syscall_error(frame, ERRNO_EINVAL);
 				break;

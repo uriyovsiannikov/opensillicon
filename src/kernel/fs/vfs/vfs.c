@@ -258,8 +258,10 @@ vfs_mount(const char *path, struct vnode *root)
 	(void)strip_final_slash(canonical);
 	for (existing = mounts; existing != NULL; existing = existing->next) {
 		if (existing->path_length > strlen(canonical) &&
-		    path_has_prefix(existing->path, canonical, strlen(canonical)) &&
-		    existing->path[strlen(canonical)] == '/') return -VFS_EBUSY;
+		    path_has_prefix(
+			existing->path, canonical, strlen(canonical)) &&
+		    existing->path[strlen(canonical)] == '/')
+			return -VFS_EBUSY;
 		if (existing->path_length == strlen(canonical) &&
 		    memcmp(existing->path, canonical, existing->path_length) == 0)
 			return -VFS_EBUSY;
@@ -309,37 +311,52 @@ vfs_mount(const char *path, struct vnode *root)
 int
 vfs_unmount_check(const char *path)
 {
- char canonical[VFS_PATH_MAX];
- int error=canonicalize_path(path,canonical,0,0);
- if(error)return error;
- (void)strip_final_slash(canonical);
- if(strcmp(canonical,"/")==0)return -VFS_EBUSY;
- size_t length=strlen(canonical);
- struct vfs_mount *target=NULL;
- for(struct vfs_mount *m=mounts;m;m=m->next) {
-  if(strcmp(m->path,canonical)==0)target=m;
-  else if(m->path_length>length && path_has_prefix(m->path,canonical,length) && m->path[length]=='/')
-   return -VFS_EBUSY;
- }
- if(!target)return -VFS_ENOENT;
- if(!target->root->operations->can_unmount)return -VFS_EOPNOTSUPP;
- return target->root->operations->can_unmount(target->root);
+	char canonical[VFS_PATH_MAX];
+	int error = canonicalize_path(path, canonical, 0, 0);
+	if (error)
+		return error;
+	(void)strip_final_slash(canonical);
+	if (strcmp(canonical, "/") == 0)
+		return -VFS_EBUSY;
+	size_t length = strlen(canonical);
+	struct vfs_mount *target = NULL;
+	for (struct vfs_mount *m = mounts; m; m = m->next) {
+		if (strcmp(m->path, canonical) == 0)
+			target = m;
+		else if (m->path_length > length &&
+		    path_has_prefix(m->path, canonical, length) &&
+		    m->path[length] == '/')
+			return -VFS_EBUSY;
+	}
+	if (!target)
+		return -VFS_ENOENT;
+	if (!target->root->operations->can_unmount)
+		return -VFS_EOPNOTSUPP;
+	return target->root->operations->can_unmount(target->root);
 }
 
 int
 vfs_unmount(const char *path)
 {
- int error=vfs_unmount_check(path);
- if(error)return error;
- char canonical[VFS_PATH_MAX];error=canonicalize_path(path,canonical,0,0);
- if(error)return error;
- (void)strip_final_slash(canonical);
- struct vfs_mount **link=&mounts;
- while(*link && strcmp((*link)->path,canonical))link=&(*link)->next;
- if(!*link)return -VFS_ENOENT;
- struct vfs_mount *mount=*link;*link=mount->next;
- vnode_put(mount->root);vnode_put(mount->parent);(void)kheap_free(mount);
- return 0;
+	int error = vfs_unmount_check(path);
+	if (error)
+		return error;
+	char canonical[VFS_PATH_MAX];
+	error = canonicalize_path(path, canonical, 0, 0);
+	if (error)
+		return error;
+	(void)strip_final_slash(canonical);
+	struct vfs_mount **link = &mounts;
+	while (*link && strcmp((*link)->path, canonical))
+		link = &(*link)->next;
+	if (!*link)
+		return -VFS_ENOENT;
+	struct vfs_mount *mount = *link;
+	*link = mount->next;
+	vnode_put(mount->root);
+	vnode_put(mount->parent);
+	(void)kheap_free(mount);
+	return 0;
 }
 
 int
@@ -1043,31 +1060,33 @@ static int
 file_ioctl(void *context, uint64_t request, void *argument)
 {
 	struct vfs_file_context *file = context;
-	if (file->node->operations->ioctl == NULL) return -VFS_ENOTTY;
+	if (file->node->operations->ioctl == NULL)
+		return -VFS_ENOTTY;
 	return file->node->operations->ioctl(file->node, request, argument);
 }
 
-static int file_sync(void *context)
+static int
+file_sync(void *context)
 {
- struct vfs_file_context *file=context;
- return file->node->operations->sync ? file->node->operations->sync(file->node) : -VFS_EOPNOTSUPP;
+	struct vfs_file_context *file = context;
+	return file->node->operations->sync
+	    ? file->node->operations->sync(file->node)
+	    : -VFS_EOPNOTSUPP;
 }
 
-static const struct fd_operations vfs_file_operations = {
- .sync=file_sync,
-	.ioctl = file_ioctl,
-	.read = file_read,
-	.write = file_write,
-	.prepare_write = file_prepare_write,
-	.readdir = file_readdir,
-	.seek = file_seek,
-	.stat = file_stat,
-	.chmod = file_chmod,
-	.chown = file_chown,
-	.get_path = file_get_path,
-	.lookup_at = file_lookup_at,
-	.close = file_close
-};
+static const struct fd_operations vfs_file_operations = {.sync = file_sync,
+    .ioctl = file_ioctl,
+    .read = file_read,
+    .write = file_write,
+    .prepare_write = file_prepare_write,
+    .readdir = file_readdir,
+    .seek = file_seek,
+    .stat = file_stat,
+    .chmod = file_chmod,
+    .chown = file_chown,
+    .get_path = file_get_path,
+    .lookup_at = file_lookup_at,
+    .close = file_close};
 
 int
 vfs_open_as(const char *path, uint32_t flags, uint32_t mode,

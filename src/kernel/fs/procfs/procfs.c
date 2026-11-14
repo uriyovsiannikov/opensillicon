@@ -48,11 +48,15 @@ struct procfs_node {
 };
 
 static char boot_cmdline[1024];
-void procfs_set_cmdline(const char *cmdline)
+void
+procfs_set_cmdline(const char *cmdline)
 {
- size_t i=0;
- while(cmdline && cmdline[i] && i<sizeof(boot_cmdline)-1) {boot_cmdline[i]=cmdline[i];i++;}
- boot_cmdline[i]=0;
+	size_t i = 0;
+	while (cmdline && cmdline[i] && i < sizeof(boot_cmdline) - 1) {
+		boot_cmdline[i] = cmdline[i];
+		i++;
+	}
+	boot_cmdline[i] = 0;
 }
 
 static int procfs_lookup(struct vnode *, const char *, size_t, struct vnode **);
@@ -466,12 +470,18 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		return error;
 	}
 	if (name_length == 7 && memcmp(name, "cmdline", 7) == 0) {
-		struct procfs_node *entry = procfs_allocate("cmdline", PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
-		if (!entry) return -PROCFS_ENOMEM;
-		if (!append_text(entry, boot_cmdline) || !append_text(entry, "\n")) {
-			vnode_put(&entry->vnode); return -PROCFS_EINVAL;
+		struct procfs_node *entry = procfs_allocate("cmdline",
+		    PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
+		if (!entry)
+			return -PROCFS_ENOMEM;
+		if (!append_text(entry, boot_cmdline) ||
+		    !append_text(entry, "\n")) {
+			vnode_put(&entry->vnode);
+			return -PROCFS_EINVAL;
 		}
-		entry->vnode.size = entry->content_length; *result = &entry->vnode; return 0;
+		entry->vnode.size = entry->content_length;
+		*result = &entry->vnode;
+		return 0;
 	}
 	return -PROCFS_ENOENT;
 }
@@ -505,9 +515,8 @@ static int
 procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
-	static const char *const names[] = {
-		"self", "uptime", "meminfo", "cpuinfo", "modules", "pci", "usb", "disks", "cmdline"
-	};
+	static const char *const names[] = {"self", "uptime", "meminfo",
+	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline"};
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
@@ -518,11 +527,15 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 		return 0;
 	node = procfs_from_vnode(directory);
 	memset(entry, 0, sizeof(*entry));
-	entry->inode = index == 0 ? node->self_inode :
-		index == 1 ? node->uptime_inode : index == 2 ? node->meminfo_inode :
-		index == 3 ? node->cpuinfo_inode : index == 4 ? node->modules_inode :
-		index == 5 ? node->pci_inode : index == 6 ? node->usb_inode :
-		index == 7 ? node->disks_inode : node->cmdline_inode;
+	entry->inode = index == 0 ? node->self_inode
+	    : index == 1	  ? node->uptime_inode
+	    : index == 2	  ? node->meminfo_inode
+	    : index == 3	  ? node->cpuinfo_inode
+	    : index == 4	  ? node->modules_inode
+	    : index == 5	  ? node->pci_inode
+	    : index == 6	  ? node->usb_inode
+	    : index == 7	  ? node->disks_inode
+				  : node->cmdline_inode;
 	entry->mode = 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
@@ -556,7 +569,8 @@ procfs_mount(const char *path)
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
-	    root->usb_inode == 0 || root->disks_inode == 0 || root->cmdline_inode == 0) {
+	    root->usb_inode == 0 || root->disks_inode == 0 ||
+	    root->cmdline_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}

@@ -151,7 +151,9 @@ main(int argc, char **argv)
 	int arg;
 
 	if (argc < 4) {
-		fprintf(stderr, "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n", argv[0]);
+		fprintf(stderr,
+		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    argv[0]);
 		return 2;
 	}
 	for (arg = 4; arg < argc; arg++) {
@@ -185,16 +187,22 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--dillo") == 0 && arg + 1 < argc) {
 			if (dillo_path != NULL) return 2;
 			dillo_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--boot-files") == 0 && arg + 3 < argc) {
-			if (boot_files[0] != NULL) return 2;
-			for (unsigned i = 0; i < 3; i++) boot_files[i] = argv[++arg];
-		} else if (strcmp(argv[arg], "--module") == 0 && arg + 1 < argc) {
+		} else if (strcmp(argv[arg], "--boot-files") == 0 &&
+		    arg + 3 < argc) {
+			if (boot_files[0] != NULL)
+				return 2;
+			for (unsigned i = 0; i < 3; i++)
+				boot_files[i] = argv[++arg];
+		} else if (strcmp(argv[arg], "--module") == 0 &&
+		    arg + 1 < argc) {
 			if (module_count == 32) return 2;
 			module_paths[module_count++] = argv[++arg];
-		} else if (strcmp(argv[arg], "--svctl") == 0 && arg + 1 < argc) {
+		} else if (strcmp(argv[arg], "--svctl") == 0 &&
+		    arg + 1 < argc) {
 			if (svctl_path != NULL) return 2;
 			svctl_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--service") == 0 && arg + 1 < argc) {
+		} else if (strcmp(argv[arg], "--service") == 0 &&
+		    arg + 1 < argc) {
 			if (service_count == sizeof(service_paths) / sizeof(service_paths[0]))
 				return 2;
 			service_paths[service_count++] = argv[++arg];
@@ -272,8 +280,10 @@ main(int argc, char **argv)
 	}
 	if (module_count != 0 || boot_files[0] != NULL) {
 		if ((error = add_directory("/boot", 0755)) != 0) {
-			fprintf(stderr, "boot directory population failed: %d\n", error);
-			fclose(image); return 1;
+			fprintf(stderr,
+			    "boot directory population failed: %d\n", error);
+			fclose(image);
+			return 1;
 		}
 	}
 	if (module_count != 0) {
@@ -300,12 +310,15 @@ main(int argc, char **argv)
 	}
 	if (boot_files[0] != NULL) {
 		static const char *destinations[] = {
-			"/boot/BOOTX64.EFI", "/boot/kernel.elf", "/boot/init.cpi"
-		};
+		    "/boot/BOOTX64.EFI", "/boot/kernel.elf", "/boot/init.cpi"};
 		for (unsigned i = 0; i < 3; i++) {
-			if ((error = add_file(destinations[i], boot_files[i], 0644)) != 0) {
-				fprintf(stderr, "boot payload population failed: %d\n", error);
-				fclose(image); return 1;
+			if ((error = add_file(
+				 destinations[i], boot_files[i], 0644)) != 0) {
+				fprintf(stderr,
+				    "boot payload population failed: %d\n",
+				    error);
+				fclose(image);
+				return 1;
 			}
 		}
 	}
@@ -405,14 +418,14 @@ main(int argc, char **argv)
 		return 1;
 	}
 	if (coreutils_start != 0) {
-		static const char *names[] = {
-			"ls", "cat", "echo", "pwd", "true", "false", "clear", "uname",
-			"fetch", "head", "tail", "wc", "seq", "mkdir", "rm", "touch",
-			"stat", "basename", "dirname",
-			"kill", "sleep", "which", "ps", "netdiag", "ping",
-			"poweroff", "reboot", "host", "ifconfig", "kldstat", "kldload", "kldunload",
-			"pkg", "pciconf", "usbconf", "cpuconf", "blkconf", "newfs_silliconfs", "gpart", "installboot", "mount", "umount", "sync", "bsdinstall"
-		};
+		static const char *names[] = {"ls", "cat", "echo", "pwd",
+		    "true", "false", "clear", "uname", "fetch", "head", "tail",
+		    "wc", "seq", "mkdir", "rm", "touch", "stat", "basename",
+		    "dirname", "kill", "sleep", "which", "ps", "netdiag",
+		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
+		    "kldload", "kldunload", "pkg", "pciconf", "usbconf",
+		    "cpuconf", "blkconf", "newfs_silliconfs", "gpart",
+		    "installboot", "mount", "umount", "sync", "bsdinstall"};
 		int index;
 		if (coreutils_count !=
 		    (int)(sizeof(names) / sizeof(names[0]))) {

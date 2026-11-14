@@ -48,33 +48,57 @@ static int client = -1;
 static struct service saved_console;
 static struct service *installer_console;
 
-static void configure_installer_console(void)
+static void
+configure_installer_console(void)
 {
- char command[1024];int fd=open("/proc/cmdline",O_RDONLY);
- if(fd<0)return;
- ssize_t n=read(fd,command,sizeof(command)-1);close(fd);
- if(n<=0)return;
- command[n]=0;
- int requested=0;
- for(char *p=command;*p;) {
-  while(*p==' '||*p=='\t'||*p=='\n')p++;
-  char *end=p;while(*end && *end!=' ' && *end!='\t' && *end!='\n')end++;
-  if(end-p==9 && memcmp(p,"installer",9)==0)requested=1;
-  p=end;
- }
- if(!requested)return;
- fd=open("/dev/ram0",O_RDONLY);if(fd<0)return;
- struct os_disk_partinfo info;
- int live=ioctl(fd,DIOCGPARTINFO,&info)==0 && (info.flags&OS_DISK_MOUNTED);
- close(fd);if(!live)return;
- size_t count=0;
- for(size_t i=0;i<service_count;i++)if(services[i].enabled && services[i].console){installer_console=&services[i];count++;}
- if(count!=1){installer_console=NULL;return;}
- saved_console=*installer_console;
- memset(installer_console->command,0,sizeof(installer_console->command));
- strcpy(installer_console->command,"/bin/bsdinstall");installer_console->argc=1;
- installer_console->uid=installer_console->gid=0;
- installer_console->policy=RESTART_NEVER;
+	char command[1024];
+	int fd = open("/proc/cmdline", O_RDONLY);
+	if (fd < 0)
+		return;
+	ssize_t n = read(fd, command, sizeof(command) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	command[n] = 0;
+	int requested = 0;
+	for (char *p = command; *p;) {
+		while (*p == ' ' || *p == '\t' || *p == '\n')
+			p++;
+		char *end = p;
+		while (*end && *end != ' ' && *end != '\t' && *end != '\n')
+			end++;
+		if (end - p == 9 && memcmp(p, "installer", 9) == 0)
+			requested = 1;
+		p = end;
+	}
+	if (!requested)
+		return;
+	fd = open("/dev/ram0", O_RDONLY);
+	if (fd < 0)
+		return;
+	struct os_disk_partinfo info;
+	int live = ioctl(fd, DIOCGPARTINFO, &info) == 0 &&
+	    (info.flags & OS_DISK_MOUNTED);
+	close(fd);
+	if (!live)
+		return;
+	size_t count = 0;
+	for (size_t i = 0; i < service_count; i++)
+		if (services[i].enabled && services[i].console) {
+			installer_console = &services[i];
+			count++;
+		}
+	if (count != 1) {
+		installer_console = NULL;
+		return;
+	}
+	saved_console = *installer_console;
+	memset(
+	    installer_console->command, 0, sizeof(installer_console->command));
+	strcpy(installer_console->command, "/bin/bsdinstall");
+	installer_console->argc = 1;
+	installer_console->uid = installer_console->gid = 0;
+	installer_console->policy = RESTART_NEVER;
 }
 
 static void
@@ -377,9 +401,13 @@ reap_services(uint64_t now)
 			struct service *service = &services[i];
 			if (service->pid == pid) {
 				if (service == installer_console) {
-					*service = saved_console; installer_console = NULL;
-					service->pending = service->enabled; service->deadline = now;
-					report("installer", "returned; restoring user console"); break;
+					*service = saved_console;
+					installer_console = NULL;
+					service->pending = service->enabled;
+					service->deadline = now;
+					report("installer",
+					    "returned; restoring user console");
+					break;
 				}
 				schedule_after_exit(service, WEXITSTATUS(status), now);
 				break;
