@@ -7,6 +7,7 @@
 #include "kernel/vfs.h"
 #include "kernel/fd.h"
 #include "kernel/errno.h"
+static unsigned int reads;
 static size_t live, budget = SIZE_MAX;
 static bool busy_directory, fail_flush;
 void *
@@ -51,6 +52,7 @@ static int
 read_disk(struct block_device *d, uint64_t s, uint32_t n, void *p)
 {
 	FILE *f = d->context;
+	reads++;
 	return fseek(f, (long)(s * d->logical_sector_size), SEEK_SET) == 0 &&
 		fread(p, d->logical_sector_size, n, f) == n
 	    ? 0
@@ -106,6 +108,9 @@ main(int argc, char **argv)
 	directory("/mnt");
 	assert(filesystem_mount("/dev/ada0", "/mnt/") == 0 && disk.mounted &&
 	    disk.references == 2);
+	/* 128 table blocks, regardless of how many inode records they hold. */
+	printf("SilliconFS mount reads for 4096 inodes: %u\n", reads);
+	assert(reads < 150);
 	assert(!block_raw_write_allowed(&disk));
 	struct fd_object *file;
 	size_t n;
@@ -149,6 +154,19 @@ main(int argc, char **argv)
 		    !disk.mounted && disk.references == 1 && live == baseline);
 	}
 	assert(filesystem_unmount("/") == -EINVAL);
+	/* A nonzero free inode must still be detected in the last table block. */
+	long unused_inode = 3 * 4096L + 4095 * 128L;
+	assert(fseek(f, unused_inode, SEEK_SET) == 0 && fputc('X', f) != EOF &&
+	    fflush(f) == 0);
+	assert(filesystem_mount("/dev/ada0", "/mnt") == -EIO && live == baseline);
+	assert(fseek(f, unused_inode, SEEK_SET) == 0 && fputc(0, f) != EOF &&
+	    fflush(f) == 0);
+	/* The reserved metadata bits are still checked. */
+	assert(fseek(f, 4096, SEEK_SET) == 0 && fputc(254, f) != EOF &&
+	    fflush(f) == 0);
+	assert(filesystem_mount("/dev/ada0", "/mnt") == -EIO && live == baseline);
+	assert(fseek(f, 4096, SEEK_SET) == 0 && fputc(255, f) != EOF &&
+	    fflush(f) == 0);
 	assert(fseek(f, 0, SEEK_SET) == 0 && fputc('X', f) != EOF &&
 	    fflush(f) == 0);
 	assert(filesystem_mount("/dev/ada0", "/mnt") == -EIO && !disk.mounted &&

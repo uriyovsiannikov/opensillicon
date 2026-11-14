@@ -63,9 +63,18 @@ struct sfs_inode {
 	uint32_t indirect;
 };
 
+/* Used only while validating a freshly mounted filesystem. */
+struct sfs_validation_cache {
+	struct {
+		uint32_t block;
+		uint8_t data[SILLICONFS_BLOCK_SIZE];
+	} slots[3];
+};
+
 struct silliconfs {
 	struct silliconfs_device device;
 	struct sfs_superblock super;
+	struct sfs_validation_cache *validation_cache;
 	uint32_t references;
 	struct sfs_node **inode_vnodes;
 	uint8_t *inode_unlinked;
@@ -195,6 +204,22 @@ read_block(struct silliconfs *filesystem, uint32_t block, void *buffer)
 
 	if (block >= filesystem->super.total_blocks)
 		return -SFS_EIO;
+	if (filesystem->validation_cache &&
+	    block >= filesystem->super.block_bitmap_start &&
+	    block < filesystem->super.data_start) {
+		unsigned int slot = block < filesystem->super.inode_bitmap_start ? 0 :
+		    block < filesystem->super.inode_table_start ? 1 : 2;
+		struct sfs_validation_cache *cache = filesystem->validation_cache;
+		if (cache->slots[slot].block != block) {
+			error = filesystem->device.read_block(filesystem->device.context,
+			    block, cache->slots[slot].data);
+			if (error != 0)
+				return error < 0 ? error : -SFS_EIO;
+			cache->slots[slot].block = block;
+		}
+		memcpy(buffer, cache->slots[slot].data, SILLICONFS_BLOCK_SIZE);
+		return 0;
+	}
 	error = filesystem->device.read_block(filesystem->device.context, block,
 	    buffer);
 	return error == 0 ? 0 : (error < 0 ? error : -SFS_EIO);
@@ -1018,13 +1043,6 @@ validate_filesystem(struct silliconfs *filesystem)
 			}
 		}
 	}
-	for (uint32_t i = 0; i < filesystem->super.data_start; i++) {
-		error = bitmap_get(filesystem, false, i, &allocated);
-		if (error != 0 || !allocated) {
-			error = -SFS_EIO;
-			goto done;
-		}
-	}
 	for (uint64_t candidate = 1; candidate <= inode_count; candidate++) {
 		uint32_t number = (uint32_t)candidate;
 		struct sfs_inode inode;
@@ -1817,8 +1835,19 @@ silliconfs_mount(const struct silliconfs_device *device, struct vnode **root)
 			memset(filesystem->inode_unlinked, 0, unlinked_size);
 		}
 	}
-	if (error == 0)
-		error = validate_filesystem(filesystem);
+	if (error == 0) {
+		struct sfs_validation_cache *cache = kheap_alloc(sizeof(*cache));
+		if (cache == NULL) {
+			error = -SFS_ENOMEM;
+		} else {
+			for (unsigned int i = 0; i < 3; i++)
+				cache->slots[i].block = 0;
+			filesystem->validation_cache = cache;
+			error = validate_filesystem(filesystem);
+			filesystem->validation_cache = NULL;
+			(void)kheap_free(cache);
+		}
+	}
 	if (error != 0) {
 		(void)kheap_free(filesystem->inode_vnodes);
 		(void)kheap_free(filesystem->inode_unlinked);
