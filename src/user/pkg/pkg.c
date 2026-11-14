@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,21 +62,12 @@ static int lock_database(void)
 	if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0)
 		return fd;
 #else
-	char canonical[256];
-	if (!realpath(path, canonical)) {
-		perror("pkg: resolve database");
-		return -1;
-	}
-	uint8_t hash[32];
-	char hex[65];
-	pkg_sha256(canonical, strlen(canonical), hash);
-	pkg_hex(hash, hex);
-	struct sockaddr_un address = { .sun_family = AF_UNIX };
-	snprintf(address.sun_path + 1, sizeof(address.sun_path) - 1, "pkg:%s", hex);
+	const struct sockaddr_un address = { .sun_family = AF_UNIX,
+	    .sun_path = "\0opensillicon:pkg" };
 	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (fd >= 0 && bind(fd, (const struct sockaddr *)&address,
-	    offsetof(struct sockaddr_un, sun_path) + 1 +
-	    strlen(address.sun_path + 1)) == 0)
+	    offsetof(struct sockaddr_un, sun_path) +
+	    sizeof("\0opensillicon:pkg") - 1) == 0)
 		return fd;
 #endif
 	perror("pkg: lock database");
@@ -238,95 +230,6 @@ static int check_reservations(const struct pkg_archive *package)
 	closedir(dir);
 	return result;
 }
-static int list_packages(void)
-{
-	char path[256];
-	if (rooted(path, "var/db/pkg") < 0)
-		return 1;
-	DIR *directory = opendir(path);
-	if (!directory) {
-		if (errno == ENOENT) {
-			puts("No installed packages");
-			return 0;
-		}
-		perror("pkg: database");
-		return 1;
-	}
-	struct dirent *entry;
-	int result = 0;
-	unsigned count = 0;
-	while ((entry = readdir(directory)) != NULL) {
-		size_t n = strlen(entry->d_name);
-		if (n < 4 || strcmp(entry->d_name + n - 3, ".db"))
-			continue;
-		char name[PKG_NAME_SIZE];
-		if (n - 3 >= sizeof(name)) {
-			result = 1;
-			continue;
-		}
-		memcpy(name, entry->d_name, n - 3);
-		name[n - 3] = 0;
-		struct pkg_archive package;
-		uint8_t *bytes = NULL;
-		if (installed_record(name, &package, &bytes)) {
-			result = 1;
-			continue;
-		}
-		printf("%s %s%s\n", package.name, package.version,
-		    package.installed == PKG_INSTALLED ? "" :
-		    package.installed == PKG_DELETING ? " [deleting]" : " [incomplete]");
-		free(bytes);
-		count++;
-	}
-	closedir(directory);
-	if (!count && !result)
-		puts("No installed packages");
-	return result;
-}
-static int show_info(const char *name, int verify)
-{
-	struct pkg_archive package;
-	uint8_t *bytes = NULL;
-	if (installed_record(name, &package, &bytes))
-		return 1;
-	if (!verify) {
-		printf("Name: %s\nVersion: %s\nDescription: %s\nState: %s\nFiles: %u\n",
-		       package.name, package.version, package.description,
-		       package.installed == PKG_INSTALLED ? "installed" :
-		       package.installed == PKG_DELETING ? "deleting" : "incomplete",
-		       package.count);
-		for (uint32_t i = 0; i < package.count; i++)
-			printf("/%s\n", package.files[i].path);
-		free(bytes);
-		return 0;
-	}
-	int result = package.installed == PKG_INSTALLED ? 0 :
-	    fail("package is not fully installed");
-	for (uint32_t i = 0; i < package.count; i++) {
-		const struct pkg_file *f = &package.files[i];
-		size_t size = 0;
-		uint8_t hash[32];
-		struct stat st;
-		if (rooted(target_path, f->path) < 0) {
-			result = 1;
-			continue;
-		}
-		uint8_t *data = pkg_read_file(target_path, PKG_MAX_SIZE, &size);
-		if (data)
-			pkg_sha256(data, size, hash);
-		if (!data || size != f->size || memcmp(hash, f->hash, 32) ||
-		    stat(target_path, &st) < 0 || (st.st_mode & 07777) != f->mode) {
-			fprintf(stderr, "pkg: verification failed: /%s\n", f->path);
-			result = 1;
-		}
-		free(data);
-	}
-	if (!result)
-		printf("Verified %s: %u files\n", package.name, package.count);
-	free(bytes);
-	return result;
-}
-
 static int check_parents(const char *path)
 {
 	char parent[256];
@@ -354,7 +257,7 @@ static int check_parents(const char *path)
 }
 
 /* A missing payload was never written or was removed by a previous attempt. */
-static int check_payload(const struct pkg_file *file, int resume)
+static int check_payload(const struct pkg_file *file, bool incomplete)
 {
 	struct stat st;
 	if (rooted(target_path, file->path) < 0 || check_parents(target_path))
@@ -375,14 +278,13 @@ static int check_payload(const struct pkg_file *file, int resume)
 			int matches = size == file->size &&
 			    (st.st_mode & 07777) == file->mode &&
 			    memcmp(hash, file->hash, sizeof(hash)) == 0;
-			int partial = resume && (st.st_mode & 07777) == 0600 &&
-			    st.st_uid == geteuid() &&
-			    (size == 0 || memcmp(data, file->data, size) == 0);
+			/* Interrupted writes keep the installer's private mode. */
+			if (incomplete && (st.st_mode & 07777) == 0600 &&
+			    st.st_uid == geteuid())
+				matches = 1;
 			free(data);
 			if (matches)
 				return 1;
-			if (partial)
-				return 2;
 		}
 	}
 	fprintf(stderr, "pkg: unexpected or modified file: /%s\n", file->path);
@@ -402,7 +304,7 @@ static int set_record_state(int fd, uint8_t state)
 	    sync_record(fd) == 0 ? 0 : -1;
 }
 
-static int delete_package(const char *name)
+static int remove_package(const char *name)
 {
 	struct pkg_archive package;
 	uint8_t *bytes;
@@ -415,19 +317,23 @@ static int delete_package(const char *name)
 	if (check_reservations(&package))
 		goto done;
 	for (uint32_t i = 0; i < package.count; i++)
-		if (check_payload(&package.files[i], 0) < 0)
+		if (check_payload(&package.files[i],
+		    package.installed == PKG_INCOMPLETE) < 0)
 			goto done;
 	int fd = open(db, O_WRONLY | O_NOFOLLOW);
 	if (fd < 0) {
 		perror(db);
 		goto done;
 	}
-	if (set_record_state(fd, PKG_DELETING) < 0) {
+	uint8_t state = package.installed == PKG_INCOMPLETE ?
+	    PKG_INCOMPLETE : PKG_DELETING;
+	if (set_record_state(fd, state) < 0) {
 		perror(db);
 		goto close_record;
 	}
 	for (uint32_t i = 0; i < package.count; i++) {
-		int state = check_payload(&package.files[i], 0);
+		int state = check_payload(&package.files[i],
+		    package.installed == PKG_INCOMPLETE);
 		if (state < 0)
 			goto close_record;
 		if (state == 1 && unlink(target_path) < 0) {
@@ -439,7 +345,7 @@ static int delete_package(const char *name)
 		perror(db);
 		goto close_record;
 	}
-	printf("Deleted %s\n", name);
+	printf("Removed %s\n", name);
 	result = 0;
 close_record:
 	if (close(fd) < 0)
@@ -457,7 +363,7 @@ static int preflight(const struct pkg_archive *p)
 		return fail("invalid database path");
 	if (stat(db, &st) == 0)
 		return fail(
-		    "package already has an installation record (see pkg info)");
+		    "package already has an installation record; use pkg remove first");
 	if (errno != ENOENT) {
 		perror("pkg: database lookup");
 		return 1;
@@ -484,42 +390,8 @@ static int preflight(const struct pkg_archive *p)
 	return 0;
 }
 
-static int check_resume(const struct pkg_archive *package,
-    const uint8_t header[PKG_HEADER_SIZE], const char *db, int *rewrite)
-{
-	size_t size;
-	uint8_t *bytes = pkg_read_file(db,
-	    PKG_HEADER_SIZE + PKG_MAX_FILES * PKG_ENTRY_SIZE, &size);
-	if (!bytes) {
-		perror(db);
-		return 1;
-	}
-	size_t expected = PKG_HEADER_SIZE + package->count * PKG_ENTRY_SIZE;
-	size_t prefix = size < PKG_HEADER_SIZE ? size : PKG_HEADER_SIZE;
-	int matches = size <= expected && memcmp(bytes, header, prefix) == 0;
-	for (uint32_t i = 0; matches && prefix < size; i++) {
-		size_t length = size - prefix;
-		if (length > PKG_ENTRY_SIZE)
-			length = PKG_ENTRY_SIZE;
-		matches = memcmp(bytes + prefix, package->files[i].header, length) == 0;
-		prefix += length;
-	}
-	free(bytes);
-	if (!matches)
-		return fail("recovery requires the original incomplete package archive");
-	*rewrite = size < expected;
-	for (uint32_t i = 0; i < package->count; i++) {
-		int state = check_payload(&package->files[i], 1);
-		if (state < 0)
-			return 1;
-		if (*rewrite && state != 0)
-			return fail("truncated manifest conflicts with an existing payload");
-	}
-	return 0;
-}
-
 static int install_archive(const uint8_t *data, size_t size,
-			   const struct pkg_index_entry *expected, int resume)
+			   const struct pkg_index_entry *expected)
 {
 	struct pkg_archive package;
 	const char *error = pkg_parse(data, size, 0, &package);
@@ -537,36 +409,28 @@ static int install_archive(const uint8_t *data, size_t size,
 	memcpy(header, data, sizeof(header));
 	memcpy(header, PKG_RECORD_MAGIC, 8);
 	pkg_put_u32(header + 8, PKG_INCOMPLETE);
-	int rewrite = !resume;
-	if ((resume ? check_resume(&package, header, db, &rewrite) :
-	    preflight(&package)) || check_reservations(&package))
+	if (preflight(&package))
+		return 1;
+	if (check_reservations(&package))
 		return 1;
 	/* O_EXCL reserves ownership before any payload is written. Keep pending
 	 * records on error so partial installations are visible after a reboot. */
-	int record = open(db, O_WRONLY | O_NOFOLLOW |
-	    (resume ? 0 : O_CREAT | O_EXCL), 0644);
+	int record = open(db, O_WRONLY | O_NOFOLLOW | O_CREAT | O_EXCL, 0644);
 	if (record < 0) {
 		perror("pkg: reserve installation record");
 		return 1;
 	}
 	int result = 1;
-	if (rewrite) {
-		if (pkg_write_all(record, header, sizeof(header)) < 0)
+	if (pkg_write_all(record, header, sizeof(header)) < 0)
+		goto bad_manifest;
+	for (uint32_t i = 0; i < package.count; i++)
+		if (pkg_write_all(record, package.files[i].header, PKG_ENTRY_SIZE) < 0)
 			goto bad_manifest;
-		for (uint32_t i = 0; i < package.count; i++)
-			if (pkg_write_all(record, package.files[i].header, PKG_ENTRY_SIZE) < 0)
-				goto bad_manifest;
-	}
 	if (sync_record(record) < 0)
 		goto failed;
 	for (uint32_t i = 0; i < package.count; i++) {
 		struct pkg_file *f = &package.files[i];
 		char parent[256];
-		int state = resume ? check_payload(f, 1) : 0;
-		if (state < 0)
-			goto failed;
-		if (state == 1)
-			continue;
 		if (rooted(target_path, f->path) < 0)
 			goto failed;
 		strcpy(parent, target_path);
@@ -574,8 +438,7 @@ static int install_archive(const uint8_t *data, size_t size,
 		*slash = 0;
 		if (pkg_mkdirs(parent) < 0)
 			goto failed;
-		int fd = open(target_path, O_WRONLY | O_NOFOLLOW |
-		    (state == 2 ? 0 : O_CREAT | O_EXCL), 0600);
+		int fd = open(target_path, O_WRONLY | O_NOFOLLOW | O_CREAT | O_EXCL, 0600);
 		if (fd < 0)
 			goto failed;
 		int written = pkg_write_all(fd, f->data, f->size);
@@ -607,7 +470,7 @@ done:
 		result = 1;
 	return result;
 }
-static int install_remote(const char *name, int resume)
+static int install_remote(const char *name)
 {
 	if (!pkg_identifier(name, PKG_NAME_SIZE))
 		return fail("invalid package name");
@@ -638,31 +501,10 @@ static int install_remote(const char *name, int resume)
 		result = fail(
 		    "repository package SHA-256 or length mismatch; run pkg update");
 	else
-		result = install_archive(bytes, size, entry, resume);
+		result = install_archive(bytes, size, entry);
 	free(bytes);
 	return result;
 }
-#ifndef PKG_HOST
-static int
-select_user_root(uid_t uid)
-{
-	static char path[32];
-	struct stat st;
-
-	snprintf(path, sizeof(path), "/tmp/pkg-%u", (unsigned int)uid);
-	if (mkdir(path, 0700) < 0 && errno != EEXIST) {
-		perror("pkg: create user package directory");
-		return 1;
-	}
-	if (stat(path, &st) < 0 || !S_ISDIR(st.st_mode) ||
-	    st.st_uid != uid || (st.st_mode & 0077) != 0)
-		return fail("user package directory must be private and owned by you");
-	root = path;
-	return 0;
-}
-
-#endif
-
 static int
 load_repository_file(const char *path)
 {
@@ -724,101 +566,52 @@ save_repository(const char *url)
 
 static int usage(void)
 {
-	puts("usage: pkg [-r root] [-R http://host:port] command [argument]");
-	puts("  repo URL          save repository URL in etc/pkg.conf");
-	puts("  update            download repository index");
-	puts("  search [text]     search the downloaded index");
-	puts("  add name          download and install a package from the index");
-	puts("  add file.spkg     verify and install a local package");
-	puts("  install name      alias for repository installation");
-	puts("  delete name       remove a package and its verified files");
-	puts("  recover name|file.spkg  resume using the original package archive");
-	puts("  list              list installed and incomplete packages");
-	puts("  info name         show installed package metadata");
-	puts("  verify name       check installed file hashes and modes");
+	puts("usage: pkg repo URL | pkg add name|file.spkg | pkg update | pkg remove name");
 	return 2;
 }
+
 int main(int argc, char **argv)
 {
 #ifdef PKG_HOST
 	signal(SIGPIPE, SIG_IGN);
-#endif
-	const char *repo_override = NULL;
-	const char *root_override = NULL;
-	int arg = 1;
-	while (arg < argc && argv[arg][0] == '-') {
-		if (!strcmp(argv[arg], "--help")) {
-			usage();
-			return 0;
-		}
-		if (arg + 1 >= argc)
-			return usage();
-		if (!strcmp(argv[arg], "-r")) {
-			root_override = argv[arg + 1];
-			if (root_override[0] != '/')
-				return fail("installation root must be absolute");
-		} else if (!strcmp(argv[arg], "-R"))
-			repo_override = argv[arg + 1];
-		else
-			return usage();
-		arg += 2;
+	/* Host integration tests use an isolated filesystem tree. */
+	if (argc >= 3 && strcmp(argv[1], "-r") == 0) {
+		if (argv[2][0] != '/')
+			return fail("installation root must be absolute");
+		root = argv[2];
+		argv += 2;
+		argc -= 2;
 	}
-	if (root_override && strcmp(root_override, "/"))
-		root = root_override;
-#ifndef PKG_HOST
-	if (!root_override && geteuid() != 0 && select_user_root(geteuid()))
+#endif
+	if (argc < 2)
+		return usage();
+	const char *command = argv[1];
+	int valid = (argc == 2 && strcmp(command, "update") == 0) ||
+	    (argc == 3 && (strcmp(command, "repo") == 0 ||
+	    strcmp(command, "add") == 0 || strcmp(command, "remove") == 0));
+	if (!valid)
+		return usage();
+	if (!*root && geteuid() != 0)
+		return fail("root privileges required");
+	if (strcmp(command, "repo") == 0)
+		return save_repository(argv[2]);
+	if (strcmp(command, "update") == 0)
+		return load_repository() || update_index();
+	if (strcmp(command, "remove") == 0)
+		return remove_package(argv[2]);
+
+	const char *operand = argv[2];
+	size_t length = strlen(operand);
+	if (!strchr(operand, '/') &&
+	    (length < 5 || strcmp(operand + length - 5, ".spkg")))
+		return load_repository() || install_remote(operand);
+	size_t size;
+	uint8_t *bytes = pkg_read_file(operand, PKG_MAX_SIZE, &size);
+	if (!bytes) {
+		perror("pkg: read archive");
 		return 1;
-#endif
-	const char *command = arg == argc ? "list" : argv[arg++];
-	int remaining = argc - arg;
-	if (!*root && geteuid() != 0 &&
-	    (!strcmp(command, "update") || !strcmp(command, "install") ||
-	     !strcmp(command, "add") || !strcmp(command, "repo") ||
-	     !strcmp(command, "delete") || !strcmp(command, "recover")))
-		return fail("system package operations require root; use a writable -r prefix");
-	if (!strcmp(command, "repo") && remaining == 1)
-		return save_repository(argv[arg]);
-	if (repo_override)
-		repository = repo_override;
-	if (!strcmp(command, "update") && remaining == 0)
-		return (!repo_override && load_repository()) || update_index();
-	if (!strcmp(command, "list") && remaining == 0)
-		return list_packages();
-	if ((!strcmp(command, "info") || !strcmp(command, "verify")) && remaining == 1)
-		return show_info(argv[arg], !strcmp(command, "verify"));
-	if (!strcmp(command, "delete") && remaining == 1)
-		return delete_package(argv[arg]);
-	if (!strcmp(command, "install") && remaining == 1)
-		return (!repo_override && load_repository()) || install_remote(argv[arg], 0);
-	if ((!strcmp(command, "add") || !strcmp(command, "recover")) && remaining == 1) {
-		int resume = strcmp(command, "recover") == 0;
-		const char *operand = argv[arg];
-		size_t length = strlen(operand);
-		if (!strchr(operand, '/') &&
-		    (length < 5 || strcmp(operand + length - 5, ".spkg")))
-			return (!repo_override && load_repository()) ||
-			    install_remote(operand, resume);
-		size_t size;
-		uint8_t *bytes = pkg_read_file(argv[arg], PKG_MAX_SIZE, &size);
-		if (!bytes) {
-			perror("pkg: read archive");
-			return 1;
-		}
-		int result = install_archive(bytes, size, NULL, resume);
-		free(bytes);
-		return result;
 	}
-	if (!strcmp(command, "search") && remaining <= 1) {
-		if (read_index())
-			return 1;
-		for (size_t i = 0; i < index_count; i++) {
-			struct pkg_index_entry *e = &index_entries[i];
-			if (!remaining || strstr(e->name, argv[arg]) ||
-			    strstr(e->description, argv[arg]))
-				printf("%s %s - %s\n", e->name, e->version,
-				       e->description);
-		}
-		return 0;
-	}
-	return usage();
+	int result = install_archive(bytes, size, NULL);
+	free(bytes);
+	return result;
 }

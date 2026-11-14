@@ -32,7 +32,7 @@ $(BUILD_DIR)/pkg/pkg-server: src/tools/pkg/server/server.c $(PKG_COMMON) $(PKG_H
 	mkdir -p $(@D)
 	$(HOST_CC) $(PKG_HOST_FLAGS) $< $(PKG_COMMON) -o $@
 
-$(BUILD_DIR)/pkg/hello-stage/bin/hello: src/tools/pkg/repo/_src/hello/hello.c \
+$(BUILD_DIR)/pkg/hello-system-stage/usr/bin/hello: src/tools/pkg/repo/_src/hello/hello.c \
 		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $(BUILD_DIR)/pkg/hello.o
@@ -40,9 +40,9 @@ $(BUILD_DIR)/pkg/hello-stage/bin/hello: src/tools/pkg/repo/_src/hello/hello.c \
 		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
 		$(BUILD_DIR)/pkg/hello.o $(LIBOS_ARCHIVE) -o $@
 
-src/tools/pkg/repo/_pkges/hello-1.0.0.spkg: $(BUILD_DIR)/pkg/hello-stage/bin/hello \
+src/tools/pkg/repo/_pkges/hello-1.0.0.spkg: $(BUILD_DIR)/pkg/hello-system-stage/usr/bin/hello \
 		$(BUILD_DIR)/pkg/pkg-build
-	$(BUILD_DIR)/pkg/pkg-build hello 1.0.0 $(BUILD_DIR)/pkg/hello-stage $@ \
+	$(BUILD_DIR)/pkg/pkg-build hello 1.0.0 $(BUILD_DIR)/pkg/hello-system-stage $@ \
 		'Hello program for OpenSillicon'
 
 $(BUILD_DIR)/pkg/pkg-vfs-test: src/tests/pkg_vfs_test.c src/kernel/fs/vfs/vfs.c \

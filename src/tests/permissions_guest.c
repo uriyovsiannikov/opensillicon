@@ -547,6 +547,7 @@ exec_saved_id_checks(void)
 	CHECK(fd >= 0);
 	CHECK(u_write((uint64_t)fd, "bad", 3) == 3);
 	CHECK(u_close((uint64_t)fd) == 0);
+	CHECK(call(SYSCALL_CHMOD, (uintptr_t)"/tmp/invalid-elf", 06755, 0) == 0);
 	fd = u_open_mode("/tmp/execute-only", U_O_CREAT | U_O_EXCL | U_O_WRONLY, 0111);
 	CHECK(fd >= 0);
 	for (offset = 0; offset < status.size;) {
@@ -573,6 +574,7 @@ exec_saved_id_checks(void)
 			CHECK(u_exec_path("/tmp/invalid-elf") == -8);
 			CHECK(call(SYSCALL_EXEC, (uintptr_t)"bad", 3, 0) == -22);
 			CHECK(u_getcredentials(&c) == 0);
+			CHECK(c.effective_uid == 200 && c.effective_gid == 200);
 			CHECK(c.saved_uid == 0 && c.saved_gid == 0);
 			if (memory == 1)
 				(void)call(SYSCALL_EXEC, (uintptr_t)exec_image, status.size, 0);
@@ -583,6 +585,18 @@ exec_saved_id_checks(void)
 		uint8_t child_status = 255;
 		CHECK(u_waitpid((uint64_t)child, &child_status) == child && child_status == 0);
 	}
+	CHECK(call(SYSCALL_CHMOD, (uintptr_t)"/tmp/execute-only", 06755, 0) == 0);
+	long child = u_fork();
+	CHECK(child >= 0);
+	if (child == 0) {
+		CHECK(call(SYSCALL_SETRESGID, 100, 200, 200) == 0);
+		CHECK(call(SYSCALL_SETRESUID, 100, 200, 200) == 0);
+		const char *arguments[] = {"sh", "--setid-exec-check", 0};
+		(void)u_exec_path_argv("/tmp/execute-only", 2, arguments);
+		CHECK(0);
+	}
+	uint8_t child_status = 255;
+	CHECK(u_waitpid((uint64_t)child, &child_status) == child && child_status == 0);
 }
 
 static void
@@ -771,6 +785,12 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 	(void)argc; (void)argv; (void)startup_stack;
 	struct os_credentials initial;
 	CHECK(u_getcredentials(&initial) == 0);
+	if (argc == 2 && u_streq(argv[1], "--setid-exec-check")) {
+		CHECK(initial.real_uid == 100 && initial.real_gid == 100);
+		CHECK(initial.effective_uid == 0 && initial.saved_uid == 0);
+		CHECK(initial.effective_gid == 0 && initial.saved_gid == 0);
+		u_exit(0);
+	}
 	if (argc == 2 && u_streq(argv[1], "--fd-exec-check")) {
 		CHECK(initial.effective_uid == 300);
 		cloexec_after_exec();

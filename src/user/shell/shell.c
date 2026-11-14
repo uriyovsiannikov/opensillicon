@@ -483,12 +483,15 @@ complete_line(char *line, size_t *length, size_t *cursor)
 		for (size_t i = 0; i < sizeof(internal_commands) /
 		    sizeof(internal_commands[0]); i++)
 			add_completion(candidates, &count, internal_commands[i], 0, word);
-		descriptor = u_open("/bin", U_O_RDONLY | U_O_DIRECTORY);
-		if (descriptor >= 0) {
-			while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0)
-				if (is_executable_entry(&entry))
-					add_completion(candidates, &count, entry.name, 0, word);
-			(void)u_close((uint64_t)descriptor);
+		static const char *const directories[] = { "/bin", "/usr/bin" };
+		for (size_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++) {
+			descriptor = u_open(directories[i], U_O_RDONLY | U_O_DIRECTORY);
+			if (descriptor >= 0) {
+				while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0)
+					if (is_executable_entry(&entry))
+						add_completion(candidates, &count, entry.name, 0, word);
+				(void)u_close((uint64_t)descriptor);
+			}
 		}
 	} else {
 		size_t prefix_length = slash == (size_t)-1 ? 0 : slash + 1;

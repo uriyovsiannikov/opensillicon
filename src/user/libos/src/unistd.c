@@ -83,7 +83,7 @@ putenv(char *assignment)
 int
 execvp(const char *file, char *const argv[])
 {
-	static const char *paths[] = { "/bin/", "/sbin/" };
+	static const char *paths[] = { "/bin/", "/usr/bin/", "/sbin/" };
 	char candidate[256];
 	size_t i, len;
 	if (file == NULL || *file == '\0' || argv == NULL) {
@@ -93,7 +93,7 @@ execvp(const char *file, char *const argv[])
 	if (strchr(file, '/') != NULL)
 		return execv(file, argv);
 	len = strlen(file);
-	if (len > sizeof(candidate) - 8) {
+	if (len >= sizeof(candidate) - (sizeof("/usr/bin/") - 1)) {
 		errno = ENAMETOOLONG;
 		return -1;
 	}

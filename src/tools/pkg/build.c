@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 	}
 	if (collect(argv[3], "") < 0 || !count) {
 		fprintf(stderr, "pkg-build: staging must contain 1..128 regular files "
-				"under bin/, usr/, opt/; no links or special files\n");
+				"under usr/ or opt/; no links or special files\n");
 		return 1;
 	}
 	qsort(files, count, sizeof(files[0]), compare);

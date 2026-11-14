@@ -1,54 +1,27 @@
 #include "include/os.h"
 
-static int
-find_in_bin(char *path, size_t capacity, size_t prefix, const char *name)
-{
-	static const char bin[] = "/bin/";
-	struct u_stat st;
-	size_t length = u_strlen(name);
-
-	if (prefix + sizeof(bin) > capacity ||
-	    length >= capacity - prefix - (sizeof(bin) - 1))
-		return 0;
-	for (size_t i = 0; i < sizeof(bin) - 1; i++)
-		path[prefix++] = bin[i];
-	for (size_t i = 0; i <= length; i++)
-		path[prefix + i] = name[i];
-	return u_stat_path(path, &st) == 0 && st.type == 1 && (st.mode & 0111U);
-}
-
 int
 u_find_command(const char *name, char *path, size_t capacity)
 {
-	static const char user_prefix[] = "/tmp/pkg-";
-	struct os_credentials credentials;
+	static const char *const directories[] = { "/bin/", "/usr/bin/" };
 	struct u_stat st;
-	char digits[10];
-	size_t count = 0;
+	size_t length = u_strlen(name);
 
-	if (*name == '\0')
+	if (length == 0)
 		return 0;
-	if (find_in_bin(path, capacity, 0, name))
-		return 1;
-	if (u_getcredentials(&credentials) < 0 || credentials.effective_uid == 0)
-		return 0;
-	uint32_t uid = credentials.effective_uid;
-	do {
-		digits[count++] = '0' + uid % 10;
-		uid /= 10;
-	} while (uid != 0);
-	size_t prefix = sizeof(user_prefix) - 1;
-	if (prefix + count >= capacity)
-		return 0;
-	for (size_t i = 0; i < prefix; i++)
-		path[i] = user_prefix[i];
-	while (count != 0)
-		path[prefix++] = digits[--count];
-	path[prefix] = '\0';
-	if (u_stat_path(path, &st) < 0 || st.type != 2 ||
-	    st.uid != credentials.effective_uid || (st.mode & 0077U))
-		return 0;
-	return find_in_bin(path, capacity, prefix, name);
+	for (size_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++) {
+		size_t prefix = u_strlen(directories[i]);
+		if (prefix >= capacity || length >= capacity - prefix)
+			continue;
+		for (size_t j = 0; j < prefix; j++)
+			path[j] = directories[i][j];
+		for (size_t j = 0; j <= length; j++)
+			path[prefix + j] = name[j];
+		if (u_stat_path(path, &st) == 0 && st.type == 1 &&
+		    (st.mode & 0111U) != 0)
+			return 1;
+	}
+	return 0;
 }
 
 size_t

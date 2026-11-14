@@ -96,6 +96,8 @@ const char *pkg_parse(const uint8_t *bytes, size_t size, int record,
 		f->hash = f->header + 200;
 		if (!pkg_path(f->path))
 			return "unsafe package path";
+		if (!record && strncmp(f->path, "bin/", 4) == 0)
+			return "package binaries must be stored under usr/bin/";
 		if (f->mode != 0644 && f->mode != 0755)
 			return "unsupported file mode";
 		if (f->size > PKG_MAX_SIZE)

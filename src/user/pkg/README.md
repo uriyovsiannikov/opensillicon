@@ -1,194 +1,88 @@
-# OpenSillicon packages, version 1
+# Packages
 
-The native package manager lives in `src/user/pkg/`. It is a static libos
-program installed as `/bin/pkg`. The archive parser, SHA-256 implementation,
-and client also build on Linux for integration tests.
-
-## Build and run
-
-From the repository root:
+The system package manager supports four commands.
 
 ```sh
-make root
-make src/build/pkg/pkg-host src/build/pkg/pkg-server \
-  src/tools/pkg/repo/_pkges/hello-1.0.0.spkg
-src/build/pkg/pkg-server --repo src/tools/pkg/repo
-```
-
-The server listens on `127.0.0.1:8080` by default. With the project's QEMU
-network configuration the guest reaches it at `10.15.3.2:8080`. For a physical
-machine, bind the server to its LAN address and point the client there once:
-
-```sh
-pkg repo http://192.168.1.50:8080
-pkg update
-pkg add hello
+doas pkg repo http://192.168.1.112:8080
+doas pkg update
+doas pkg add hello
 hello
-pkg list
-pkg verify hello
-pkg delete hello
+doas pkg remove hello
 ```
 
-`pkg repo` writes a single URL to the active prefix's `etc/pkg.conf`.
-In the normal OpenSillicon console (UID 1000), the default prefix is
-`/tmp/pkg-1000` and the file is `/tmp/pkg-1000/etc/pkg.conf`. The directory
-is private to the user. On an installed system it persists on disk; in
-Live mode it lives in RAM. The shell and `which` look in the default user
-prefix's `bin` directory after `/bin`. Use an explicit path for programs
-installed under a custom `-r` prefix.
+Application binaries are packaged at `usr/bin/<name>` and installed at
+`/usr/bin/<name>`. The shell, command completion, `which` and libos program
+lookup include `/usr/bin`. Live mode stores installed files in RAM until
+reboot. A disk installation stores them persistently.
 
-Root defaults to the system prefix and `/etc/pkg.conf`. OpenSillicon looks
-for a config inside the chosen prefix first, then in `/etc/pkg.conf`.
-The default config points to QEMU's `http://10.15.3.2:8080`. Use `-r` to
-select another prefix or `-R` to override the server for one command.
+The repository URL is saved in `/etc/pkg.conf`. The downloaded index is
+`/var/cache/pkg/index`, and installation records are stored in
+`/var/db/pkg/<name>.db`. These operations require root. The default
+[/etc/doas.conf](../doas/README.md) permits UID 1000 to run `/bin/pkg` as root.
 
-`pkg update` refreshes the repository index. `pkg install hello` remains an
-alias for `pkg add hello`. Use `pkg add ./file.spkg` for an offline archive.
+`pkg add name` downloads a package named in the saved repository index.
+`pkg add ./file.spkg` installs a local archive. Run `pkg update` first for
+repository installation.
 
-To run the server with another repository or listen address:
+`pkg remove name` verifies present files against the installation record
+before removing them. Modified files cause removal to fail. Missing files are
+accepted so an interrupted removal can be retried. Empty directories are
+retained. An incomplete installation's partial files can be removed if they
+still have the installer's private mode and ownership. Existing records
+retain their original paths for removal.
+
+## Host repository
 
 ```sh
-src/build/pkg/pkg-server --repo src/tools/pkg/repo --bind 127.0.0.1 --port 8080
+make src/build/pkg/pkg-server src/tools/pkg/repo/_pkges/hello-1.0.0.spkg
+src/build/pkg/pkg-server --repo src/tools/pkg/repo --bind 0.0.0.0 --port 8080
 ```
 
-It serves `GET /index` and `GET /packages/<name>-<version>.spkg`. Source
-files are never served. The index is generated from the current archives on
-each request; restart is not needed after adding a package. Keep one version
-per package name in `_pkges/`; duplicates or malformed archives produce an
-explicit repository error. Publish host archives with an atomic rename, as
-`pkg-build` does, so readers see a complete old or new file.
+The default configuration points at QEMU's `http://10.15.3.2:8080`.
+On physical hardware, configure the reachable LAN address of the host.
 
-## Repository layout and building a package
+The server exposes `GET /index` and `GET /packages/<name>-<version>.spkg`.
+Archives belong in `src/tools/pkg/repo/_pkges/`. Sources and build recipes
+belong in `src/tools/pkg/repo/_src/<name>/`.
 
-```text
-src/tools/pkg/
-  build.c                   host archive builder
-  server/server.c           host HTTP server
-  repo/
-    _pkges/                 ready-to-install .spkg archives
-    _src/
-      hello/
-        hello.c             native program source
-        Makefile            package build entry point
-```
+## Package creation
 
-`make -C src/tools/pkg/repo/_src/hello` builds the example for OpenSillicon and places
-`hello-1.0.0.spkg` in `_pkges/`. The generated archives are ignored by Git;
-keep package sources and recipes in `_src/<name>/`. The package recipe exposes the generated archive as its file target.
-
-For another package, compile its program against libos and place the desired
-filesystem tree in a staging directory. The builder accepts regular files
-under `bin/`, `usr/`, and `opt/`; directories are implicit. Programs intended
-for shell lookup belong in `bin/`.
+Compile native OpenSillicon programs against libos, then create a staging
+directory with paths such as `usr/bin/example` and `usr/share/example/data`.
 
 ```sh
+make src/build/pkg/pkg-build
 src/build/pkg/pkg-build example 1.0 /absolute/path/to/stage \
   src/tools/pkg/repo/_pkges/example-1.0.spkg 'Example application'
 ```
 
-The builder sorts paths for deterministic output. It accepts no symlinks,
-devices, special mode bits, install scripts, or
-absolute/parent-traversal paths. Hardlinked regular input files are copied
-as independent regular files. Files normalize to mode `0755` if any execute
-bit is set, otherwise `0644`. Packages target native x86-64 OpenSillicon;
-the builder does not cross-compile arbitrary Linux binaries.
+The builder accepts regular files under `usr/` and `opt/`. Executable files
+receive mode 0755 and other files receive mode 0644. Archive paths under
+`bin/` are rejected. Paths are used directly, without relocation during
+installation. Links, special files, absolute paths and parent traversal are
+rejected.
 
-## Installation and database
+## Installation integrity
 
-Before writing payloads, the client validates the whole archive, all file
-hashes, the destination paths, and existing file conflicts. Remote downloads
-also have to match the index's archive size, SHA-256, name, and version.
-Existing destination files are never overwritten. VFS now supports
-`O_CREAT | O_EXCL`, which the client uses for records and payload files.
+Before writing files, the client validates the archive, file hashes,
+destination paths, existing files and reservations held by other packages.
+Repository downloads must match the index's size, hash, name and version.
 
-Records live at `var/db/pkg/<name>.db` under the installation prefix.
-The client flushes the manifest before writing payloads, then flushes the
-payloads before marking the record installed. These checkpoints allow
-recovery, with no guarantee of atomicity across the whole operation.
-`pkg list` and `pkg info` show incomplete installations and pending deletions.
+An exclusive database lock serializes installation and removal. The client
+writes and flushes the manifest before payloads, then flushes payloads before
+marking the record installed. An interrupted installation retains its record
+and written files. The record is removed after successful file removal.
+The whole operation is not power-loss atomic.
 
-`pkg recover hello` resumes an interrupted installation if the repository
-still serves the original archive. Use `pkg recover ./file.spkg` for a local
-copy. Recovery reuses complete files and can finish partially written files
-when their bytes match the archive and they still have the installer's private
-file mode.
+The transport is HTTP. SHA-256 checks detect damaged or inconsistent
+downloads. Repository signing and TLS are not implemented. Limits are 16 MiB
+and 128 files per archive, 256 packages and 256 KiB per index.
 
-`pkg delete hello` checks each present file against the manifest before
-removing any files. It refuses modified files and leaves directories in place.
-Repeat the same command after an interrupted deletion. Package replacement,
-dependency resolution and post-install hooks are future work.
+## Checks
 
-The transport is plain HTTP for a trusted development host/LAN. SHA-256
-checks detect damaged or inconsistent downloads; this version has no signed
-repository metadata or TLS. Archives are bounded to 16 MiB and 128 files;
-indexes to 256 packages and 256 KiB. The HTTP client uses a 30-second request
-deadline, fixed-length responses, and handles short/nonblocking I/O. The
-host server handles one connection at a time.
-
-## Tests
+The host client accepts `-r /absolute/test/root` for isolated integration tests.
 
 ```sh
-make src/build/pkg/pkg-host src/build/pkg/pkg-build src/build/pkg/pkg-server \
-  src/build/pkg/pkg-vfs-test
-src/build/pkg/pkg-vfs-test
-python3 src/tests/pkg_test.py --build-dir src/build/pkg
+make src/build/pkg/pkg-host src/build/pkg/pkg-build
+python3 src/tests/pkg_paths.py
 ```
-
-Host tests exercise deterministic archives and independent SHA-256 vectors,
-HTTP installation, installed-file verification, incomplete records, conflicts,
-path traversal, symlinks, duplicate versions, and broken HTTP responses.
-The standalone harness `src/tests/pkg_qemu_test.py` creates a fresh temporary
-SilliconFS disk and checks the native client against the C server. Run it
-with `--help` for its artifact arguments. It boots eight CPUs, fetches the
-index, installs `hello`, verifies it and executes it without altering
-`src/build/root.img`.
-
-For Linux-side manual tests, the same client can install into an isolated
-root directory:
-
-```sh
-mkdir -p /tmp/pkg-root
-src/build/pkg/pkg-host -r /tmp/pkg-root -R http://127.0.0.1:8080 update
-src/build/pkg/pkg-host -r /tmp/pkg-root -R http://127.0.0.1:8080 install hello
-```
-
-## Wire format
-
-All integers are unsigned little-endian 32-bit values. All text fields are
-NUL-terminated within their fixed width. No host structs are serialized.
-
-Archive header (304 bytes):
-
-| Offset | Size | Field |
-|---|---|---|
-| 0 | 8 | ASCII `OSPKG001` |
-| 8 | 4 | Complete archive length |
-| 12 | 4 | File count |
-| 16 | 64 | Package name |
-| 80 | 32 | Version |
-| 112 | 192 | Printable description |
-
-Each file follows as a 232-byte header and exactly `size` payload bytes:
-
-| Offset | Size | Field |
-|---|---|---|
-| 0 | 192 | Relative installation path |
-| 192 | 4 | Mode (`0644` or `0755`) |
-| 196 | 4 | Payload size |
-| 200 | 32 | Binary SHA-256 of payload |
-
-A database record uses magic `OSDB0001`, replaces the archive length with
-installation state (`0` pending, `1` installed, `2` deleting), and retains the package and
-file headers without payload bytes. Trailing bytes and conflicting paths
-are rejected in both formats.
-
-The text index starts with `OSPKG-INDEX-1\n`. Each subsequent line has six
-TAB-separated fields and ends with LF:
-
-```text
-name<TAB>version<TAB>archive-size<TAB>sha256-hex<TAB>filename<TAB>description
-```
-
-Names and versions use ASCII letters, digits, `+`, `-`, `_`, and `.`, and
-cannot begin with `.` or `-`. The archive filename must be exactly
-`<name>-<version>.spkg`. Descriptions cannot contain tabs or newlines.

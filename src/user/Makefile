@@ -16,6 +16,15 @@ $(BUILD_DIR)/service.o: src/user/init/service.c src/user/init/service.h \
 		src/user/include/os.h src/include/abi/syscall.h | $(BUILD_DIR)
 	$(CC) $(LIBOS_CFLAGS) -Isrc/user -c $< -o $@
 
+$(BUILD_DIR)/doas.o: src/user/doas/doas.c | $(BUILD_DIR)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/doas.elf: $(BUILD_DIR)/doas.o $(LIBOS_BUILD_DIR)/crt0.o \
+		$(LIBOS_ARCHIVE) src/user/c_linker.ld
+	mkdir -p $(@D)
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o \
+		$(BUILD_DIR)/doas.o $(LIBOS_ARCHIVE) -o $@
+
 $(BUILD_DIR)/svctl.o: src/user/init/svctl.c src/user/init/service.h | $(BUILD_DIR)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 

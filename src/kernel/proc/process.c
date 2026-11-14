@@ -2288,7 +2288,8 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 static struct interrupt_frame *
 replace_process_image(struct interrupt_frame *frame, const void *image,
 	size_t image_size, uint64_t invalid_elf_error, uint64_t *error,
-	size_t argc, const char *const argv[], const char *name)
+	size_t argc, const char *const argv[], const char *name,
+	const struct os_credentials *exec_credentials)
 {
 	struct process *process = current_process;
 	struct elf_loaded_image *replacement;
@@ -2330,9 +2331,10 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 		return frame;
 	}
 	fd_table_close_on_exec(&process->descriptors);
-	/* The new image may only regain the identities effective at exec time.
-	 * Commit this after loading and activation succeed, so a failed exec
-	 * preserves the caller's saved IDs. */
+	/* Commit effective and saved IDs after image activation succeeds.
+	 * A failed exec must preserve all caller credentials. */
+	if (exec_credentials != NULL)
+		process->credentials = *exec_credentials;
 	process->credentials.saved_uid = process->credentials.effective_uid;
 	process->credentials.saved_gid = process->credentials.effective_gid;
 	process_set_name(process, name);
@@ -2414,7 +2416,7 @@ process_exec(struct interrupt_frame *frame, uint64_t *error)
 		return frame;
 	}
 	result = replace_process_image(frame, image_copy, (size_t)image_size,
-	    PROCESS_ERROR_EINVAL, error, 0, NULL, "elf");
+	    PROCESS_ERROR_EINVAL, error, 0, NULL, "elf", NULL);
 	(void)kheap_free(image_copy);
 	return result;
 }
@@ -2455,13 +2457,19 @@ process_exec_path_argv(struct interrupt_frame *frame, const char *path,
 		return frame;
 	}
 	rc = read_executable_image(executable, &image, &image_size);
+	if (rc == 0) {
+		if ((executable->mode & 04000U) != 0)
+			credentials.effective_uid = executable->uid;
+		if ((executable->mode & 02000U) != 0)
+			credentials.effective_gid = executable->gid;
+	}
 	vnode_put(executable);
 	if (rc != 0) {
 		*error = (uint64_t)-rc;
 		return frame;
 	}
 	result = replace_process_image(frame, image, image_size,
-	    PROCESS_ERROR_ENOEXEC, error, argc, argv, canonical);
+	    PROCESS_ERROR_ENOEXEC, error, argc, argv, canonical, &credentials);
 	(void)kheap_free(image);
 	return result;
 }

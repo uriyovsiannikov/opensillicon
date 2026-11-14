@@ -243,6 +243,8 @@ main(int argc, char **argv)
 	}
 	vnode_put(root);
 	if ((error = add_directory("/bin", 0755)) != 0 ||
+	    (error = add_directory("/usr", 0755)) != 0 ||
+	    (error = add_directory("/usr/bin", 0755)) != 0 ||
 	    (error = add_directory("/sbin", 0755)) != 0 ||
 	    (error = add_directory("/etc", 0755)) != 0 ||
 	    (error = add_directory("/var", 0755)) != 0 ||
@@ -361,7 +363,6 @@ main(int argc, char **argv)
 	if ((xterm_path != NULL || dillo_path != NULL) &&
 	    ((xterm_path != NULL &&
 	    (error = add_file("/bin/xterm", xterm_path, 0755)) != 0) ||
-	    (error = add_directory("/usr", 0755)) != 0 ||
 	    (error = add_directory("/usr/share", 0755)) != 0 ||
 	    (error = add_directory("/usr/share/fonts", 0755)) != 0 ||
 	    (error = add_directory("/usr/share/fonts/misc", 0755)) != 0 ||
@@ -389,8 +390,6 @@ main(int argc, char **argv)
 	}
 	if (feh_path != NULL &&
 	    ((error = add_file("/bin/feh", feh_path, 0755)) != 0 ||
-	    (xterm_path == NULL && dillo_path == NULL &&
-	    (error = add_directory("/usr", 0755)) != 0) ||
 	    (xterm_path == NULL && dillo_path == NULL &&
 	    (error = add_directory("/usr/share", 0755)) != 0) ||
 	    (error = add_directory("/usr/share/feh", 0755)) != 0 ||
@@ -435,7 +434,7 @@ main(int argc, char **argv)
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
 		    "kldload", "kldunload", "pkg", "pciconf", "netconf", "usbconf",
 		    "cpuconf", "blkconf", "newfs_silliconfs", "gpart",
-		    "installboot", "mount", "umount", "sync"};
+		    "installboot", "mount", "umount", "sync", "doas"};
 		int index;
 		if (coreutils_count !=
 		    (int)(sizeof(names) / sizeof(names[0]))) {
@@ -445,13 +444,13 @@ main(int argc, char **argv)
 			return 1;
 		}
 		for (index = 0; index < coreutils_count; index++) {
-			char destination[32] = "/bin/";
-			size_t position = 5;
 			const char *name = names[index];
-			while (*name != '\0') destination[position++] = *name++;
-			destination[position] = '\0';
+			char destination[32];
+			bool doas = strcmp(name, "doas") == 0;
+			snprintf(destination, sizeof(destination), "%s/%s",
+			    doas ? "/usr/bin" : "/bin", name);
 			if ((error = add_file(destination,
-			    argv[coreutils_start + index], 0755)) != 0) {
+			    argv[coreutils_start + index], doas ? 04755 : 0755)) != 0) {
 				fprintf(stderr, "SilliconFS coreutils population failed: %d\n", error);
 				fclose(image);
 				return 1;
@@ -464,10 +463,13 @@ main(int argc, char **argv)
 		    "user:*:1000:1000:OpenSillicon user:/tmp:/bin/sh\n";
 		static const char group[] = "root:*:0:\nuser:*:1000:\n";
 		static const char pkg_conf[] = "http://10.15.3.2:8080\n";
+		static const char doas_conf[] =
+		    "permit nopass 1000 as root cmd /bin/pkg\n";
 		static const char resolv_conf[] = "nameserver 10.15.3.3\n";
 		if (add_data("/etc/passwd", passwd, sizeof(passwd) - 1, 0644) != 0 ||
 		    add_data("/etc/group", group, sizeof(group) - 1, 0644) != 0 ||
 		    add_data("/etc/pkg.conf", pkg_conf, sizeof(pkg_conf) - 1, 0644) != 0 ||
+		    add_data("/etc/doas.conf", doas_conf, sizeof(doas_conf) - 1, 0644) != 0 ||
 		    add_data("/etc/resolv.conf", resolv_conf,
 		    sizeof(resolv_conf) - 1, 0644) != 0) {
 			fclose(image);
