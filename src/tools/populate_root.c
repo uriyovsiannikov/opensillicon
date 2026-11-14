@@ -411,7 +411,7 @@ main(int argc, char **argv)
 			"stat", "basename", "dirname",
 			"kill", "sleep", "which", "ps", "netdiag", "ping",
 			"poweroff", "reboot", "host", "ifconfig", "kldstat", "kldload", "kldunload",
-			"pkg", "pciconf", "usbconf", "cpuconf", "blkconf", "newfs_silliconfs", "gpart"
+			"pkg", "pciconf", "usbconf", "cpuconf", "blkconf", "newfs_silliconfs", "gpart", "installboot"
 		};
 		int index;
 		if (coreutils_count !=

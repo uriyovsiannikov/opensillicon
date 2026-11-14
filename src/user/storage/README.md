@@ -52,3 +52,19 @@ Root and Live images include installable boot payloads at /boot/BOOTX64.EFI,
 /boot/kernel.elf and /boot/init.cpi. The packaged kernel removes debug sections
 so it fits SilliconFS's current per-file limit; its entry and loadable contents
 remain identical to the development ELF. The full debug ELF stays in src/build.
+
+`installboot [-N | -F] -r <root-PARTUUID> /dev/ada0p1` installs a UEFI boot
+partition from those packaged payloads. Preview is the default; -F authorizes
+formatting the target partition as FAT32 and writing boot files. The command
+requires a canonical nonzero root UUID and a SATA partition path. Source file
+types/signatures and target capacity are checked before writing. The generated
+Limine configuration points at the selected GPT root UUID and does not include
+a Live RAM root module. The firmware fallback path /EFI/BOOT/BOOTX64.EFI avoids
+a requirement for NVRAM boot entry creation; BIOS boot is not supported.
+
+`python3 src/tests/installboot_qemu.py` prepares a temporary root filesystem,
+installs boot files by running the actual command in a Live guest, checks the
+ESP with fsck.fat/mcopy, then boots without any ISO twice. A file created on the
+first disk-only boot must survive the second. This test validates boot setup;
+its root files are prepopulated on the host, so it does not claim to test the
+future full installer copy stage.
