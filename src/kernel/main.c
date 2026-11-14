@@ -113,32 +113,47 @@ disk_root_device(void)
 	return &root_adapter.filesystem;
 }
 
+static struct block_device live_block_device;
+static struct block_silliconfs_adapter live_adapter;
+
 static int
-live_read_block(void *context, uint32_t block_number, void *buffer)
+live_read_sectors(struct block_device *device, uint64_t sector,
+	uint32_t count, void *buffer)
 {
-	const uint8_t *block = (const uint8_t *)context +
-	    (size_t)block_number * SILLICONFS_BLOCK_SIZE;
-	for (size_t i = 0; i < SILLICONFS_BLOCK_SIZE; i++)
-		((uint8_t *)buffer)[i] = block[i];
+	const uint8_t *source = (const uint8_t *)device->context +
+	    (size_t)sector * SILLICONFS_BLOCK_SIZE;
+	for (size_t i = 0; i < (size_t)count * SILLICONFS_BLOCK_SIZE; i++)
+		((uint8_t *)buffer)[i] = source[i];
 	return 0;
 }
 
 static int
-live_write_block(void *context, uint32_t block_number, const void *buffer)
+live_write_sectors(struct block_device *device, uint64_t sector,
+	uint32_t count, const void *buffer)
 {
-	uint8_t *block = (uint8_t *)context +
-	    (size_t)block_number * SILLICONFS_BLOCK_SIZE;
-	for (size_t i = 0; i < SILLICONFS_BLOCK_SIZE; i++)
-		block[i] = ((const uint8_t *)buffer)[i];
+	uint8_t *destination = (uint8_t *)device->context +
+	    (size_t)sector * SILLICONFS_BLOCK_SIZE;
+	for (size_t i = 0; i < (size_t)count * SILLICONFS_BLOCK_SIZE; i++)
+		destination[i] = ((const uint8_t *)buffer)[i];
 	return 0;
 }
+
+static int
+live_flush(struct block_device *device)
+{
+	(void)device;
+	return 0;
+}
+
+static const struct block_device_operations live_operations = {
+	.read = live_read_sectors, .write = live_write_sectors, .flush = live_flush,
+};
 
 static void
 mount_system_root(const struct limine_file *live_root)
 {
 	struct vnode *disk_root;
 	struct vnode *temporary_directory;
-	struct silliconfs_device live_device;
 	const struct silliconfs_device *device;
 	int error;
 
@@ -150,13 +165,17 @@ mount_system_root(const struct limine_file *live_root)
 			kernel_halt();
 		}
 		/* Limine loaded the image into RAM. Writes stay in these pages. */
-		live_device = (struct silliconfs_device){
+		live_block_device = (struct block_device){
+			.name = "ram0", .logical_sector_size = SILLICONFS_BLOCK_SIZE,
+			.sector_count = blocks, .operations = &live_operations,
 			.context = live_root->address,
-			.block_count = (uint32_t)blocks,
-			.read_block = live_read_block,
-			.write_block = live_write_block,
 		};
-		device = &live_device;
+		if (block_device_register(&live_block_device) != 0 ||
+		    !block_silliconfs_init(&live_adapter, &live_block_device)) {
+			klog_status("Live root", false, "RAM block device registration failed");
+			kernel_halt();
+		}
+		device = &live_adapter.filesystem;
 	} else {
 		device = disk_root_device();
 	}

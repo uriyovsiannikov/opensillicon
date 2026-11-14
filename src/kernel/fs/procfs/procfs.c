@@ -154,11 +154,15 @@ procfs_make_disks(uint64_t inode, struct procfs_node **result)
 {
 	struct procfs_node *node = procfs_allocate("disks", PROCFS_DISKS, VNODE_REGULAR, inode);
 	if (node == NULL) return -PROCFS_ENOMEM;
+	if (!append_text(node, "NAME SECTORS SECTOR_SIZE BYTES\n")) {
+		vnode_put(&node->vnode); return -PROCFS_EINVAL;
+	}
 	for (size_t i = 0; i < block_device_count(); i++) {
 		struct block_device *device = block_device_at(i);
 		if (device == NULL || !append_text(node, device->name) || !append_text(node, " ") ||
 		    !append_u64(node, device->sector_count) || !append_text(node, " ") ||
-		    !append_u64(node, device->logical_sector_size) || !append_text(node, "\n")) {
+		    !append_u64(node, device->logical_sector_size) || !append_text(node, " ") ||
+		    !append_u64(node, device->sector_count * device->logical_sector_size) || !append_text(node, "\n")) {
 			vnode_put(&node->vnode); return -PROCFS_EINVAL;
 		}
 	}
