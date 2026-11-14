@@ -2,7 +2,7 @@ import pathlib, subprocess, sys, tempfile
 with tempfile.TemporaryDirectory() as directory:
     image=pathlib.Path(directory)/'disk.img'
     def run(sector,write=0,flush=0,corrupt=0):
-        with image.open('wb') as stream:stream.truncate(192*1024*1024)
+        with image.open('wb') as stream:stream.truncate((512 if sector==4096 else 192)*1024*1024)
         subprocess.run([sys.argv[1],str(image),str(sector),str(write),str(flush),str(corrupt)],check=True)
     for sector in (512,4096):
         run(sector)

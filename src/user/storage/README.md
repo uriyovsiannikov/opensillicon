@@ -18,8 +18,9 @@ real utility in QEMU, checks preview leaves data untouched, checks mounted-root
 protection, and compares the resulting disk image with the Python formatter.
 
 `gpart bootlayout [-N | -F] [-e esp-MiB] /dev/ada0` prepares a GPT with an EFI
-System Partition and a SilliconFS partition. The default ESP is 256 MiB; the
-minimum supported ESP and root sizes are each 64 MiB. Partition starts are
+System Partition and a SilliconFS partition. The default ESP is 512 MiB. The minimum supported ESP is 64 MiB on 512-byte
+sectors and 260 MiB on 4096-byte sectors, so its FAT32 cluster count is valid.
+The minimum root size is 64 MiB. Partition starts are
 aligned to 1 MiB and the root size is a multiple of 4096. Preview is the default;
 -F authorizes replacing both existing GPT copies and the protective MBR.
 The tool accepts only whole SATA device names, obtains distinct UUIDs from

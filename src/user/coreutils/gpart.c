@@ -25,7 +25,7 @@ static int uuids(uint8_t ids[48])
 }
 int main(int argc,char **argv)
 {
- int format=0, mode_seen=0; uint32_t esp_mib=256; const char *path=NULL;
+ int format=0, mode_seen=0; uint32_t esp_mib=512; const char *path=NULL;
  if(argc<3 || strcmp(argv[1],"bootlayout")!=0) return usage();
  for(int i=2;i<argc;i++) {
   if(strcmp(argv[i],"-N")==0 || strcmp(argv[i],"-F")==0) {

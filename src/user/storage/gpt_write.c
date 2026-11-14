@@ -7,7 +7,8 @@
 int gpt_layout_plan(const struct storage_io *io,uint32_t esp_mib,struct gpt_layout *p)
 {
  if(!io || !p || (io->sector!=512 && io->sector!=4096) ||
-    io->bytes%io->sector || io->bytes>INT64_MAX || esp_mib<64) return -EINVAL;
+    io->bytes%io->sector || io->bytes>INT64_MAX || esp_mib<64 ||
+    (io->sector==4096 && esp_mib<260)) return -EINVAL;
  uint64_t sectors=io->bytes/io->sector, table=TABLE_BYTES/io->sector;
  uint64_t align=MIB/io->sector, esp=(uint64_t)esp_mib*MIB/io->sector;
  if(sectors<2*table+4) return -ENOSPC;
