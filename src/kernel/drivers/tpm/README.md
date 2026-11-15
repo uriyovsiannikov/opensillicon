@@ -1,1 +1,0 @@
-TPM support communicates with a TPM 2.0 device through the ACPI-described Command Response Buffer interface. The driver code handles the interface setup and command transport used to exchange TPM requests and responses.

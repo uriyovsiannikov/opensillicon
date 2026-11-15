@@ -1,1 +1,0 @@
-Interrupt and exception entry code connects processor events to kernel handlers. Assembly stubs save the required processor state and transfer control to C dispatch code, which identifies and handles each event.

@@ -1,1 +1,0 @@
-The virtual filesystem layer provides a common interface for files, directories, and filesystem operations. It allows callers to use a consistent API while the selected filesystem supplies the underlying behavior.
