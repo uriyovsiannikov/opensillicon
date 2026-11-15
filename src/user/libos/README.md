@@ -127,10 +127,15 @@ Unix socket. The X port keeps networking, auth-file locking, regex selection,
 printer commands, and process-group/job-control features disabled or failing
 explicitly where libos has no matching kernel operation.
 
-The allocator maps one or more pages per allocation and has no reuse/free-list
-optimization. Allocation alignment is at least 16 bytes. The initial QEMU
-fixture covers startup, errors, memory/string operations, allocation, static
-stdio formatting, file I/O, metadata, and directory enumeration.
+The allocator reuses small blocks in seven page-backed size classes (16-byte
+alignment, up to 2032 payload bytes). It retains at most one empty page per
+class and returns excess empty pages to the kernel. Larger allocations use
+dedicated mappings. `realloc` reuses the current block while its capacity permits.
+Allocation from asynchronous signal handlers and concurrent threads is not
+supported. `sh src/tests/libos_allocator.sh` checks reuse, alignment, resizing,
+overflow, failed growth and page reclamation under mixed allocation sizes.
+The initial QEMU fixture covers startup, errors, memory/string operations,
+allocation, static stdio formatting, file I/O, metadata, and directory enumeration.
 
 Build the runtime archive and CRT using their internal file rules:
 

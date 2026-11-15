@@ -23,6 +23,7 @@
 
 #define CYCLONE_RX_BUDGET 8U
 #define CYCLONE_TX_POLL_LIMIT 1000000U
+#define CYCLONE_LINK_POLL_NS UINT64_C(100000000)
 
 const OsTaskParameters OS_TASK_DEFAULT_PARAMS = {0, 0};
 
@@ -31,6 +32,8 @@ static NetInterface stack_interface;
 static DhcpClientContext dhcp_context;
 static struct net_device *ethernet_device;
 static bool stack_ready;
+static bool link_polled;
+static uint64_t last_link_poll_ns;
 
 struct cyclone_udp_registration {
 	uint16_t port;
@@ -203,6 +206,7 @@ cyclone_net_init(struct net_device *device)
 		return false;
 	osSetEvent(&stack_interface.nicTxEvent);
 	ethernet_device = device;
+	link_polled = false;
 	stack_ready = true;
 	return true;
 }
@@ -213,11 +217,19 @@ cyclone_net_poll(size_t budget)
 	struct netbuf_ref packets[CYCLONE_RX_BUDGET];
 	size_t count = 0;
 	size_t processed = 0;
-	bool link_up;
+	uint64_t now;
 	if (!stack_ready || budget == 0)
 		return 0;
-	link_up = net_device_link_up(ethernet_device);
-	(void)netSetLinkState(&stack_interface, link_up ? TRUE : FALSE);
+	/* Link status is a slow hardware register read (a VM exit under QEMU).
+	 * Syscall safe points may poll RX thousands of times per second. Keep
+	 * that path responsive without repeatedly probing the PHY. */
+	now = timer_monotonic_ns();
+	if (!link_polled || now - last_link_poll_ns >= CYCLONE_LINK_POLL_NS) {
+		bool link_up = net_device_link_up(ethernet_device);
+		(void)netSetLinkState(&stack_interface, link_up ? TRUE : FALSE);
+		last_link_poll_ns = now;
+		link_polled = true;
+	}
 	if (budget > CYCLONE_RX_BUDGET)
 		budget = CYCLONE_RX_BUDGET;
 	/* Drain already received frames even while the PHY reports link down.
@@ -250,6 +262,12 @@ bool
 cyclone_net_ready(void)
 {
 	return stack_ready;
+}
+
+bool
+cyclone_net_link_up(void)
+{
+	return stack_ready && stack_interface.linkState;
 }
 
 const char *
@@ -345,6 +363,7 @@ cyclone_net_udp_send(uint16_t source_port, const uint8_t destination[4],
 	IpAddr source = { .length = sizeof(Ipv4Addr) };
 	IpAddr target = { .length = sizeof(Ipv4Addr) };
 	NetBuffer *buffer;
+	NetTxAncillary ancillary = NET_DEFAULT_TX_ANCILLARY;
 	size_t offset;
 	error_t error;
 	if (!stack_ready || destination == NULL || destination_port == 0 ||
@@ -363,7 +382,7 @@ cyclone_net_udp_send(uint16_t source_port, const uint8_t destination[4],
 	source.ipv4Addr = stack_interface.ipv4Context.addrList[0].addr;
 	error = source.ipv4Addr == IPV4_UNSPECIFIED_ADDR ? ERROR_INVALID_ADDRESS :
 	    udpSendBuffer(&stack_context, &stack_interface, &source, source_port,
-	    &target, destination_port, buffer, offset, NULL);
+	    &target, destination_port, buffer, offset, &ancillary);
 	netUnlock(&stack_context);
 	netBufferFree(buffer);
 	return error == NO_ERROR ? 0 : -1;

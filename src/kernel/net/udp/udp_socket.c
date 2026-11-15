@@ -429,7 +429,7 @@ udp_socket_poll(void)
 	receive_poll_active = true;
 	state_guard_leave(flags);
 	size_t processed = cyclone_net_poll(UDP_RX_BATCH);
-	bool link_up = net_device_link_up(network_device);
+	bool link_up = cyclone_net_link_up();
 	flags = state_guard_enter();
 	receive_poll_active = false;
 	state_guard_leave(flags);
