@@ -1,10 +1,14 @@
 #!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-cc=${CC:-gcc}
+target=${1:-native}
+case "$target" in
+    native) cc=${CC:-gcc}; build=$root/src/build/mbedtls ;;
+    host) cc=${HOST_CC:-cc}; build=$root/src/build/mbedtls-host ;;
+    *) echo "usage: $0 [native|host]" >&2; exit 2 ;;
+esac
 source=$root/src/user/thirdparty/mbedtls
 port=$root/src/user/thirdparty/mbedtls/opensillicon
-build=$root/src/build/mbedtls
 mkdir -p "$build"
 exec 9>"$build/.build.lock"
 flock 9
@@ -24,6 +28,9 @@ if [ -f "$build/libmbedtls.a" ] && [ -f "$stamp" ] &&
 fi
 
 flags="-std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -nostdinc -isystem $("$cc" -print-file-name=include) -I$root/src/user/libos/include -I$source/include -I$source/library -I$source/3rdparty/everest/include -I$port -DMBEDTLS_CONFIG_FILE=\"opensillicon_mbedtls_config.h\""
+if [ "$target" = host ]; then
+    flags="-std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I$source/include -I$source/library -I$source/3rdparty/everest/include -I$port -DMBEDTLS_CONFIG_FILE=\"opensillicon_mbedtls_config.h\""
+fi
 for file in "$source"/library/*.c "$port/tls_platform.c"; do
     object="$build/$(basename "$file" .c).o"
     "$cc" $flags -c "$file" -o "$object"

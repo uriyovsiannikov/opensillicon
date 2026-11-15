@@ -1,5 +1,6 @@
 #include "http.h"
 #include "io.h"
+#include "tls.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -43,8 +44,10 @@ static int ready(int fd, short events, long long deadline)
 		return 0;
 	}
 }
-static ssize_t receive(int fd, void *p, size_t size, long long deadline)
+static ssize_t receive(int fd, struct pkg_tls *tls, void *p, size_t size, long long deadline)
 {
+	if (tls != NULL)
+		return pkg_tls_read(tls, p, size);
 	if (size > 4096)
 		size = 4096;
 	for (;;) {
@@ -56,24 +59,20 @@ static ssize_t receive(int fd, void *p, size_t size, long long deadline)
 		return n;
 	}
 }
-uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *length)
+static int parse_repository(const char *repo, char host[128], char port[6], int *tls)
 {
-	char host[128], port[6] = "8080", request[512], header[8193];
-	int fd = -1;
-	uint8_t *body = NULL;
-	struct addrinfo *addresses = NULL;
-	if (strncmp(repo, "http://", 7)) {
-		fprintf(stderr, "pkg: repository must use http://host:port\n");
-		return NULL;
-	}
-	const char *start = repo + 7;
+	int secure = strncmp(repo, "https://", 8) == 0;
+	if (!secure && strncmp(repo, "http://", 7)) return 0;
+	*tls = secure;
+	strcpy(port, secure ? "443" : "80");
+	const char *start = repo + (secure ? 8 : 7);
 	size_t n = strlen(start);
 	if (n && start[n - 1] == '/')
 		n--;
 	const char *colon = memchr(start, ':', n);
 	size_t hn = colon ? (size_t)(colon - start) : n;
-	if (!hn || hn >= sizeof(host))
-		goto invalid;
+	if (!hn || hn >= 128)
+		return 0;
 	memcpy(host, start, hn);
 	host[hn] = 0;
 	for (size_t i = 0; i < hn; i++)
@@ -81,22 +80,47 @@ uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *
 		      (host[i] >= 'A' && host[i] <= 'Z') ||
 		      (host[i] >= '0' && host[i] <= '9') || host[i] == '.' ||
 		      host[i] == '-'))
-			goto invalid;
+			return 0;
 	if (colon) {
 		size_t pn = n - hn - 1;
 		unsigned value = 0;
-		if (!pn || pn >= sizeof(port))
-			goto invalid;
+		if (!pn || pn >= 6)
+			return 0;
 		memcpy(port, colon + 1, pn);
 		port[pn] = 0;
 		for (size_t i = 0; i < pn; i++) {
 			if (port[i] < '0' || port[i] > '9')
-				goto invalid;
+				return 0;
 			value = value * 10 + (unsigned)(port[i] - '0');
 		}
 		if (!value || value > 65535)
-			goto invalid;
+			return 0;
 	}
+	return 1;
+}
+
+int pkg_http_repository_valid(const char *repo)
+{
+	char host[128], port[6];
+	int secure;
+	return parse_repository(repo, host, port, &secure);
+}
+
+uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *length)
+{
+	char host[128], port[6], request[512], header[8193];
+	int fd = -1, secure;
+	struct pkg_tls *tls = NULL;
+	const char *stage = "TCP connect";
+	uint8_t *body = NULL;
+	struct addrinfo *addresses = NULL;
+	if (!parse_repository(repo, host, port, &secure)) {
+		fprintf(stderr, "pkg: invalid repository URL (use https://host[:port])\n");
+		errno = EINVAL;
+		return NULL;
+	}
+	if (path == NULL || path[0] != '/' || strpbrk(path, "\r\n"))
+		goto invalid;
 	struct addrinfo hints = {0};
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -127,23 +151,31 @@ uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *
 			goto failed;
 		}
 	}
+	if (secure) {
+		stage = "TLS handshake";
+		tls = pkg_tls_connect(fd, host, deadline);
+		if (tls == NULL) goto failed;
+	}
 	int rn = snprintf(request, sizeof(request),
 			  "GET %s HTTP/1.1\r\nHost: %s:%s\r\nAccept-Encoding: "
 			  "identity\r\nConnection: close\r\n\r\n",
 			  path, host, port);
 	if (rn < 0 || (size_t)rn >= sizeof(request))
 		goto invalid;
+	stage = "sending request";
 	size_t sent = 0;
 	while (sent < (size_t)rn) {
 		if (ready(fd, POLLOUT, deadline) < 0)
 			goto failed;
-		ssize_t r = write(fd, request + sent, (size_t)rn - sent);
+		ssize_t r = tls ? pkg_tls_write(tls, request + sent, (size_t)rn - sent) :
+		    write(fd, request + sent, (size_t)rn - sent);
 		if (r < 0 && (errno == EAGAIN || errno == EINTR))
 			continue;
 		if (r <= 0)
 			goto failed;
 		sent += (size_t)r;
 	}
+	stage = "reading response headers";
 	size_t used = 0;
 	char *end = NULL;
 	while (!end) {
@@ -152,9 +184,10 @@ uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *
 			goto failed;
 		}
 		ssize_t r =
-		    receive(fd, header + used, sizeof(header) - 1 - used, deadline);
+		    receive(fd, tls, header + used, sizeof(header) - 1 - used, deadline);
 		if (r <= 0) {
-			errno = EIO;
+			if (r == 0)
+				errno = EIO;
 			goto failed;
 		}
 		used += (size_t)r;
@@ -212,27 +245,34 @@ uint8_t *pkg_http_get(const char *repo, const char *path, size_t limit, size_t *
 	body = malloc(content_length + 1);
 	if (!body)
 		goto failed;
+	stage = "downloading response body";
 	size_t received = used - header_length;
 	memcpy(body, header + header_length, received);
 	while (received < content_length) {
 		ssize_t r =
-		    receive(fd, body + received, content_length - received, deadline);
+		    receive(fd, tls, body + received, content_length - received, deadline);
 		if (r <= 0) {
-			errno = EIO;
+			if (r == 0)
+				errno = EIO;
 			goto failed;
 		}
 		received += (size_t)r;
 	}
 	body[content_length] = 0;
 	*length = content_length;
+	pkg_tls_free(tls);
 	close(fd);
 	freeaddrinfo(addresses);
 	return body;
 invalid:
 	errno = EINVAL;
-failed:
-	fprintf(stderr, "pkg: repository request failed (errno %d)\n", errno);
+failed: {
+	int error = errno;
+	fprintf(stderr, "pkg: %s to %s:%s failed\n", stage, host, port);
+	fprintf(stderr, "pkg: repository request failed (errno %d)\n", error);
+}
 cleanup:
+	pkg_tls_free(tls);
 	if (fd >= 0)
 		close(fd);
 	if (addresses)

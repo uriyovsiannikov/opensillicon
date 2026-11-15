@@ -195,6 +195,7 @@ main(int argc, char **argv)
 	const char *nano_path = NULL;
 	const char *htop_path = NULL;
 	const char *netsurf_path = NULL;
+	const char *pkg_ca_path = NULL;
 	const char *svctl_path = NULL;
 	const char *scinstall_path = NULL;
 	const char *boot_files[3] = {NULL, NULL, NULL};
@@ -206,7 +207,7 @@ main(int argc, char **argv)
 
 	if (argc < 4) {
 		fprintf(stderr,
-		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--netsurf elf] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--netsurf elf] [--pkg-ca file.pem] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
 		    argv[0]);
 		return 2;
 	}
@@ -238,6 +239,9 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--htop") == 0 && arg + 1 < argc) {
 			if (htop_path != NULL) return 2;
 			htop_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--pkg-ca") == 0 && arg + 1 < argc) {
+			if (pkg_ca_path != NULL) return 2;
+			pkg_ca_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--netsurf") == 0 && arg + 1 < argc) {
 			if (netsurf_path != NULL) return 2;
 			netsurf_path = argv[++arg];
@@ -447,11 +451,17 @@ main(int argc, char **argv)
 		fclose(image);
 		return 1;
 	}
-	if (netsurf_path != NULL &&
-	    ((error = add_file("/bin/netsurf", netsurf_path, 0755)) != 0 ||
-	    (error = add_directory("/etc/ssl", 0755)) != 0 ||
+	if ((error = add_directory("/etc/ssl", 0755)) != 0 ||
 	    (error = add_file("/etc/ssl/cert.pem",
 	    "src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt", 0644)) != 0 ||
+	    (pkg_ca_path != NULL && (error = add_file("/etc/ssl/pkg-ca.pem",
+	    pkg_ca_path, 0644)) != 0)) {
+		fprintf(stderr, "SilliconFS TLS trust population failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (netsurf_path != NULL &&
+	    ((error = add_file("/bin/netsurf", netsurf_path, 0755)) != 0 ||
 	    (error = add_netsurf_resources()) != 0)) {
 		fprintf(stderr, "SilliconFS NetSurf population failed: %d\n", error);
 		fclose(image);
@@ -505,7 +515,7 @@ main(int argc, char **argv)
 		    "root:*:0:0:OpenSillicon root:/:/bin/sh\n"
 		    "user:*:1000:1000:OpenSillicon user:/tmp:/bin/sh\n";
 		static const char group[] = "root:*:0:\nuser:*:1000:\n";
-		static const char pkg_conf[] = "http://10.15.3.2:8080\n";
+		static const char pkg_conf[] = "https://10.15.3.2:8080\n";
 		static const char doas_conf[] =
 		    "permit nopass 1000 as root cmd /bin/pkg\n";
 		static const char resolv_conf[] = "nameserver 10.15.3.3\n";

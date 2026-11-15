@@ -14,6 +14,7 @@ static bool have_credentials = true;
 static size_t copies;
 static size_t input_reads, mode_changes;
 uint64_t timer_ticks(void) { return 0; }
+bool usb_host_keyboard_repeat_poll(struct terminal_key_event *event) { (void)event; return false; }
 bool usb_host_available(void) { return false; }
 bool usb_host_keyboard_poll(struct terminal_key_event *event) { (void)event; return false; }
 bool ps2_keyboard_available(void) { return true; }

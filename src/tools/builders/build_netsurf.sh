@@ -91,8 +91,11 @@ for item in xcb-util-0.4.1 xcb-util-image-0.4.1 xcb-util-wm-0.4.2 xcb-util-keysy
     build_component "LIB $item install" make SUBDIRS="$dirs" install
  done
 mkdir -p "$b/expat"
+# Expat's CMake probe cannot read the byte-order marker from LTO objects.
+# The native target is x86-64 little endian.
 build_component "LIB Expat configure" cmake -S "$s/deps/expat" -B "$b/expat" \
     -DCMAKE_SYSTEM_NAME=Generic -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+    -DCMAKE_C_BYTE_ORDER=LITTLE_ENDIAN \
     -DCMAKE_C_COMPILER="$cc" -DCMAKE_C_FLAGS="$f" -DCMAKE_INSTALL_PREFIX="$p" \
     -DEXPAT_SHARED_LIBS=OFF -DEXPAT_BUILD_TOOLS=OFF -DEXPAT_BUILD_EXAMPLES=OFF \
     -DEXPAT_BUILD_TESTS=OFF -DEXPAT_BUILD_DOCS=OFF -DEXPAT_WITH_GETRANDOM=OFF \

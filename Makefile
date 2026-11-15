@@ -26,7 +26,7 @@ run: iso $(ROOT_IMAGE)
 		-device e1000,netdev=net0,id=e1000,mac=52:54:00:15:03:01 \
 		-serial stdio -display none
 
-run-live: live-iso
+run-live:
 	$(QEMU) -machine q35 -cpu $(QEMU_CPU) -m 1024M -smp 2 -bios $(OVMF_CODE) \
 		-cdrom $(BUILD_DIR)/opensillicon-live.iso \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \

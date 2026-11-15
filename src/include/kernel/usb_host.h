@@ -22,6 +22,8 @@ size_t usb_host_device_snapshot(struct usb_host_device_info *entries,
 size_t usb_host_controller_count(void);
 void usb_host_input_diagnostics(void);
 bool usb_host_keyboard_poll(struct terminal_key_event *event);
+/* Text-console typematic; raw input consumers implement repeat themselves. */
+bool usb_host_keyboard_repeat_poll(struct terminal_key_event *event);
 bool usb_host_mouse_poll(struct os_mouse_event *event);
 
 #endif

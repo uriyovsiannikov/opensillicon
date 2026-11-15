@@ -3,7 +3,7 @@
 The system package manager supports four commands.
 
 ```sh
-doas pkg repo http://192.168.1.112:8080
+doas pkg repo https://192.168.1.112:8080
 doas pkg update
 doas pkg add hello
 hello
@@ -35,11 +35,35 @@ retain their original paths for removal.
 
 ```sh
 make src/build/pkg/pkg-server src/tools/pkg/repo/_pkges/hello-1.0.0.spkg
-src/build/pkg/pkg-server --repo src/tools/pkg/repo --bind 0.0.0.0 --port 8080
+src/build/pkg/pkg-server --repo src/tools/pkg/repo --bind 0.0.0.0 --port 8080 \
+  --cert /absolute/path/fullchain.pem --key /absolute/path/privkey.pem
 ```
 
-The default configuration points at QEMU's `http://10.15.3.2:8080`.
-On physical hardware, configure the reachable LAN address of the host.
+The default configuration points at QEMU's `https://10.15.3.2:8080`.
+On physical hardware, configure the reachable LAN address or DNS name of the
+host. The server certificate must cover the chosen name or IP in its SANs.
+Without an explicit port, HTTPS uses 443 and HTTP uses 80.
+
+TLS uses the shared Mbed TLS library. The client verifies the certificate
+chain, server name/IP and expiry against `/etc/ssl/cert.pem`, using the native
+realtime clock and `/dev/urandom`. Failures abort the download. HTTPS is never
+retried over plaintext, and redirects are not followed.
+
+For a private CA, install its PEM certificate at `/etc/ssl/pkg-ca.pem` as root,
+or include it when building the Live/installed root image:
+
+```sh
+make PKG_CA_CERT=/absolute/path/repository-ca.pem live-iso
+```
+
+This supplements public roots; no insecure verification bypass is provided.
+The server's `--cert` file contains its leaf certificate and intermediate
+chain, and `--key` is its unencrypted PEM private key, kept private on the host.
+
+Explicit `http://` URLs remain available for local development and old
+configurations. The host server uses HTTP only when neither `--cert` nor
+`--key` is supplied; supplying just one is an error. New system images default
+to HTTPS. The four package commands are unchanged.
 
 The server exposes `GET /index` and `GET /packages/<name>-<version>.spkg`.
 Archives belong in `src/tools/pkg/repo/_pkges/`. Sources and build recipes
@@ -74,9 +98,26 @@ marking the record installed. An interrupted installation retains its record
 and written files. The record is removed after successful file removal.
 The whole operation is not power-loss atomic.
 
-The transport is HTTP. SHA-256 checks detect damaged or inconsistent
-downloads. Repository signing and TLS are not implemented. Limits are 16 MiB
-and 128 files per archive, 256 packages and 256 KiB per index.
+HTTPS authenticates the repository and encrypts downloads. SHA-256 checks
+also detect damaged or inconsistent payloads. Repository signing is not
+implemented. Limits are 16 MiB and 128 files per archive, 256 packages and
+256 KiB per index. Connections and TLS I/O share a 30-second deadline;
+only Content-Length responses without transfer/content encoding are accepted.
+
+## HTTPS verification
+
+```sh
+python3 src/tests/pkg_paths.py
+python3 src/tests/pkg_https.py
+python3 src/tests/pkg_https.py --qemu
+```
+
+The host test covers update/add/remove, DNS/IP certificate checks, expiry,
+untrusted issuers, truncation and downgrade rejection. `--qemu` builds its own
+isolated Live image with a fixture CA and verifies native update/add/run/remove
+and certificate rejection. Release images and system trust stores are not
+modified. The host test client honors `SSL_CERT_FILE`; the native privileged
+client ignores environment overrides and uses the fixed system trust paths.
 
 ## Checks
 

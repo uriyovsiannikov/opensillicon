@@ -2,6 +2,8 @@
 #include "format.h"
 #include "io.h"
 #include "sha256.h"
+#include "tls.h"
+#include <time.h>
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
@@ -21,6 +23,21 @@ static void stop_server(int signal_number)
 	(void)signal_number;
 	stopping = 1;
 }
+static struct pkg_tls *client_tls;
+
+static int server_write_all(int fd, const void *buffer, size_t length)
+{
+	if (client_tls == NULL) return pkg_write_all(fd, buffer, length);
+	const unsigned char *p = buffer;
+	while (length) {
+		ssize_t n = pkg_tls_write(client_tls, p, length);
+		if (n <= 0) return -1;
+		p += n;
+		length -= (size_t)n;
+	}
+	return 0;
+}
+
 static int reply(int client, int code, const char *type, const void *body, size_t size)
 {
 	char header[256];
@@ -34,9 +51,9 @@ static int reply(int client, int code, const char *type, const void *body, size_
 			 "%zu\r\nConnection: close\r\n\r\n",
 			 code, reason, type, size);
 	if (n < 0 || (size_t)n >= sizeof(header) ||
-	    pkg_write_all(client, header, (size_t)n) < 0)
+	    server_write_all(client, header, (size_t)n) < 0)
 		return -1;
-	return pkg_write_all(client, body, size);
+	return server_write_all(client, body, size);
 }
 static uint8_t *load_package(const char *filename, size_t *size,
 			     struct pkg_archive *package)
@@ -145,7 +162,8 @@ static void handle_client(int client)
 	char request[4097];
 	size_t used = 0;
 	while (used < sizeof(request) - 1) {
-		ssize_t n = read(client, request + used, sizeof(request) - 1 - used);
+		ssize_t n = client_tls ? pkg_tls_read(client_tls, request + used, sizeof(request) - 1 - used) :
+		    read(client, request + used, sizeof(request) - 1 - used);
 		if (n < 0 && errno == EINTR && !stopping)
 			continue;
 		if (n <= 0)
@@ -201,10 +219,11 @@ int main(int argc, char **argv)
 {
 	const char *repo = "src/tools/pkg/repo", *bind_address = "127.0.0.1";
 	unsigned long port = 8080;
+	const char *cert = NULL, *key = NULL;
 	for (int i = 1; i < argc; i++) {
 		if (i + 1 >= argc) {
 			fprintf(stderr, "usage: pkg-server [--repo directory] [--bind "
-					"IPv4] [--port number]\n");
+					"IPv4] [--port number] [--cert chain.pem --key key.pem]\n");
 			return 2;
 		}
 		const char *value = argv[++i];
@@ -212,6 +231,10 @@ int main(int argc, char **argv)
 			repo = value;
 		else if (!strcmp(argv[i - 1], "--bind"))
 			bind_address = value;
+		else if (!strcmp(argv[i - 1], "--cert"))
+			cert = value;
+		else if (!strcmp(argv[i - 1], "--key"))
+			key = value;
 		else if (!strcmp(argv[i - 1], "--port")) {
 			char *end;
 			errno = 0;
@@ -220,6 +243,14 @@ int main(int argc, char **argv)
 				return 2;
 		} else
 			return 2;
+	}
+	if ((cert == NULL) != (key == NULL)) {
+		fprintf(stderr, "pkg-server: --cert and --key must be supplied together\n");
+		return 2;
+	}
+	if (cert && (access(cert, R_OK) < 0 || access(key, R_OK) < 0)) {
+		perror("pkg-server: TLS credentials");
+		return 1;
 	}
 	int n =
 	    snprintf(package_directory, sizeof(package_directory), "%s/_pkges", repo);
@@ -260,7 +291,7 @@ int main(int argc, char **argv)
 	}
 	socklen_t al = sizeof(address);
 	getsockname(listener, (struct sockaddr *)&address, &al);
-	printf("pkg-server: http://%s:%u repo=%s\n", bind_address,
+	printf("pkg-server: %s://%s:%u repo=%s\n", cert ? "https" : "http", bind_address,
 	       (unsigned)ntohs(address.sin_port), repo);
 	fflush(stdout);
 	while (!stopping) {
@@ -271,7 +302,23 @@ int main(int argc, char **argv)
 			perror("pkg-server: accept");
 			break;
 		}
+		if (cert) {
+			struct timespec now;
+			if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
+				close(client);
+				continue;
+			}
+			long long deadline = (long long)now.tv_sec * 1000 +
+			    now.tv_nsec / 1000000 + 30000;
+			client_tls = pkg_tls_accept(client, cert, key, deadline);
+			if (client_tls == NULL) {
+				close(client);
+				continue;
+			}
+		}
 		handle_client(client);
+		pkg_tls_free(client_tls);
+		client_tls = NULL;
 		close(client);
 	}
 	close(listener);

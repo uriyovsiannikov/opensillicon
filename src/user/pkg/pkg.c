@@ -11,15 +11,15 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#ifdef PKG_HOST
 #include <signal.h>
+#ifdef PKG_HOST
 #include <sys/file.h>
 #else
 #include <sys/socket.h>
 #endif
 
 static const char *root = "";
-static const char *repository = "http://10.15.3.2:8080";
+static const char *repository = "https://10.15.3.2:8080";
 static char configured_repository[256];
 static struct pkg_index_entry index_entries[PKG_MAX_PACKAGES];
 static size_t index_count;
@@ -518,10 +518,16 @@ load_repository_file(const char *path)
 	}
 	while (size && (bytes[size - 1] == '\n' || bytes[size - 1] == '\r'))
 		size--;
-	if (size < 8 || memcmp(bytes, "http://", 7) ||
+	if (size < 8 ||
 	    memchr(bytes, 0, size) || memchr(bytes, '\r', size) ||
 	    memchr(bytes, '\n', size)) {
-		fprintf(stderr, "pkg: %s must contain one HTTP repository URL\n", path);
+		fprintf(stderr, "pkg: %s must contain one repository URL\n", path);
+		free(bytes);
+		return -1;
+	}
+	bytes[size] = 0;
+	if (!pkg_http_repository_valid((const char *)bytes)) {
+		fprintf(stderr, "pkg: %s contains an invalid repository URL\n", path);
 		free(bytes);
 		return -1;
 	}
@@ -551,9 +557,9 @@ save_repository(const char *url)
 {
 	char line[256], path[256];
 	int n = snprintf(line, sizeof(line), "%s\n", url);
-	if (n < 9 || (size_t)n >= sizeof(line) || strncmp(url, "http://", 7) ||
+	if (n < 9 || (size_t)n >= sizeof(line) || !pkg_http_repository_valid(url) ||
 	    strcspn(url, " \t\r\n") != strlen(url))
-		return fail("repository must use http://host:port");
+		return fail("repository must use https://host[:port]");
 	if (ensure_directory("etc") < 0 || rooted(path, "etc/pkg.conf") < 0)
 		return 1;
 	if (save_file("etc/pkg.conf", line, (size_t)n) < 0) {
@@ -572,8 +578,8 @@ static int usage(void)
 
 int main(int argc, char **argv)
 {
-#ifdef PKG_HOST
 	signal(SIGPIPE, SIG_IGN);
+#ifdef PKG_HOST
 	/* Host integration tests use an isolated filesystem tree. */
 	if (argc >= 3 && strcmp(argv[1], "-r") == 0) {
 		if (argv[2][0] != '/')

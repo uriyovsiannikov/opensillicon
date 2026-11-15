@@ -1,4 +1,4 @@
-#include "include/os.h"
+#include "../include/os.h"
 
 int
 u_find_command(const char *name, char *path, size_t capacity)

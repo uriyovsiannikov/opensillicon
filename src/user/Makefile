@@ -5,7 +5,7 @@ $(BUILD_DIR)/user_start.o: src/user/start.S src/user/include/os.h | $(BUILD_DIR)
 $(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/abi/syscall.h src/include/abi/framebuffer.h src/include/abi/input.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user_path.o: src/user/path.c src/user/include/os.h | $(BUILD_DIR)
+$(BUILD_DIR)/user_path.o: src/user/path/path.c src/user/include/os.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/user_init.o: src/user/init/init.c src/user/init/logo_pixels.h \
@@ -267,6 +267,9 @@ $(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
 $(BUILD_DIR)/netsurf/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
 	sh src/tools/builders/build_netsurf.sh
 
+# Optional CA for a private HTTPS package repository.
+PKG_CA_CERT ?=
+
 SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 
 $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
@@ -276,7 +279,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		$(BUILD_DIR)/htop/htop \
 		$(BUILD_DIR)/startx.elf \
 		$(BUILD_DIR)/populate_root \
-		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
+		$(SERVICE_CONFIGS) $(PKG_CA_CERT) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
 		other/img1.jpg \
 		src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt \
 		$(wildcard src/user/thirdparty/xorg/fonts/truetype/liberation/*) \
@@ -296,6 +299,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
 		--netsurf $(BUILD_DIR)/netsurf/netsurf \
+		$(if $(PKG_CA_CERT),--pkg-ca '$(PKG_CA_CERT)') \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		$(foreach module,$(MODULE_OBJECTS),--module $(module)) \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf --scinstall $(BUILD_DIR)/scinstall/scinstall.elf \

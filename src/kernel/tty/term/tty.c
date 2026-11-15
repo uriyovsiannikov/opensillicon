@@ -72,7 +72,7 @@ static bool
 console_keyboard_poll(struct terminal_key_event *event)
 {
 	return (ps2_keyboard_available() && ps2_keyboard_poll(event)) ||
-	    usb_host_keyboard_poll(event);
+	    usb_host_keyboard_poll(event) || usb_host_keyboard_repeat_poll(event);
 }
 
 bool

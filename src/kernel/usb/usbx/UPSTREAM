@@ -1,8 +1,0 @@
-Repository: https://github.com/eclipse-threadx/usbx
-Tag: v6.5.2.202603_rel
-Commit: d947676a22b9e0aa569bab818e592b1b75a685d3
-License: MIT (see LICENSE.txt)
-Imported: core, host classes, host controllers, generic reference port.
-Local platform code lives in ../opensillicon.
-Local HID change: reject short interrupt reports before decompression and
-validate the report ID even on single-report devices.

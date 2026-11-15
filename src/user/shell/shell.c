@@ -355,7 +355,12 @@ redraw_line(const char *line, size_t length, size_t cursor)
 	u_puts("% ");
 	if (cursor_visible && !xterm_cursor) {
 		u_putn(line, cursor);
-		u_puts("\033[0m_");
+		u_puts("\033[7m");
+		if (cursor < length)
+			u_putn(line + cursor, 1);
+		else
+			u_puts(" ");
+		u_puts("\033[0m");
 		if (cursor < length)
 			u_putn(line + cursor + 1, length - cursor - 1);
 	} else {
@@ -612,7 +617,7 @@ read_command_line(char *line)
 		cursor_visible = 1;
 		if (character == '\n' || character == '\r') {
 			line[length] = '\0';
-			/* A blinking cursor is drawn as a literal underscore. Remove it
+			/* The cursor is a highlighted character. Remove the highlight
 			 * from the screen before leaving the editor for command output. */
 			cursor_visible = 0;
 			redraw_line(line, length, cursor);

@@ -55,6 +55,19 @@ static struct usb_keyboard {
 } keyboards[UX_MAX_DEVICES];
 static struct terminal_key_event key_queue[USB_KEY_QUEUE_SIZE];
 static unsigned int key_head, key_count;
+static bool repeat_active;
+static unsigned int repeat_usage;
+static uint64_t repeat_deadline;
+static struct terminal_key_event repeat_event;
+
+/* USB sends changes in held keys; unlike PS/2 it has no hardware typematic.
+ * Only the text console consumes this repeat stream. X owns its own repeat. */
+static bool repeatable_usage(unsigned int usage)
+{
+	return (usage >= 0x04 && usage <= 0x38) ||
+	    (usage >= 0x49 && usage <= 0x52) ||
+	    (usage >= 0x54 && usage <= 0x63);
+}
 
 static void
 keyboard_event(struct usb_keyboard *keyboard, unsigned int usage, bool pressed)
@@ -68,6 +81,16 @@ keyboard_event(struct usb_keyboard *keyboard, unsigned int usage, bool pressed)
 	for (unsigned int i = 0; i < UX_MAX_DEVICES; i++)
 		if (&keyboards[i] != keyboard && (keyboards[i].down[byte] & mask) != 0)
 			return;
+
+	if (pressed && repeatable_usage(usage)) {
+		repeat_active = true;
+		repeat_usage = usage;
+		repeat_event = (struct terminal_key_event){
+		    code & 0x7fU, (code & 0x80U) != 0, true};
+		repeat_deadline = timer_monotonic_ns() + UINT64_C(500000000);
+	} else if (!pressed && repeat_active && repeat_usage == usage) {
+		repeat_active = false;
+	}
 
 	if (key_count == USB_KEY_QUEUE_SIZE) {
 		key_head = (key_head + 1) % USB_KEY_QUEUE_SIZE;
@@ -339,6 +362,18 @@ usb_host_keyboard_poll(struct terminal_key_event *event)
 	*event = key_queue[key_head];
 	key_head = (key_head + 1) % USB_KEY_QUEUE_SIZE;
 	key_count--;
+	return true;
+}
+
+bool
+usb_host_keyboard_repeat_poll(struct terminal_key_event *event)
+{
+	uint64_t now = timer_monotonic_ns();
+	if (!repeat_active || now < repeat_deadline)
+		return false;
+	*event = repeat_event;
+	/* Do not replay a backlog after a long-running command or stalled reader. */
+	repeat_deadline = now + UINT64_C(33000000);
 	return true;
 }
 

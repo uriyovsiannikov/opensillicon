@@ -205,18 +205,13 @@ $(BUILD_DIR)/silliconfs.o: src/kernel/fs/silliconfs/silliconfs.c \
 		src/include/kernel/heap.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/syscall.o: src/kernel/core/syscall/syscall.c src/include/kernel/syscall.h \
-		src/include/abi/syscall.h src/include/abi/select.h \
-		src/include/kernel/fd.h src/include/kernel/vmm.h src/include/kernel/log.h \
-		src/include/kernel/process.h src/include/kernel/vfs.h src/include/kernel/udp_socket.h \
-		src/include/kernel/tcp_socket.h \
-		src/include/kernel/module.h src/include/kernel/heap.h \
-		src/include/kernel/icmp_echo.h src/include/kernel/unix_socket.h \
-		src/include/kernel/network_service.h \
-		src/include/kernel/cyclone_net.h \
-		src/include/kernel/framebuffer_device.h src/include/abi/framebuffer.h \
-		src/include/abi/input.h src/include/arch/x86_64/ps2_keyboard.h \
-		src/include/arch/x86_64/user.h src/include/arch/x86_64/interrupts.h | $(BUILD_DIR)
+SYSCALL_SOURCES := s_dispatch s_device s_file s_io s_memory s_net s_proc \
+	s_system s_time s_unix
+SYSCALL_OBJECTS := $(addprefix $(BUILD_DIR)/syscall/,$(addsuffix .o,$(SYSCALL_SOURCES)))
+
+$(BUILD_DIR)/syscall/%.o: src/kernel/core/syscall/%.c \
+		src/kernel/core/syscall/syscall_internal.h | $(BUILD_DIR)
+	mkdir -p $(@D)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/elf.o: src/kernel/proc/elf.c src/include/kernel/elf.h src/include/kernel/vmm.h \
@@ -422,7 +417,7 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 	$(BUILD_DIR)/terminal.o $(BUILD_DIR)/keyboard.o \
 	$(BUILD_DIR)/framebuffer.o $(BUILD_DIR)/framebuffer_device.o $(BUILD_DIR)/tty.o \
 	$(BUILD_DIR)/ps2_keyboard.o \
-	$(BUILD_DIR)/syscall.o $(BUILD_DIR)/pipe.o $(BUILD_DIR)/pipe_buffer.o \
+	$(SYSCALL_OBJECTS) $(BUILD_DIR)/pipe.o $(BUILD_DIR)/pipe_buffer.o \
 	$(BUILD_DIR)/unix_socket.o \
 	$(BUILD_DIR)/pty.o \
 	$(BUILD_DIR)/user_entry.o \

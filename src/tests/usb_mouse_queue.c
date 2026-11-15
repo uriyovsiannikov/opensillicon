@@ -3,9 +3,47 @@
 
 #include "../kernel/drivers/input/usb/opensillicon/host.c"
 
+static uint64_t test_clock;
+
+uint64_t
+timer_monotonic_ns(void)
+{
+	return test_clock;
+}
+
+static void
+check_keyboard_repeat(void)
+{
+	struct terminal_key_event event;
+
+	keyboard_event(&keyboards[0], 0x2a, true); /* Backspace */
+	assert(key_count == 1);
+	test_clock = 499000000;
+	assert(!usb_host_keyboard_repeat_poll(&event));
+	test_clock = 500000000;
+	assert(usb_host_keyboard_repeat_poll(&event));
+	assert(event.pressed && !event.extended && event.scancode == 0x0e);
+	assert(!usb_host_keyboard_repeat_poll(&event));
+	test_clock += 33000000;
+	assert(usb_host_keyboard_repeat_poll(&event));
+	assert(key_count == 1); /* Raw USB events do not contain repeats. */
+
+	keyboard_event(&keyboards[0], 0x2a, false);
+	test_clock += 1000000000;
+	assert(!usb_host_keyboard_repeat_poll(&event));
+	assert(key_count == 2 && !key_queue[1].pressed);
+
+	keyboard_event(&keyboards[0], 0x39, true); /* Caps Lock */
+	test_clock += 1000000000;
+	assert(!usb_host_keyboard_repeat_poll(&event));
+	puts("USB keyboard repeat delay, rate and release: PASS");
+}
+
 int
 main(void)
 {
+	check_keyboard_repeat();
+
 	/* Motion produced faster than X can consume it must not build a backlog. */
 	for (unsigned int i = 0; i < 1000; i++)
 		mouse_event(1, -1);

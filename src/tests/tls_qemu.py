@@ -22,7 +22,7 @@ def run(*args):
         raise RuntimeError(result.stderr.decode(errors="replace"))
 
 
-def fixture_certificates():
+def fixture_certificates(subject_alt_name="IP:10.15.3.2"):
     (BUILD / "index").write_text("")
     (BUILD / "index.attr").write_text("unique_subject = no\n")
     (BUILD / "serial").write_text("01\n")
@@ -43,7 +43,7 @@ commonName=supplied
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=IP:10.15.3.2
+subjectAltName={subject_alt_name}
 [wrong_name]
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment

@@ -30,16 +30,6 @@ make root      # build the root filesystem
 make run-gui   # graphical display
 ```
 
-Build a self-contained UEFI live image with `make live-iso`. The resulting
-`src/build/opensillicon-live.iso` includes the system and applications.
-It boots without an installed disk and mounts a writable SilliconFS root
-in RAM. Changes are discarded on reboot. Use `make run-live` to boot it
-in QEMU without a disk. The menu also offers **OpenSillicon Installer**
-for installation onto a SATA disk; see [installation](src/user/storage/INSTALL.md).
-
-The boot screen shows recent kernel messages below the ASCII logo. After
-startup, the full boot log is available in `/tmp/btlog.log`.
-
 ## source map
 
 - `src/kernel/` - kernel, architecture code, drivers, filesystems, and networking.

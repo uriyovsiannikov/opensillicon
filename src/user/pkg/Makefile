@@ -2,35 +2,48 @@
 # archive parser and SHA-256 implementation; the server has no guest runtime.
 PKG_DIR := src/user/pkg
 PKG_COMMON := $(PKG_DIR)/format.c $(PKG_DIR)/sha256.c $(PKG_DIR)/io.c
-PKG_CLIENT := $(PKG_DIR)/pkg.c $(PKG_DIR)/http.c $(PKG_COMMON)
+PKG_CLIENT := $(PKG_DIR)/pkg.c $(PKG_DIR)/http.c $(PKG_DIR)/tls.c $(PKG_COMMON)
 PKG_HEADERS := $(wildcard $(PKG_DIR)/*.h)
 PKG_OBJECTS := $(patsubst $(PKG_DIR)/%.c,$(BUILD_DIR)/pkg/%.o,$(PKG_CLIENT))
+PKG_TLS_FLAGS := -Isrc/user/thirdparty/mbedtls/include \
+	-Isrc/user/thirdparty/mbedtls/opensillicon \
+	-DMBEDTLS_CONFIG_FILE='"opensillicon_mbedtls_config.h"'
+PKG_TLS_LIBS := $(addprefix $(BUILD_DIR)/mbedtls/,libmbedtls.a libmbedx509.a libmbedcrypto.a)
+PKG_HOST_TLS_LIBS := $(addprefix $(BUILD_DIR)/mbedtls-host/,libmbedtls.a libmbedx509.a libmbedcrypto.a)
+.PHONY: $(BUILD_DIR)/mbedtls/.pkg-ready $(BUILD_DIR)/mbedtls-host/.pkg-ready
+$(BUILD_DIR)/mbedtls/.pkg-ready:
+	sh src/tools/builders/build_mbedtls.sh
+$(BUILD_DIR)/mbedtls-host/.pkg-ready:
+	sh src/tools/builders/build_mbedtls.sh host
+
 HOST_CC ?= cc
 PKG_HOST_FLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror \
 	-D_POSIX_C_SOURCE=200809L -DPKG_HOST -I$(PKG_DIR)
 
 $(BUILD_DIR)/pkg/%.o: $(PKG_DIR)/%.c $(PKG_HEADERS) src/mk/common.mk
 	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -MMD -MP -I$(PKG_DIR) -c $< -o $@
+	$(CC) $(LIBOS_CFLAGS) $(PKG_TLS_FLAGS) -MMD -MP -I$(PKG_DIR) -c $< -o $@
 
 $(BUILD_DIR)/coreutils/pkg.elf: $(PKG_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o \
-		$(LIBOS_ARCHIVE) src/user/c_linker.ld
+		$(LIBOS_ARCHIVE) $(BUILD_DIR)/mbedtls/.pkg-ready src/user/c_linker.ld
 	mkdir -p $(@D)
 	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
 		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(PKG_OBJECTS) $(LIBOS_ARCHIVE) -o $@
+		$(PKG_OBJECTS) -Wl,--start-group $(PKG_TLS_LIBS) $(LIBOS_ARCHIVE) \
+		-Wl,--end-group -lgcc -o $@
 
-$(BUILD_DIR)/pkg/pkg-host: $(PKG_CLIENT) $(PKG_HEADERS)
+$(BUILD_DIR)/pkg/pkg-host: $(PKG_CLIENT) $(PKG_HEADERS) $(BUILD_DIR)/mbedtls-host/.pkg-ready
 	mkdir -p $(@D)
-	$(HOST_CC) $(PKG_HOST_FLAGS) $(PKG_CLIENT) -o $@
+	$(HOST_CC) $(PKG_HOST_FLAGS) $(PKG_TLS_FLAGS) $(PKG_CLIENT) $(PKG_HOST_TLS_LIBS) -o $@
 
 $(BUILD_DIR)/pkg/pkg-build: src/tools/pkg/build.c $(PKG_COMMON) $(PKG_HEADERS)
 	mkdir -p $(@D)
 	$(HOST_CC) $(PKG_HOST_FLAGS) $< $(PKG_COMMON) -o $@
 
-$(BUILD_DIR)/pkg/pkg-server: src/tools/pkg/server/server.c $(PKG_COMMON) $(PKG_HEADERS)
+$(BUILD_DIR)/pkg/pkg-server: src/tools/pkg/server/server.c $(PKG_COMMON) $(PKG_DIR)/tls.c $(PKG_HEADERS) $(BUILD_DIR)/mbedtls-host/.pkg-ready
 	mkdir -p $(@D)
-	$(HOST_CC) $(PKG_HOST_FLAGS) $< $(PKG_COMMON) -o $@
+	$(HOST_CC) $(PKG_HOST_FLAGS) $(PKG_TLS_FLAGS) $< $(PKG_COMMON) $(PKG_DIR)/tls.c \
+		$(PKG_HOST_TLS_LIBS) -o $@
 
 $(BUILD_DIR)/pkg/hello-system-stage/usr/bin/hello: src/tools/pkg/repo/_src/hello/hello.c \
 		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
