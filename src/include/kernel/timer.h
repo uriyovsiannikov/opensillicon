@@ -8,6 +8,8 @@ typedef void (*kernel_timer_callback)(void *argument);
 
 bool timer_init(uint64_t tsc_frequency_hz);
 uint64_t timer_ticks(void);
+void timer_set_realtime_epoch(uint64_t seconds);
+bool timer_realtime_epoch(uint64_t *seconds);
 /* Per-CPU scheduler tick count; AP counts use the AP idle LAPIC timer. */
 uint64_t timer_jiffies(void);
 uint64_t timer_monotonic_ns(void);

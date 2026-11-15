@@ -323,6 +323,11 @@ static volatile struct limine_executable_cmdline_request cmdline_request = {
 };
 
 __attribute__((used, section(".limine_requests")))
+static volatile struct limine_date_at_boot_request date_request = {
+	.id = LIMINE_DATE_AT_BOOT_REQUEST_ID
+};
+
+__attribute__((used, section(".limine_requests")))
 static volatile struct limine_firmware_type_request firmware_request = {
 	.id = LIMINE_FIRMWARE_TYPE_REQUEST_ID
 };
@@ -614,6 +619,8 @@ _start(void)
 		kernel_halt();
 	}
 	klog_status("scheduler timer", true, NULL);
+	if (date_request.response != NULL && date_request.response->timestamp >= 0)
+		timer_set_realtime_epoch((uint64_t)date_request.response->timestamp);
 	klog("OpenSillicon: Bringing up SMP\n");
 	report_smp_bootstrap();
 	if (!kheap_init()) {

@@ -25,6 +25,8 @@ static uint64_t ticks;
 static uint64_t tsc_frequency_hz;
 static uint32_t ap_initial_count;
 static bool initialized;
+static uint64_t realtime_epoch;
+static bool realtime_available;
 static struct spinlock callback_lock = SPINLOCK_INITIALIZER;
 static struct timer_callback_slot callbacks[TIMER_CALLBACK_SLOTS];
 static uint64_t next_callback_handle = 1;
@@ -148,6 +150,22 @@ timer_ticks(void)
 {
 	return __atomic_load_n(&initialized, __ATOMIC_ACQUIRE) ?
 	    __atomic_load_n(&ticks, __ATOMIC_RELAXED) : 0;
+}
+
+void
+timer_set_realtime_epoch(uint64_t seconds)
+{
+	__atomic_store_n(&realtime_epoch, seconds, __ATOMIC_RELAXED);
+	__atomic_store_n(&realtime_available, true, __ATOMIC_RELEASE);
+}
+
+bool
+timer_realtime_epoch(uint64_t *seconds)
+{
+	if (!__atomic_load_n(&realtime_available, __ATOMIC_ACQUIRE))
+		return false;
+	*seconds = __atomic_load_n(&realtime_epoch, __ATOMIC_RELAXED);
+	return true;
 }
 
 uint64_t

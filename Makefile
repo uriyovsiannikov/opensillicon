@@ -3,6 +3,7 @@ OPEN_SILLICON_ROOT := $(CURDIR)
 include src/mk/common.mk
 ROOT_IMAGE ?= $(BUILD_DIR)/root.img
 LIVE_ROOT_IMAGE := $(BUILD_DIR)/live-root.img
+QEMU_CPU ?= max
 include src/kernel/usb/Makefile
 include src/kernel/Makefile
 include src/kernel/module/Makefile
@@ -18,7 +19,7 @@ endif
 root: $(ROOT_IMAGE)
 
 run: iso $(ROOT_IMAGE)
-	$(QEMU) -machine q35 -m 1024M -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
+	$(QEMU) -machine q35 -cpu $(QEMU_CPU) -m 1024M -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
 		-drive file=$(ROOT_IMAGE),if=none,id=rootdisk,format=raw \
 		-device ide-hd,drive=rootdisk,bus=ide.0 \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \
@@ -26,13 +27,13 @@ run: iso $(ROOT_IMAGE)
 		-serial stdio -display none
 
 run-live: live-iso
-	$(QEMU) -machine q35 -m 1024M -smp 2 -bios $(OVMF_CODE) \
+	$(QEMU) -machine q35 -cpu $(QEMU_CPU) -m 1024M -smp 2 -bios $(OVMF_CODE) \
 		-cdrom $(BUILD_DIR)/opensillicon-live.iso \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \
 		-device e1000,netdev=net0,id=e1000,mac=52:54:00:15:03:01 -serial stdio
 
 run-gui:
-	$(QEMU) -machine q35 -m 1024M -smp 8 -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
+	$(QEMU) -machine q35 -cpu $(QEMU_CPU) -m 1024M -smp 8 -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \
 		-drive file=$(ROOT_IMAGE),if=none,id=rootdisk,format=raw \
 		-device ide-hd,drive=rootdisk,bus=ide.0 -nic none \
 		-netdev user,id=net0,net=10.15.3.0/24,host=10.15.3.2,dhcpstart=10.15.3.15 \

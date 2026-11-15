@@ -49,6 +49,7 @@
 #define TIOCCANON_REQUEST 0x4f530002U
 #define TIOCSFB_REQUEST 0x4f530003U
 #define ERRNO_EFAULT 14U
+#define ERRNO_EIO 5U
 #define ERRNO_ESRCH 3U
 #define ERRNO_EINVAL 22U
 #define ERRNO_E2BIG 7U
@@ -981,7 +982,7 @@ syscall_process_local(struct interrupt_frame **result_frame)
 			struct address_space *space = vmm_active_address_space();
 			uint64_t ticks;
 
-			if (frame->rdi != CLOCK_MONOTONIC_ID) {
+			if (frame->rdi != CLOCK_MONOTONIC_ID && frame->rdi != 0) {
 				syscall_error(frame, ERRNO_EINVAL);
 				return true;
 			}
@@ -992,6 +993,15 @@ syscall_process_local(struct interrupt_frame **result_frame)
 			}
 			ticks = timer_ticks();
 			value.tv_sec = (int64_t)(ticks / MONOTONIC_TICK_HZ);
+			if (frame->rdi == 0) {
+				uint64_t epoch;
+				if (!timer_realtime_epoch(&epoch) ||
+				    epoch > INT64_MAX - (uint64_t)value.tv_sec) {
+					syscall_error(frame, ERRNO_EIO);
+					return true;
+				}
+				value.tv_sec += (int64_t)epoch;
+			}
 			value.tv_nsec = (int64_t)(ticks % MONOTONIC_TICK_HZ) *
 			    (1000000000U / MONOTONIC_TICK_HZ);
 			if (!vmm_copy_to_user(space, frame->rsi, &value,
