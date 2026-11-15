@@ -148,25 +148,25 @@ $(BUILD_DIR)/unix_socket.o: src/kernel/ipc/unix_socket.c \
 		src/include/kernel/spinlock.h src/include/abi/unix_socket.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/terminal.o: src/kernel/tty/terminal.c src/include/kernel/terminal.h \
+$(BUILD_DIR)/terminal.o: src/kernel/tty/term/terminal.c src/include/kernel/terminal.h \
 		src/include/kernel/fd.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/keyboard.o: src/kernel/tty/keyboard.c \
+$(BUILD_DIR)/keyboard.o: src/kernel/tty/ctrl/keyboard.c \
 		src/include/arch/x86_64/ps2_keyboard.h src/include/kernel/terminal.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/framebuffer.o: src/kernel/tty/framebuffer.c \
+$(BUILD_DIR)/framebuffer.o: src/kernel/tty/fb/framebuffer.c \
 		src/include/kernel/framebuffer.h src/include/kernel/terminal.h \
-		src/kernel/tty/font.h src/kernel/tty/font/gallant.go | $(BUILD_DIR)
+		src/kernel/tty/font/font.h src/kernel/tty/font/gallant.go | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/framebuffer_device.o: src/kernel/tty/framebuffer_device.c \
+$(BUILD_DIR)/framebuffer_device.o: src/kernel/tty/fb/framebuffer_device.c \
 		src/include/kernel/framebuffer_device.h src/include/abi/framebuffer.h \
 		src/include/kernel/vmm.h src/limine/limine.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/tty.o: src/kernel/tty/tty.c src/include/kernel/tty.h \
+$(BUILD_DIR)/tty.o: src/kernel/tty/term/tty.c src/include/kernel/tty.h \
 		src/include/kernel/terminal.h src/include/kernel/framebuffer.h \
 		src/include/arch/x86_64/ps2_keyboard.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
@@ -492,7 +492,7 @@ $(BUILD_DIR)/opensillicon.iso $(BUILD_DIR)/opensillicon-live.iso: \
 	chmod 644 "$$image"; \
 	mv -f "$$image" '$@'
 
-$(BUILD_DIR)/pty.o: src/kernel/tty/pty.c src/include/kernel/pty.h src/include/kernel/pipe.h \
+$(BUILD_DIR)/pty.o: src/kernel/tty/term/pty.c src/include/kernel/pty.h src/include/kernel/pipe.h \
 		src/include/kernel/fd.h
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
