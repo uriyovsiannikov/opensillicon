@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "../kernel/usb/opensillicon/xhci.c"
+#include "../kernel/drivers/input/usb/opensillicon/xhci.c"
 
 static uint64_t fake_time;
 static unsigned int waits;

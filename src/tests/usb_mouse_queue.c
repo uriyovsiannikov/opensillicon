@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include "../kernel/usb/opensillicon/host.c"
+#include "../kernel/drivers/input/usb/opensillicon/host.c"
 
 int
 main(void)

@@ -1,7 +1,7 @@
 # USBX host core and initial class drivers. Hardware HCDs are deliberately
 # excluded until their OS/DMA/standalone contracts are implemented.
-USBX_ROOT := src/kernel/usb/usbx
-USBX_PORT := src/kernel/usb/opensillicon
+USBX_ROOT := src/kernel/drivers/input/usb/usbx
+USBX_PORT := src/kernel/drivers/input/usb/opensillicon
 USBX_CORE_SOURCES := $(wildcard $(USBX_ROOT)/common/core/src/ux_system*.c) \
     $(wildcard $(USBX_ROOT)/common/core/src/ux_utility*.c) \
     $(wildcard $(USBX_ROOT)/common/core/src/ux_host_stack*.c)

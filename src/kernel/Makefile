@@ -171,7 +171,7 @@ $(BUILD_DIR)/tty.o: src/kernel/tty/tty.c src/include/kernel/tty.h \
 		src/include/arch/x86_64/ps2_keyboard.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
-$(BUILD_DIR)/ps2_keyboard.o: src/kernel/drivers/input/ps2_keyboard.c \
+$(BUILD_DIR)/ps2_keyboard.o: src/kernel/drivers/input/ps2/ps2_keyboard.c \
 		src/include/arch/x86_64/ps2_keyboard.h src/include/kernel/terminal.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 

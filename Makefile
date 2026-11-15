@@ -4,7 +4,7 @@ include src/mk/common.mk
 ROOT_IMAGE ?= $(BUILD_DIR)/root.img
 LIVE_ROOT_IMAGE := $(BUILD_DIR)/live-root.img
 QEMU_CPU ?= max
-include src/kernel/usb/Makefile
+include src/kernel/drivers/input/usb/Makefile
 include src/kernel/Makefile
 include src/kernel/module/Makefile
 include src/user/Makefile
