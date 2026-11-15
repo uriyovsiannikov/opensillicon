@@ -86,34 +86,47 @@ $(BUILD_DIR)/populate_root: src/tools/populate_root.c src/kernel/fs/vfs/vfs.c \
 		src/tools/populate_root.c src/kernel/fs/vfs/vfs.c src/kernel/fs/silliconfs/silliconfs.c \
 		src/kernel/proc/fd.c -o $@
 
-LIBOS_SOURCES := iconv mount syscall unistd mman string stat allocator dirent stdio socket select uio fcntl pipe pty termios time strftime poll signal ioctl uname env math random stdlib passwd termcap regex path getopt getopt_long
-LIBOS_OBJECTS := $(addprefix $(LIBOS_BUILD_DIR)/,$(addsuffix .o,$(LIBOS_SOURCES)))
+LIBOS_SRC_DIR := src/user/libos/src
 
-$(LIBOS_BUILD_DIR)/setjmp.o: src/user/libos/src/setjmp.S | $(LIBOS_BUILD_DIR)
+# Sources live in subsystem subdirectories; the original order is preserved
+# because archive member order matters when linking against a static library.
+LIBOS_SOURCES := \
+	text/iconv fs/mount crt/syscall proc/unistd proc/mman text/string \
+	fs/stat stdlib/allocator fs/dirent io/stdio net/socket io/select io/uio \
+	io/fcntl io/pipe io/pty io/termios time/time time/strftime io/poll \
+	proc/signal io/ioctl proc/uname proc/env math/math stdlib/random \
+	stdlib/stdlib proc/passwd io/termcap text/regex fs/path stdlib/getopt \
+	stdlib/getopt_long
+LIBOS_OBJECTS := $(addprefix $(LIBOS_BUILD_DIR)/,$(addsuffix .o,$(LIBOS_SOURCES)))
+LIBOS_HEADERS := $(LIBOS_SRC_DIR)/internal.h src/include/abi/syscall.h \
+	$(wildcard src/user/libos/include/* src/user/libos/include/sys/*)
+
+# The CRT and ABI stubs keep their flat object names: link rules reference
+# $(LIBOS_BUILD_DIR)/crt0.o directly.
+$(LIBOS_BUILD_DIR)/setjmp.o: $(LIBOS_SRC_DIR)/crt/setjmp.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
 $(LIBOS_BUILD_DIR):
 	mkdir -p $@
 
-$(LIBOS_BUILD_DIR)/%.o: src/user/libos/src/%.c src/user/libos/src/internal.h \
-		src/include/abi/syscall.h \
-		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBOS_BUILD_DIR)
+$(LIBOS_BUILD_DIR)/%.o: $(LIBOS_SRC_DIR)/%.c $(LIBOS_HEADERS) | $(LIBOS_BUILD_DIR)
+	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
-$(LIBOS_BUILD_DIR)/math.o: src/user/libos/src/math.c \
-		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBOS_BUILD_DIR)
+$(LIBOS_BUILD_DIR)/math/math.o: $(LIBOS_SRC_DIR)/math/math.c $(LIBOS_HEADERS) | $(LIBOS_BUILD_DIR)
+	mkdir -p $(@D)
 	$(CC) $(filter-out -mno-sse -mno-sse2 -msoft-float,$(LIBOS_CFLAGS)) \
 		-msse2 -c $< -o $@
 
-$(LIBOS_BUILD_DIR)/stdio.o: src/user/libos/src/stdio.c \
-		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBOS_BUILD_DIR)
+$(LIBOS_BUILD_DIR)/io/stdio.o: $(LIBOS_SRC_DIR)/io/stdio.c $(LIBOS_HEADERS) | $(LIBOS_BUILD_DIR)
+	mkdir -p $(@D)
 	$(CC) $(filter-out -mno-sse -mno-sse2 -msoft-float,$(LIBOS_CFLAGS)) \
 		-msse2 -c $< -o $@
 
-$(LIBOS_BUILD_DIR)/crt0.o: src/user/libos/src/crt0.S | $(LIBOS_BUILD_DIR)
+$(LIBOS_BUILD_DIR)/crt0.o: $(LIBOS_SRC_DIR)/crt/crt0.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
-$(LIBOS_BUILD_DIR)/syscall_abi.o: src/user/libos/src/syscall_abi.S | $(LIBOS_BUILD_DIR)
+$(LIBOS_BUILD_DIR)/syscall_abi.o: $(LIBOS_SRC_DIR)/crt/syscall_abi.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
 LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
