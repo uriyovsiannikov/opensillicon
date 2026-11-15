@@ -59,6 +59,7 @@ int fstat(int, struct stat *);
 int stat(const char *, struct stat *);
 int chmod(const char *, mode_t);
 int fchmod(int, mode_t);
+int mkdir(const char *, mode_t);
 int futimens(int, const struct timespec [2]);
 mode_t umask(mode_t);
 #endif

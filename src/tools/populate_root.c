@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/silliconfs.h"
@@ -58,6 +59,16 @@ add_directory(const char *path, uint32_t mode)
 	if (error == 0)
 		vnode_put(node);
 	return error;
+}
+
+/* Like add_directory, but tolerates a directory that already exists. */
+static int
+add_directory_if_missing(const char *path, uint32_t mode)
+{
+	int error = add_directory(path, mode);
+
+	/* The kernel reports EEXIST as -17; host errno uses the same value. */
+	return error == -EEXIST ? 0 : error;
 }
 
 static int
@@ -194,6 +205,8 @@ main(int argc, char **argv)
 	const char *feh_path = NULL;
 	const char *nano_path = NULL;
 	const char *htop_path = NULL;
+	const char *doom_path = NULL;
+	const char *doom_wad_path = NULL;
 	const char *netsurf_path = NULL;
 	const char *pkg_ca_path = NULL;
 	const char *svctl_path = NULL;
@@ -207,7 +220,7 @@ main(int argc, char **argv)
 
 	if (argc < 4) {
 		fprintf(stderr,
-		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--netsurf elf] [--pkg-ca file.pem] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--doom elf] [--doom-wad wad] [--netsurf elf] [--pkg-ca file.pem] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
 		    argv[0]);
 		return 2;
 	}
@@ -239,6 +252,12 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--htop") == 0 && arg + 1 < argc) {
 			if (htop_path != NULL) return 2;
 			htop_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--doom") == 0 && arg + 1 < argc) {
+			if (doom_path != NULL) return 2;
+			doom_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--doom-wad") == 0 && arg + 1 < argc) {
+			if (doom_wad_path != NULL) return 2;
+			doom_wad_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--pkg-ca") == 0 && arg + 1 < argc) {
 			if (pkg_ca_path != NULL) return 2;
 			pkg_ca_path = argv[++arg];
@@ -476,6 +495,22 @@ main(int argc, char **argv)
 	if (htop_path != NULL &&
 	    (error = add_file("/bin/htop", htop_path, 0755)) != 0) {
 		fprintf(stderr, "SilliconFS htop population failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (doom_path != NULL &&
+	    (error = add_file("/bin/doom", doom_path, 0755)) != 0) {
+		fprintf(stderr, "SilliconFS Doom population failed: %d\n", error);
+		fclose(image);
+		return 1;
+	}
+	if (doom_wad_path != NULL &&
+	    ((error = add_directory_if_missing("/usr/share", 0755)) != 0 ||
+	    (error = add_directory_if_missing("/usr/share/doom", 0755)) != 0 ||
+	    (error = add_file("/usr/share/doom/doom.wad", doom_wad_path, 0644))
+	    != 0)) {
+		fprintf(stderr, "SilliconFS Doom WAD population failed: %d\n",
+		    error);
 		fclose(image);
 		return 1;
 	}

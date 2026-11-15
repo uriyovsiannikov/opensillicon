@@ -87,6 +87,7 @@ menu "defops"
 ""		f.nop
 "Xterm"		f.exec "exec xterm -display :0 -e /bin/sh --xterm &"
 "NetSurf"	f.exec "exec netsurf &"
+"Doom"		f.exec "exec doom -iwad /usr/share/doom/doom.wad &"
 ""		f.nop
 "Kill"		f.destroy
 "Delete"	f.delete

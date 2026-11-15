@@ -68,6 +68,15 @@ main(void)
 	fail_write = 0;
 	fail_read = 1;
 	assert(allocate_block(&fs, &block) == -SFS_EIO && writes == 0);
+	/* The block map ends after the last double-indirect entry; a hole in an
+	 * empty inode needs no I/O in either case. */
+	struct sfs_inode empty_inode = { 0 };
+	uint32_t physical = 1;
+	assert(map_block(&fs, 1, &empty_inode, SFS_DOUBLE_START, false,
+	    &physical) == 0 && physical == 0);
+	assert(map_block(&fs, 1, &empty_inode,
+	    (uint32_t)SILLICONFS_MAX_FILE_BLOCKS, false, &physical) ==
+	    -SFS_EOVERFLOW);
 	puts(
 	    "SilliconFS allocation: bitmap-block I/O bound, range limits and write-failure rollback: PASS");
 }

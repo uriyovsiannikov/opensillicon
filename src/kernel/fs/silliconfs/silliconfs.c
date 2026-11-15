@@ -18,8 +18,12 @@
 #define SFS_EBUSY 16
 #define SFS_EOVERFLOW 75
 #define SFS_EOPNOTSUPP 95
-#define SFS_DIRECT 12U
-#define SFS_INDIRECT_COUNT 1024U
+#define SFS_DIRECT SILLICONFS_DIRECT_BLOCKS
+#define SFS_INDIRECT_COUNT SILLICONFS_INDIRECT_BLOCKS
+/* Double-indirect blocks start after the direct and single-indirect ranges. */
+#define SFS_DOUBLE_START (SFS_DIRECT + SFS_INDIRECT_COUNT)
+/* Version 2 added the double-indirect block; version 1 images still mount. */
+#define SFS_VERSION 2U
 #define SFS_ROOT_INODE 1U
 #define SFS_MODE_TYPE 0170000U
 #define SFS_MODE_REGULAR 0100000U
@@ -61,6 +65,7 @@ struct sfs_inode {
 	uint64_t size;
 	uint32_t direct[SFS_DIRECT];
 	uint32_t indirect;
+	uint32_t double_indirect;
 };
 
 /* Used only while validating a freshly mounted filesystem. */
@@ -264,6 +269,7 @@ load_superblock(struct silliconfs *filesystem)
 	const uint8_t *bytes = block;
 	uint32_t block_count;
 	uint32_t inode_count;
+	uint32_t version;
 	uint64_t expected;
 	uint64_t end;
 	int error;
@@ -271,7 +277,9 @@ load_superblock(struct silliconfs *filesystem)
 	error = read_block(filesystem, 0, block);
 	if (error != 0)
 		return error;
-	if (memcmp(bytes, "SILFS1\0\0", 8) != 0 || get_le16(bytes + 8) != 1 ||
+	version = get_le16(bytes + 8);
+	if (memcmp(bytes, "SILFS1\0\0", 8) != 0 || version == 0 ||
+	    version > SFS_VERSION ||
 	    get_le16(bytes + 10) != 80 || get_le32(bytes + 12) !=
 	    SILLICONFS_BLOCK_SIZE || get_le32(bytes + 16) != 0 ||
 	    get_le32(bytes + 20) != 0 || get_le32(bytes + 24) != 0 ||
@@ -399,7 +407,8 @@ read_inode(struct silliconfs *filesystem, uint32_t number,
 	for (unsigned int i = 0; i < SFS_DIRECT; i++)
 		inode->direct[i] = get_le32(record + 24 + i * 4);
 	inode->indirect = get_le32(record + 72);
-	if (get_le32(record + 12) != 0 || !zero_bytes(record + 76, 52) ||
+	inode->double_indirect = get_le32(record + 76);
+	if (get_le32(record + 12) != 0 || !zero_bytes(record + 80, 48) ||
 	    inode->flags != 0 || inode->size > SILLICONFS_MAX_FILE_SIZE ||
 	    ((inode->mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR &&
 	    (inode->mode & SFS_MODE_TYPE) != SFS_MODE_DIRECTORY &&
@@ -439,6 +448,7 @@ write_inode(struct silliconfs *filesystem, uint32_t number,
 	for (unsigned int i = 0; i < SFS_DIRECT; i++)
 		put_le32(record + 24 + i * 4, inode->direct[i]);
 	put_le32(record + 72, inode->indirect);
+	put_le32(record + 76, inode->double_indirect);
 	return write_block(filesystem, block_number, block);
 }
 
@@ -460,30 +470,19 @@ mark_referenced_block(struct silliconfs *filesystem, uint8_t *seen,
 }
 
 static int
-validate_inode_blocks(struct silliconfs *filesystem,
-	const struct sfs_inode *inode, uint8_t *seen_blocks)
+mark_table_blocks(struct silliconfs *filesystem, uint32_t table_block,
+	uint8_t *seen_blocks)
 {
-	uint8_t indirect[SILLICONFS_BLOCK_SIZE];
-	int error;
+	uint8_t table[SILLICONFS_BLOCK_SIZE];
+	int error = mark_referenced_block(filesystem, seen_blocks, table_block);
 
-	for (unsigned int i = 0; i < SFS_DIRECT; i++) {
-		if (inode->direct[i] == 0)
-			continue;
-		error = mark_referenced_block(filesystem, seen_blocks,
-		    inode->direct[i]);
-		if (error != 0)
-			return error;
-	}
-	if (inode->indirect == 0)
-		return 0;
-	error = mark_referenced_block(filesystem, seen_blocks, inode->indirect);
 	if (error != 0)
 		return error;
-	error = read_block(filesystem, inode->indirect, indirect);
+	error = read_block(filesystem, table_block, table);
 	if (error != 0)
 		return error;
 	for (unsigned int i = 0; i < SFS_INDIRECT_COUNT; i++) {
-		uint32_t block = get_le32(indirect + i * 4);
+		uint32_t block = get_le32(table + i * 4);
 
 		if (block == 0)
 			continue;
@@ -494,13 +493,57 @@ validate_inode_blocks(struct silliconfs *filesystem,
 	return 0;
 }
 
-/* A file read visits the same allocation map and indirect table repeatedly.
+static int
+validate_inode_blocks(struct silliconfs *filesystem,
+	const struct sfs_inode *inode, uint8_t *seen_blocks)
+{
+	uint8_t double_indirect[SILLICONFS_BLOCK_SIZE];
+	int error;
+
+	for (unsigned int i = 0; i < SFS_DIRECT; i++) {
+		if (inode->direct[i] == 0)
+			continue;
+		error = mark_referenced_block(filesystem, seen_blocks,
+		    inode->direct[i]);
+		if (error != 0)
+			return error;
+	}
+	if (inode->indirect != 0) {
+		error = mark_table_blocks(filesystem, inode->indirect, seen_blocks);
+		if (error != 0)
+			return error;
+	}
+	if (inode->double_indirect == 0)
+		return 0;
+	error = mark_referenced_block(filesystem, seen_blocks,
+	    inode->double_indirect);
+	if (error != 0)
+		return error;
+	error = read_block(filesystem, inode->double_indirect, double_indirect);
+	if (error != 0)
+		return error;
+	for (unsigned int i = 0; i < SFS_INDIRECT_COUNT; i++) {
+		uint32_t table = get_le32(double_indirect + i * 4);
+
+		if (table == 0)
+			continue;
+		error = mark_table_blocks(filesystem, table, seen_blocks);
+		if (error != 0)
+			return error;
+	}
+	return 0;
+}
+
+/* A file read visits the same allocation map and block tables repeatedly.
  * Keep the blocks for that read only; writes need no cache invalidation. */
 struct sfs_read_cache {
 	uint32_t bitmap_block;
-	bool indirect_loaded;
+	uint32_t table_block;
+	uint32_t level;
+	uint32_t level_table;
+	bool level_valid;
 	uint8_t bitmap[SILLICONFS_BLOCK_SIZE];
-	uint8_t indirect[SILLICONFS_BLOCK_SIZE];
+	uint8_t table[SILLICONFS_BLOCK_SIZE];
 };
 
 static int
@@ -536,24 +579,94 @@ read_logical_block_cached(struct silliconfs *filesystem,
 	uint32_t number = 0;
 	int error;
 
-	if (logical >= SFS_DIRECT + SFS_INDIRECT_COUNT)
+	if ((uint64_t)logical >= SILLICONFS_MAX_FILE_BLOCKS)
 		return -SFS_EIO;
 	if (logical < SFS_DIRECT) {
 		number = inode->direct[logical];
-	} else if (inode->indirect != 0) {
-		/* The output block can hold the table until we read its data block. */
-		uint8_t *indirect = cache ? cache->indirect : block;
-		if (!cache || !cache->indirect_loaded) {
-			error = check_read_block(filesystem, inode->indirect, cache);
-			if (error != 0)
-				return error;
-			error = read_block(filesystem, inode->indirect, indirect);
-			if (error != 0)
-				return error;
-			if (cache)
-				cache->indirect_loaded = true;
+	} else if (logical < SFS_DOUBLE_START) {
+		if (inode->indirect != 0) {
+			/* The output block can hold the table until we read its data block. */
+			uint8_t *table = cache ? cache->table : block;
+			if (!cache || cache->table_block != inode->indirect) {
+				error = check_read_block(filesystem, inode->indirect,
+				    cache);
+				if (error != 0)
+					return error;
+				error = read_block(filesystem, inode->indirect, table);
+				if (error != 0)
+					return error;
+				if (cache)
+					cache->table_block = inode->indirect;
+			}
+			number = get_le32(table + (logical - SFS_DIRECT) * 4);
 		}
-		number = get_le32(indirect + (logical - SFS_DIRECT) * 4);
+	} else if (inode->double_indirect != 0) {
+		uint32_t index = logical - SFS_DOUBLE_START;
+		uint32_t level = index / SFS_INDIRECT_COUNT;
+		uint32_t entry = index % SFS_INDIRECT_COUNT;
+		uint32_t table_number;
+
+		if (cache == NULL) {
+			/* No cache to preserve: walk both table levels through
+			 * the output block, which the data read overwrites. */
+			error = check_read_block(filesystem, inode->double_indirect,
+			    NULL);
+			if (error != 0)
+				return error;
+			error = read_block(filesystem, inode->double_indirect,
+			    block);
+			if (error != 0)
+				return error;
+			table_number = get_le32(block + level * 4);
+			if (table_number != 0) {
+				error = check_read_block(filesystem,
+				    table_number, NULL);
+				if (error != 0)
+					return error;
+				error = read_block(filesystem, table_number,
+				    block);
+				if (error != 0)
+					return error;
+				number = get_le32(block + entry * 4);
+			}
+		} else {
+			/* Loading a level-2 table evicts the level-1 table, so
+			 * remember which level it was resolved for. */
+			if (cache->table_block == inode->double_indirect) {
+				table_number = get_le32(cache->table + level * 4);
+			} else if (cache->level_valid && cache->level == level) {
+				table_number = cache->level_table;
+			} else {
+				error = check_read_block(filesystem,
+				    inode->double_indirect, cache);
+				if (error != 0)
+					return error;
+				error = read_block(filesystem,
+				    inode->double_indirect, cache->table);
+				if (error != 0)
+					return error;
+				cache->table_block = inode->double_indirect;
+				table_number =
+				    get_le32(cache->table + level * 4);
+			}
+			if (table_number != 0) {
+				if (cache->table_block != table_number) {
+					error = check_read_block(filesystem,
+					    table_number, cache);
+					if (error != 0)
+						return error;
+					error = read_block(filesystem,
+					    table_number, cache->table);
+					if (error != 0)
+						return error;
+					cache->table_block = table_number;
+				}
+				number = get_le32(cache->table + entry * 4);
+				cache->level = level;
+				cache->level_table = table_number;
+				cache->level_valid = true;
+			}
+		}
 	}
 	if (physical != NULL)
 		*physical = number;
@@ -670,6 +783,35 @@ free_inode(struct silliconfs *filesystem, uint32_t number)
 }
 
 static int
+validate_allocated_block(struct silliconfs *filesystem, uint32_t block)
+{
+	bool allocated;
+	int error = block_allocated(filesystem, block, &allocated);
+
+	if (error != 0 || !allocated)
+		return error != 0 ? error : -SFS_EIO;
+	return 0;
+}
+
+/* Free every data block referenced by a table and the table itself. */
+static int
+release_indirect_table(struct silliconfs *filesystem, uint32_t table_block)
+{
+	uint8_t table[SILLICONFS_BLOCK_SIZE];
+	int error = read_block(filesystem, table_block, table);
+
+	if (error != 0)
+		return error;
+	for (unsigned int i = 0; i < SFS_INDIRECT_COUNT; i++) {
+		uint32_t block = get_le32(table + i * 4);
+
+		if (block != 0 && (error = free_block(filesystem, block)) != 0)
+			return error;
+	}
+	return free_block(filesystem, table_block);
+}
+
+static int
 release_inode_storage(struct silliconfs *filesystem, uint32_t number)
 {
 	struct sfs_inode inode;
@@ -679,29 +821,71 @@ release_inode_storage(struct silliconfs *filesystem, uint32_t number)
 		if (inode.direct[i] != 0 &&
 		    (error = free_block(filesystem, inode.direct[i])) != 0)
 			return error;
-	if (inode.indirect != 0) {
-		uint8_t indirect[SILLICONFS_BLOCK_SIZE];
-		error = read_block(filesystem, inode.indirect, indirect);
+	if (inode.indirect != 0 &&
+	    (error = release_indirect_table(filesystem, inode.indirect)) != 0)
+		return error;
+	if (inode.double_indirect != 0) {
+		uint8_t double_indirect[SILLICONFS_BLOCK_SIZE];
+
+		error = read_block(filesystem, inode.double_indirect,
+		    double_indirect);
 		if (error != 0) return error;
 		for (unsigned int i = 0; i < SFS_INDIRECT_COUNT; i++) {
-			uint32_t block = get_le32(indirect + i * 4);
-			if (block != 0 && (error = free_block(filesystem, block)) != 0)
-				return error;
+			uint32_t table = get_le32(double_indirect + i * 4);
+
+			if (table == 0)
+				continue;
+			error = release_indirect_table(filesystem, table);
+			if (error != 0) return error;
 		}
-		if ((error = free_block(filesystem, inode.indirect)) != 0) return error;
+		if ((error = free_block(filesystem, inode.double_indirect)) != 0)
+			return error;
 	}
 	return free_inode(filesystem, number);
+}
+
+/* Resolve (and optionally allocate) one entry of an on-disk block table. */
+static int
+map_table_entry(struct silliconfs *filesystem, uint32_t table_block,
+	uint32_t entry, bool create, uint32_t *physical)
+{
+	uint8_t table[SILLICONFS_BLOCK_SIZE];
+	uint32_t block;
+	int error = read_block(filesystem, table_block, table);
+
+	if (error != 0)
+		return error;
+	block = get_le32(table + entry * 4);
+	if (block == 0 && create) {
+		error = allocate_block(filesystem, &block);
+		if (error != 0)
+			return error;
+		put_le32(table + entry * 4, block);
+		error = write_block(filesystem, table_block, table);
+		if (error != 0)
+			return error;
+	}
+	if (block != 0) {
+		error = validate_allocated_block(filesystem, block);
+		if (error != 0)
+			return error;
+	}
+	*physical = block;
+	return 0;
 }
 
 static int
 map_block(struct silliconfs *filesystem, uint32_t inode_number,
 	struct sfs_inode *inode, uint32_t logical, bool create, uint32_t *physical)
 {
-	uint8_t indirect[SILLICONFS_BLOCK_SIZE];
 	uint32_t block;
+	uint32_t table;
+	uint32_t index;
+	uint32_t level;
+	uint32_t entry;
 	int error;
 
-	if (logical >= 1036 || physical == NULL)
+	if ((uint64_t)logical >= SILLICONFS_MAX_FILE_BLOCKS || physical == NULL)
 		return -SFS_EOVERFLOW;
 	if (logical < SFS_DIRECT) {
 		block = inode->direct[logical];
@@ -715,53 +899,63 @@ map_block(struct silliconfs *filesystem, uint32_t inode_number,
 				return error;
 		}
 		if (block != 0) {
-			bool allocated;
-			error = block_allocated(filesystem, block, &allocated);
-			if (error != 0 || !allocated)
-				return -SFS_EIO;
+			error = validate_allocated_block(filesystem, block);
+			if (error != 0)
+				return error;
 		}
 		*physical = block;
 		return 0;
 	}
-	if (inode->indirect == 0 && create) {
-		error = allocate_block(filesystem, &inode->indirect);
+	if (logical < SFS_DOUBLE_START) {
+		if (inode->indirect == 0) {
+			if (!create) {
+				*physical = 0;
+				return 0;
+			}
+			error = allocate_block(filesystem, &inode->indirect);
+			if (error != 0)
+				return error;
+			error = write_inode(filesystem, inode_number, inode);
+			if (error != 0)
+				return error;
+		} else {
+			error = validate_allocated_block(filesystem,
+			    inode->indirect);
+			if (error != 0)
+				return error;
+		}
+		return map_table_entry(filesystem, inode->indirect,
+		    logical - SFS_DIRECT, create, physical);
+	}
+	index = logical - SFS_DOUBLE_START;
+	level = index / SFS_INDIRECT_COUNT;
+	entry = index % SFS_INDIRECT_COUNT;
+	if (inode->double_indirect == 0) {
+		if (!create) {
+			*physical = 0;
+			return 0;
+		}
+		error = allocate_block(filesystem, &inode->double_indirect);
 		if (error != 0)
 			return error;
 		error = write_inode(filesystem, inode_number, inode);
 		if (error != 0)
 			return error;
+	} else {
+		error = validate_allocated_block(filesystem,
+		    inode->double_indirect);
+		if (error != 0)
+			return error;
 	}
-	if (inode->indirect == 0) {
+	error = map_table_entry(filesystem, inode->double_indirect, level,
+	    create, &table);
+	if (error != 0)
+		return error;
+	if (table == 0) {
 		*physical = 0;
 		return 0;
 	}
-	{
-		bool allocated;
-		error = block_allocated(filesystem, inode->indirect, &allocated);
-		if (error != 0 || !allocated)
-			return -SFS_EIO;
-	}
-	error = read_block(filesystem, inode->indirect, indirect);
-	if (error != 0)
-		return error;
-	block = get_le32(indirect + (logical - SFS_DIRECT) * 4);
-	if (block == 0 && create) {
-		error = allocate_block(filesystem, &block);
-		if (error != 0)
-			return error;
-		put_le32(indirect + (logical - SFS_DIRECT) * 4, block);
-		error = write_block(filesystem, inode->indirect, indirect);
-		if (error != 0)
-			return error;
-	}
-	if (block != 0) {
-		bool allocated;
-		error = block_allocated(filesystem, block, &allocated);
-		if (error != 0 || !allocated)
-			return -SFS_EIO;
-	}
-	*physical = block;
-	return 0;
+	return map_table_entry(filesystem, table, entry, create, physical);
 }
 
 static int
@@ -774,7 +968,10 @@ read_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 	size_t total = 0;
 
 	cache.bitmap_block = 0;
-	cache.indirect_loaded = false;
+	cache.table_block = 0;
+	cache.level = 0;
+	cache.level_table = 0;
+	cache.level_valid = false;
 
 	if ((inode->mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR)
 		return -SFS_EISDIR;
@@ -1719,6 +1916,7 @@ sfs_truncate(struct vnode *vnode, uint64_t size)
 	struct silliconfs *filesystem = node->filesystem;
 	struct sfs_inode inode;
 	uint8_t block[SILLICONFS_BLOCK_SIZE];
+	uint8_t table[SILLICONFS_BLOCK_SIZE];
 	int error = read_inode(filesystem, node->inode_number, &inode);
 
 	if (error != 0)
@@ -1758,27 +1956,26 @@ sfs_truncate(struct vnode *vnode, uint64_t size)
 			}
 		}
 		if (inode.indirect != 0) {
-			uint8_t indirect[SILLICONFS_BLOCK_SIZE];
 			bool any = false;
 
-			error = read_block(filesystem, inode.indirect, indirect);
+			error = read_block(filesystem, inode.indirect, table);
 			if (error != 0)
 				return error;
 			for (uint32_t i = 0; i < SFS_INDIRECT_COUNT; i++) {
 				uint32_t logical = SFS_DIRECT + i;
-				uint32_t physical = get_le32(indirect + i * 4);
+				uint32_t physical = get_le32(table + i * 4);
 
 				if (physical != 0 && logical >= keep_blocks) {
 					error = free_block(filesystem, physical);
 					if (error != 0)
 						return error;
-					put_le32(indirect + i * 4, 0);
+					put_le32(table + i * 4, 0);
 				} else if (physical != 0) {
 					any = true;
 				}
 			}
 			if (any) {
-				error = write_block(filesystem, inode.indirect, indirect);
+				error = write_block(filesystem, inode.indirect, table);
 				if (error != 0)
 					return error;
 			} else {
@@ -1786,6 +1983,68 @@ sfs_truncate(struct vnode *vnode, uint64_t size)
 				if (error != 0)
 					return error;
 				inode.indirect = 0;
+			}
+		}
+		if (inode.double_indirect != 0) {
+			bool any_level = false;
+
+			error = read_block(filesystem, inode.double_indirect, block);
+			if (error != 0)
+				return error;
+			for (uint32_t level = 0; level < SFS_INDIRECT_COUNT;
+			    level++) {
+				uint32_t table_number =
+				    get_le32(block + level * 4);
+				bool any = false;
+
+				if (table_number == 0)
+					continue;
+				error = read_block(filesystem, table_number, table);
+				if (error != 0)
+					return error;
+				for (uint32_t i = 0; i < SFS_INDIRECT_COUNT;
+				    i++) {
+					uint32_t logical = SFS_DOUBLE_START +
+					    level * SFS_INDIRECT_COUNT + i;
+					uint32_t physical =
+					    get_le32(table + i * 4);
+
+					if (physical != 0 &&
+					    logical >= keep_blocks) {
+						error = free_block(filesystem,
+						    physical);
+						if (error != 0)
+							return error;
+						put_le32(table + i * 4, 0);
+					} else if (physical != 0) {
+						any = true;
+					}
+				}
+				if (any) {
+					error = write_block(filesystem,
+					    table_number, table);
+					if (error != 0)
+						return error;
+					any_level = true;
+				} else {
+					error = free_block(filesystem,
+					    table_number);
+					if (error != 0)
+						return error;
+					put_le32(block + level * 4, 0);
+				}
+			}
+			if (any_level) {
+				error = write_block(filesystem,
+				    inode.double_indirect, block);
+				if (error != 0)
+					return error;
+			} else {
+				error = free_block(filesystem,
+				    inode.double_indirect);
+				if (error != 0)
+					return error;
+				inode.double_indirect = 0;
 			}
 		}
 	}

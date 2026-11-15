@@ -98,7 +98,7 @@ sfs_format(const struct storage_io *io, uint32_t inodes)
 		return error;
 	memset(block, 0, sizeof(block));
 	memcpy(block, "SILFS1\0\0", 8);
-	storage_le16(block + 8, 1);
+	storage_le16(block + 8, 2);
 	storage_le16(block + 10, 80);
 	storage_le32(block + 12, SFS_BLOCK);
 	uint32_t words[] = {p.blocks, p.inodes, 1, p.bb_start, p.bb_count,

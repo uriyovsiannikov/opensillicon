@@ -129,6 +129,55 @@ $(LIBOS_BUILD_DIR)/crt0.o: $(LIBOS_SRC_DIR)/crt/crt0.S | $(LIBOS_BUILD_DIR)
 $(LIBOS_BUILD_DIR)/syscall_abi.o: $(LIBOS_SRC_DIR)/crt/syscall_abi.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
+# Doom (doomgeneric) with the X11 back-end from opensillicon/.
+DOOM_DIR := src/user/thirdparty/doomgeneric
+DOOM_BUILD_DIR := $(BUILD_DIR)/doom
+DOOM_RESX ?= 320
+DOOM_RESY ?= 200
+
+X11_PREFIX ?= $(BUILD_DIR)/x11/prefix
+
+DOOM_VENDOR_SOURCES := dummy am_map doomdef doomstat dstrings d_event d_items \
+	d_iwad d_loop d_main d_mode d_net f_finale f_wipe g_game hu_lib hu_stuff \
+	info i_cdmus i_endoom i_joystick i_scale i_sound i_system i_timer memio \
+	m_argv m_bbox m_cheat m_config m_controls m_fixed m_menu m_misc m_random \
+	p_ceilng p_doors p_enemy p_floor p_inter p_lights p_map p_maputl p_mobj \
+	p_plats p_pspr p_saveg p_setup p_sight p_spec p_switch p_telept p_tick \
+	p_user r_bsp r_data r_draw r_main r_plane r_segs r_sky r_things sha1 sounds \
+	statdump st_lib st_stuff s_sound tables v_video wi_stuff w_checksum \
+	w_file w_main w_wad z_zone w_file_stdc i_input i_video doomgeneric
+DOOM_OBJECTS := $(addprefix $(DOOM_BUILD_DIR)/,$(addsuffix .o,$(DOOM_VENDOR_SOURCES))) \
+	$(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o
+
+# Upstream is C89-era code: keep its warnings visible but do not let them fail
+# the build.  Doom prints floats through varargs, so SSE must stay enabled like
+# the other X11 clients; only the kernel and the core libos are SSE-free.
+DOOM_CFLAGS := $(filter-out -mno-sse -mno-sse2 -mno-mmx -msoft-float,$(LIBOS_CFLAGS)) \
+	-Wno-error -I$(DOOM_DIR)/doomgeneric -I$(X11_PREFIX)/include \
+	-idirafter /usr/include -DOPEN_SILLICON \
+	-DDOOMGENERIC_RESX=$(DOOM_RESX) -DDOOMGENERIC_RESY=$(DOOM_RESY)
+
+X11_DOOM_LIBS := $(X11_PREFIX)/lib/libX11.a $(X11_PREFIX)/lib/libxcb.a \
+	$(X11_PREFIX)/lib/libXau.a
+
+$(DOOM_BUILD_DIR):
+	mkdir -p $@
+
+$(DOOM_BUILD_DIR)/%.o: $(DOOM_DIR)/doomgeneric/%.c \
+		$(wildcard $(DOOM_DIR)/doomgeneric/*.h) | $(DOOM_BUILD_DIR)
+	$(CC) $(DOOM_CFLAGS) -c $< -o $@
+
+$(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o: \
+		$(DOOM_DIR)/opensillicon/doomgeneric_opensillicon.c \
+		$(wildcard $(DOOM_DIR)/doomgeneric/*.h) | $(DOOM_BUILD_DIR)
+	$(CC) $(DOOM_CFLAGS) -c $< -o $@
+
+# The X11 client libraries come from the shared X11 build prefix.
+$(BUILD_DIR)/doom/doom: $(DOOM_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) \
+		$(BUILD_DIR)/x11/.apps-ready
+	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(DOOM_OBJECTS) \
+		--start-group $(LIBOS_ARCHIVE) $(X11_DOOM_LIBS) --end-group -o $@
+
 LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
 LIBZ_OBJECTS := $(addprefix $(LIBZ_BUILD_DIR)/,$(addsuffix .o,$(LIBZ_SOURCES)))
 
@@ -290,6 +339,8 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/htop/htop \
+		$(BUILD_DIR)/doom/doom \
+		$(if $(DOOM_WAD),$(DOOM_WAD)) \
 		$(BUILD_DIR)/startx.elf \
 		$(BUILD_DIR)/populate_root \
 		$(SERVICE_CONFIGS) $(PKG_CA_CERT) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
@@ -311,6 +362,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		--twm $(BUILD_DIR)/x11/twm/src/twm --xterm $(BUILD_DIR)/x11/xterm/xterm \
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
+		--doom $(BUILD_DIR)/doom/doom $(if $(DOOM_WAD),--doom-wad '$(DOOM_WAD)') \
 		--netsurf $(BUILD_DIR)/netsurf/netsurf \
 		$(if $(PKG_CA_CERT),--pkg-ca '$(PKG_CA_CERT)') \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \

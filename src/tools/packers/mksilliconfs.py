@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Format a version 1 SilliconFS image."""
+"""Format a version 2 SilliconFS image."""
 
 import argparse
 from pathlib import Path
@@ -37,7 +37,7 @@ def superblock(blocks: int, inodes: int, bb_start: int, bb_count: int,
                data_start: int) -> bytes:
     result = bytearray(BLOCK_SIZE)
     result[:8] = MAGIC
-    struct.pack_into("<HHIII", result, 8, 1, 80, BLOCK_SIZE, 0, 0)
+    struct.pack_into("<HHIII", result, 8, 2, 80, BLOCK_SIZE, 0, 0)
     struct.pack_into("<I", result, 24, 0)
     struct.pack_into("<9I", result, 28, blocks, inodes, 1, bb_start,
                      bb_count, ib_start, ib_count, it_start, it_count)

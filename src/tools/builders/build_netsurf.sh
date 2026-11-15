@@ -191,8 +191,10 @@ cp "$b/source/netsurf/frontends/framebuffer/res/en/Messages" "$b/resources/Messa
 python3 - "$b/netsurf" <<'CHECK_SIZE'
 from pathlib import Path
 import sys
+# 12 direct + 1024 single-indirect + 1024*1024 double-indirect blocks.
+limit = (12 + 1024 + 1024 * 1024) * 4096
 size = Path(sys.argv[1]).stat().st_size
-if size > 1036 * 4096:
+if size > limit:
     raise SystemExit(f"NetSurf binary exceeds the SilliconFS file limit: {size} bytes")
 CHECK_SIZE
 mv "$temporary" "$stamp"

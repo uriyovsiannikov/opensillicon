@@ -81,6 +81,70 @@ directory(const char *path)
 	assert(vfs_create_path(path, VNODE_DIRECTORY, 0700, &v) == 0);
 	vnode_put(v);
 }
+
+/* Data used by the large-file test: a cheap position-dependent pattern so a
+ * multi-megabyte file needs no backing store on the host. */
+static unsigned char chunk[64 * 1024];
+
+static unsigned char
+pattern_byte(uint64_t offset)
+{
+	return (unsigned char)(offset ^ (offset >> 8) ^ (offset >> 16) ^
+	    (offset >> 24));
+}
+
+static void
+write_file(struct fd_object *file, size_t length)
+{
+	size_t n;
+
+	for (size_t offset = 0; offset < length;) {
+		size_t amount = length - offset < sizeof(chunk) ?
+		    length - offset : sizeof(chunk);
+		for (size_t i = 0; i < amount; i++)
+			chunk[i] = pattern_byte(offset + i);
+		assert(fd_object_write(file, chunk, amount, &n) == 0 &&
+		    n == amount);
+		offset += amount;
+	}
+}
+
+static void
+verify_file(struct fd_object *file, size_t length)
+{
+	size_t n;
+
+	for (size_t offset = 0; offset < length;) {
+		size_t amount = length - offset < sizeof(chunk) ?
+		    length - offset : sizeof(chunk);
+		assert(file->operations->read(file->context, offset, chunk,
+		    amount, &n) == 0 && n == amount);
+		for (size_t i = 0; i < amount; i++)
+			assert(chunk[i] == pattern_byte(offset + i));
+		offset += amount;
+	}
+	char extra;
+	assert(file->operations->read(file->context, length, &extra, 1, &n)
+	    == 0 && n == 0);
+}
+
+static void
+truncate_path(const char *path, uint64_t size)
+{
+	struct vnode *node;
+
+	assert(vfs_lookup(path, &node) == 0);
+	assert(node->operations->truncate(node, size) == 0);
+	vnode_put(node);
+}
+
+static void
+verify_size(const char *path, uint64_t size)
+{
+	struct vfs_stat status;
+
+	assert(vfs_stat_path(path, &status) == 0 && status.size == size);
+}
 int
 main(int argc, char **argv)
 {
@@ -157,6 +221,71 @@ main(int argc, char **argv)
 	printf("SilliconFS reads for a file spanning 49 blocks: %u\n", reads);
 	assert(reads == 53); /* inode map/table, data map, indirect table and data */
 	fd_object_put(file);
+
+	/* Past 1036 blocks the inode switches to the double-indirect table.
+	 * A remount re-validates every block table, so this also proves the
+	 * nested tables are reachable and not double-referenced. */
+	const size_t large_size = 5 * 1024 * 1024 + 123;
+	assert(vfs_open("/mnt/large", VFS_O_RDWR | VFS_O_CREAT, 0644, &file) == 0);
+	write_file(file, large_size);
+	fd_object_put(file);
+	verify_size("/mnt/large", large_size);
+	assert(filesystem_unmount("/mnt") == 0);
+	assert(filesystem_mount("/dev/ada0", "/mnt") == 0);
+	assert(vfs_open("/mnt/large", VFS_O_RDONLY, 0, &file) == 0);
+	verify_file(file, large_size);
+	fd_object_put(file);
+
+	/* Shrinking inside the double-indirect range keeps the tables that
+	 * still hold data and trims the last one. */
+	const size_t partial_size = 4 * 1024 * 1024 + 100000;
+	truncate_path("/mnt/large", partial_size);
+	verify_size("/mnt/large", partial_size);
+	assert(vfs_open("/mnt/large", VFS_O_RDONLY, 0, &file) == 0);
+	verify_file(file, partial_size);
+	fd_object_put(file);
+	assert(filesystem_unmount("/mnt") == 0);
+	assert(filesystem_mount("/dev/ada0", "/mnt") == 0);
+	assert(vfs_open("/mnt/large", VFS_O_RDONLY, 0, &file) == 0);
+	verify_file(file, partial_size);
+	fd_object_put(file);
+
+	/* Shrinking below the single-indirect range releases every table. */
+	const size_t small_size = 3 * 1024 * 1024 + 7;
+	truncate_path("/mnt/large", small_size);
+	verify_size("/mnt/large", small_size);
+	assert(vfs_open("/mnt/large", VFS_O_RDONLY, 0, &file) == 0);
+	verify_file(file, small_size);
+	fd_object_put(file);
+
+	/* Removing the file releases both table levels, and their blocks are
+	 * immediately reusable by another large file. */
+	assert(vfs_remove_path_as("/mnt/large", false, 0, 0) == 0);
+	assert(vfs_open("/mnt/reuse", VFS_O_RDWR | VFS_O_CREAT, 0644, &file) == 0);
+	write_file(file, large_size);
+	fd_object_put(file);
+	assert(vfs_open("/mnt/reuse", VFS_O_RDONLY, 0, &file) == 0);
+	verify_file(file, large_size);
+	fd_object_put(file);
+	assert(vfs_remove_path_as("/mnt/reuse", false, 0, 0) == 0);
+
+	/* A sparse write past 4 MiB allocates only the tables it touches. */
+	const uint64_t sparse_offset = 5 * 1024 * 1024;
+	static unsigned char hole[4096];
+	assert(vfs_open("/mnt/sparse", VFS_O_RDWR | VFS_O_CREAT, 0644, &file) == 0);
+	assert(file->operations->write(file->context, sparse_offset, "tail", 4,
+	    &n) == 0 && n == 4);
+	fd_object_put(file);
+	verify_size("/mnt/sparse", sparse_offset + 4);
+	assert(filesystem_unmount("/mnt") == 0);
+	assert(filesystem_mount("/dev/ada0", "/mnt") == 0);
+	assert(vfs_open("/mnt/sparse", VFS_O_RDONLY, 0, &file) == 0);
+	assert(file->operations->read(file->context, sparse_offset - 4, hole, 8,
+	    &n) == 0 && n == 8);
+	assert(hole[0] == 0 && hole[1] == 0 && hole[2] == 0 && hole[3] == 0 &&
+	    memcmp(hole + 4, "tail", 4) == 0);
+	fd_object_put(file);
+	assert(vfs_remove_path_as("/mnt/sparse", false, 0, 0) == 0);
 
 	assert(filesystem_unmount("/mnt") == 0);
 	size_t baseline = live;

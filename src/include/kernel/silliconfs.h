@@ -6,7 +6,16 @@
 #include "kernel/vfs.h"
 
 #define SILLICONFS_BLOCK_SIZE 4096U
-#define SILLICONFS_MAX_FILE_SIZE (1036ULL * SILLICONFS_BLOCK_SIZE)
+
+/* Inode block map: 12 direct entries, one single-indirect table and one
+ * double-indirect table, each table holding SILLICONFS_BLOCK_SIZE / 4 entries. */
+#define SILLICONFS_DIRECT_BLOCKS 12U
+#define SILLICONFS_INDIRECT_BLOCKS (SILLICONFS_BLOCK_SIZE / 4U)
+#define SILLICONFS_MAX_FILE_BLOCKS \
+	((uint64_t)SILLICONFS_DIRECT_BLOCKS + SILLICONFS_INDIRECT_BLOCKS + \
+	(uint64_t)SILLICONFS_INDIRECT_BLOCKS * SILLICONFS_INDIRECT_BLOCKS)
+#define SILLICONFS_MAX_FILE_SIZE \
+	(SILLICONFS_MAX_FILE_BLOCKS * SILLICONFS_BLOCK_SIZE)
 
 struct silliconfs_device {
 	void *context;

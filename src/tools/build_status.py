@@ -59,6 +59,8 @@ def label_for(target, source):
     basename = Path(target).name
     if "/netsurf/" in target:
         return "USER NetSurf"
+    if "/build/doom/" in target:
+        return "DOOM link"
     if basename in fixed:
         return fixed[basename]
     if "/acpica/" in target:
@@ -66,6 +68,7 @@ def label_for(target, source):
     if "/cyclone/" in target:
         return "KERNEL CycloneTCP/" + target.split("/cyclone/", 1)[1].removesuffix(".o")
     for prefix, group in (("src/kernel/", "KERNEL"), ("src/user/libos/", "LIBOS"),
+                          ("src/user/thirdparty/doomgeneric/", "DOOM"),
                           ("src/user/thirdparty/xorg/deps/", "LIB"),
                           ("src/user/", "USER"), ("src/tools/", "HOST"),
                           ("src/tests/", "TEST")):
