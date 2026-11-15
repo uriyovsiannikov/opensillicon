@@ -1,5 +1,6 @@
 #ifndef LIBOS_NETINET_IN_H
 #define LIBOS_NETINET_IN_H
+#define IPPROTO_IP 0
 
 #include <sys/socket.h>
 #include <stdint.h>

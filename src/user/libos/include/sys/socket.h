@@ -11,6 +11,11 @@ typedef unsigned short sa_family_t;
 #define AF_INET6 10
 #define AF_UNSPEC 0
 #define AF_LOCAL AF_UNIX
+#define PF_UNSPEC AF_UNSPEC
+#define PF_UNIX AF_UNIX
+#define PF_LOCAL AF_LOCAL
+#define PF_INET AF_INET
+#define PF_INET6 AF_INET6
 #define SOCK_STREAM 1
 #define SOCK_DGRAM 2
 #define MSG_OOB 0x01

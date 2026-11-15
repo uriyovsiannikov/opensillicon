@@ -11,9 +11,11 @@ OpenSillicon builds the inflate, checksum, and utility sources into the static
 font decompressor. It uses libos `malloc/calloc/free` for zlib's default
 allocator. `DYNAMIC_CRC_TABLE` keeps the archive small; its one-time CRC table
 initialization is not thread-safe, which matches libos's current single-thread
-runtime. It does not include compression or the `gz*` file API; libXfont's
-upstream configure check for `gzopen` must be adapted when its target build is
-integrated.
+runtime. The core now also includes deflate and its trees. The read-only `gzopen`,
+`gzgets` and `gzclose` API is compiled with `NO_GZCOMPRESS` and
+`Z_HAVE_UNISTD_H` for NetSurf compressed message resources; gzip file writing
+is unavailable. The added gz source files come from the same verified archive.
+Previously, libXfont's configure check was adapted to the smaller subset.
 
 The selected upstream source files are kept unmodified. `zconf.h` is the
 upstream release configuration header; the target compiler and libos headers

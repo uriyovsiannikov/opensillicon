@@ -1,9 +1,26 @@
 #include <math.h>
 #include <errno.h>
 #include <stdint.h>
+#include <float.h>
 #include <stdlib.h>
 
 static int is_infinite(double);
+
+float ceilf(float value) { return (float)ceil((double)value); }
+float fabsf(float value) { return (float)fabs((double)value); }
+long lroundf(float value) { return lround((double)value); }
+double tan(double value) { return sin(value) / cos(value); }
+
+float
+strtof(const char *text, char **end)
+{
+	double value = strtod(text, end);
+	float result = (float)value;
+	if (isfinite(value) && value != 0.0 &&
+	    (isinf(result) || fabs((double)result) < FLT_MIN))
+		errno = ERANGE;
+	return result;
+}
 
 double
 atof(const char *text)

@@ -1,5 +1,8 @@
 #ifndef LIBOS_SYS_STAT_H
 #define LIBOS_SYS_STAT_H
+#define S_IRWXU 0700
+#define S_IRWXG 0070
+#define S_IRWXO 0007
 #include <sys/types.h>
 #include <stddef.h>
 typedef unsigned long long dev_t;

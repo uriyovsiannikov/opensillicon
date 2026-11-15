@@ -86,7 +86,7 @@ menu "defops"
 "Hide Iconmgr"	f.hideiconmgr
 ""		f.nop
 "Xterm"		f.exec "exec xterm -display :0 -e /bin/sh --xterm &"
-"Dillo"		f.exec "exec dillo &"
+"NetSurf"	f.exec "exec netsurf &"
 ""		f.nop
 "Kill"		f.destroy
 "Delete"	f.delete

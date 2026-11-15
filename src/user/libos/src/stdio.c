@@ -213,6 +213,12 @@ int fputs(const char*s,FILE*f){size_t n=strlen(s);return fwrite(s,1,n,f)==n?0:-1
 int puts(const char*s){return fputs(s,stdout)<0||fputs("\n",stdout)<0?-1:0;}
 void perror(const char*s){if(s&&*s)fprintf(stderr,"%s: %s\n",s,strerror(errno));else fprintf(stderr,"%s\n",strerror(errno));}
 int fflush(FILE*f){(void)f;return 0;}
+void setbuf(FILE *stream, char *buffer)
+{
+	/* Native FILE streams already use unbuffered descriptor I/O. */
+	(void)stream;
+	(void)buffer;
+}
 void setlinebuf(FILE*f){(void)f;}
 struct out {char*p;size_t cap,n;int failed;};
 static void emit(struct out*o,char c){if(o->p&&o->cap&&o->n<o->cap-1)o->p[o->n]=c;o->n++;}
@@ -224,7 +230,37 @@ static void format(struct out*o,const char*fmt,va_list ap){if(!fmt){o->failed=1;
 int vsnprintf(char*b,size_t n,const char*f,va_list a){struct out o={b,n,0,0};va_list copy;__builtin_va_copy(copy,a);format(&o,f,copy);__builtin_va_end(copy);if(b&&n)b[o.n<n?o.n:n-1]=0;if(o.failed||o.n>2147483647U)return -1;return (int)o.n;}
 int vsprintf(char*b,const char*f,va_list a){return vsnprintf(b,(size_t)-1,f,a);}
 int snprintf(char*b,size_t n,const char*f,...){va_list a;va_start(a,f);int r=vsnprintf(b,n,f,a);va_end(a);return r;}
-int asprintf(char**out,const char*f,...){va_list a,copy;int n;char*b;if(!out||!f){errno=EINVAL;return -1;}*out=0;va_start(a,f);__builtin_va_copy(copy,a);n=vsnprintf(0,0,f,copy);__builtin_va_end(copy);if(n<0){va_end(a);return -1;}b=malloc((size_t)n+1);if(!b){va_end(a);return -1;}__builtin_va_copy(copy,a);if(vsnprintf(b,(size_t)n+1,f,copy)<0){__builtin_va_end(copy);free(b);va_end(a);return -1;}__builtin_va_end(copy);va_end(a);*out=b;return n;}
+int
+vasprintf(char **output, const char *format_string, va_list arguments)
+{
+	if (output == NULL || format_string == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*output = NULL;
+	int length = vsnprintf(NULL, 0, format_string, arguments);
+	if (length < 0)
+		return -1;
+	char *buffer = malloc((size_t)length + 1);
+	if (buffer == NULL)
+		return -1;
+	if (vsnprintf(buffer, (size_t)length + 1, format_string, arguments) != length) {
+		free(buffer);
+		return -1;
+	}
+	*output = buffer;
+	return length;
+}
+
+int
+asprintf(char **output, const char *format_string, ...)
+{
+	va_list arguments;
+	va_start(arguments, format_string);
+	int result = vasprintf(output, format_string, arguments);
+	va_end(arguments);
+	return result;
+}
 int sprintf(char*b,const char*f,...){va_list a;va_start(a,f);int r=vsprintf(b,f,a);va_end(a);return r;}
 int vfprintf(FILE*f,const char*fmt,va_list a){int n;char*b;size_t done=0;va_list copy;if(!f||!fmt){errno=EINVAL;return -1;}__builtin_va_copy(copy,a);n=vsnprintf(0,0,fmt,copy);__builtin_va_end(copy);if(n<0)return -1;b=malloc((size_t)n+1);if(!b)return -1;__builtin_va_copy(copy,a);if(vsnprintf(b,(size_t)n+1,fmt,copy)<0){__builtin_va_end(copy);free(b);return -1;}__builtin_va_end(copy);while(done<(size_t)n){size_t w=fwrite(b+done,1,(size_t)n-done,f);if(w==0){free(b);return -1;}done+=w;}free(b);return n;}
 int fprintf(FILE*f,const char*fmt,...){va_list a;va_start(a,fmt);int r=vfprintf(f,fmt,a);va_end(a);return r;}

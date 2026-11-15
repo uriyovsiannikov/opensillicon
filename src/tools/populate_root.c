@@ -107,6 +107,59 @@ add_file(const char *path, const char *host_path, uint32_t mode)
 	return error;
 }
 
+
+static int
+add_x11_fonts(void)
+{
+	int error = add_file("/usr/share/fonts/misc/gallant.bdf",
+	    "src/user/thirdparty/xorg/fonts/gallant.bdf", 0644);
+	return error != 0 ? error : add_file("/usr/share/fonts/misc/fonts.dir",
+	    "src/user/thirdparty/xorg/fonts/fonts.dir", 0644);
+}
+
+static int
+add_netsurf_resources(void)
+{
+	static const char *resources[] = {
+		"adblock.css", "credits.html", "default.css", "internal.css",
+		"licence.html", "netsurf.png", "quirks.css", "welcome.html", "Messages"
+	};
+	static const char *fonts[] = {
+		"LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf",
+		"LiberationSans-Italic.ttf", "LiberationSans-BoldItalic.ttf",
+		"LiberationSerif-Regular.ttf", "LiberationSerif-Bold.ttf",
+		"LiberationSerif-Italic.ttf", "LiberationSerif-BoldItalic.ttf",
+		"LiberationMono-Regular.ttf", "LiberationMono-Bold.ttf",
+		"LiberationMono-Italic.ttf", "LiberationMono-BoldItalic.ttf", "OFL.txt"
+	};
+	int error;
+	char source[512], destination[256];
+	if ((error = add_directory("/etc/netsurf", 0755)) != 0 ||
+	    (error = add_directory("/usr/share/netsurf", 0755)) != 0 ||
+	    (error = add_directory("/usr/share/fonts/truetype", 0755)) != 0 ||
+	    (error = add_directory("/usr/share/fonts/truetype/liberation", 0755)) != 0 ||
+	    (error = add_file("/etc/netsurf/Choices",
+	    "src/user/thirdparty/netsurf/opensillicon/Choices", 0644)) != 0)
+		return error;
+	for (size_t i = 0; i < sizeof(resources) / sizeof(resources[0]); i++) {
+		snprintf(source, sizeof(source), "src/build/netsurf/resources/%s", resources[i]);
+		snprintf(destination, sizeof(destination), "/usr/share/netsurf/%s", resources[i]);
+		if ((error = add_file(destination, source, 0644)) != 0)
+			return error;
+	}
+	for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
+		snprintf(source, sizeof(source),
+		    "src/user/thirdparty/xorg/fonts/truetype/liberation/%s", fonts[i]);
+		snprintf(destination, sizeof(destination),
+		    "/usr/share/fonts/truetype/liberation/%s", fonts[i]);
+		if ((error = add_file(destination, source, 0644)) != 0)
+			return error;
+	}
+	return add_file("/usr/share/netsurf/COPYING",
+	    "src/user/thirdparty/netsurf/netsurf/COPYING", 0644);
+}
+
+
 static int
 add_data(const char *path, const void *data, size_t length, uint32_t mode)
 {
@@ -141,7 +194,7 @@ main(int argc, char **argv)
 	const char *feh_path = NULL;
 	const char *nano_path = NULL;
 	const char *htop_path = NULL;
-	const char *dillo_path = NULL;
+	const char *netsurf_path = NULL;
 	const char *svctl_path = NULL;
 	const char *scinstall_path = NULL;
 	const char *boot_files[3] = {NULL, NULL, NULL};
@@ -153,7 +206,7 @@ main(int argc, char **argv)
 
 	if (argc < 4) {
 		fprintf(stderr,
-		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--dillo elf] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--netsurf elf] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
 		    argv[0]);
 		return 2;
 	}
@@ -185,9 +238,9 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[arg], "--htop") == 0 && arg + 1 < argc) {
 			if (htop_path != NULL) return 2;
 			htop_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--dillo") == 0 && arg + 1 < argc) {
-			if (dillo_path != NULL) return 2;
-			dillo_path = argv[++arg];
+		} else if (strcmp(argv[arg], "--netsurf") == 0 && arg + 1 < argc) {
+			if (netsurf_path != NULL) return 2;
+			netsurf_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--boot-files") == 0 &&
 		    arg + 3 < argc) {
 			if (boot_files[0] != NULL)
@@ -360,24 +413,13 @@ main(int argc, char **argv)
 		fclose(image);
 		return 1;
 	}
-	if ((xterm_path != NULL || dillo_path != NULL) &&
+	if ((xterm_path != NULL || netsurf_path != NULL) &&
 	    ((xterm_path != NULL &&
 	    (error = add_file("/bin/xterm", xterm_path, 0755)) != 0) ||
 	    (error = add_directory("/usr/share", 0755)) != 0 ||
 	    (error = add_directory("/usr/share/fonts", 0755)) != 0 ||
 	    (error = add_directory("/usr/share/fonts/misc", 0755)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/gallant.bdf",
-	    "src/user/thirdparty/xorg/fonts/gallant.bdf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/silliconsans-16.bdf",
-	    "src/user/thirdparty/dillo/opensillicon/fonts/silliconsans-16.bdf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/silliconsans-20.bdf",
-	    "src/user/thirdparty/dillo/opensillicon/fonts/silliconsans-20.bdf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/silliconsans-24.bdf",
-	    "src/user/thirdparty/dillo/opensillicon/fonts/silliconsans-24.bdf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/SilliconSans-OFL.txt",
-	    "src/user/thirdparty/dillo/opensillicon/fonts/OFL.txt", 0644)) != 0 ||
-	    (error = add_file("/usr/share/fonts/misc/fonts.dir",
-	    "src/user/thirdparty/xorg/fonts/fonts.dir", 0644)) != 0)) {
+	    (error = add_x11_fonts()) != 0)) {
 		fprintf(stderr, "SilliconFS X11 font population failed: %d\n", error);
 		fclose(image);
 		return 1;
@@ -390,7 +432,7 @@ main(int argc, char **argv)
 	}
 	if (feh_path != NULL &&
 	    ((error = add_file("/bin/feh", feh_path, 0755)) != 0 ||
-	    (xterm_path == NULL && dillo_path == NULL &&
+	    (xterm_path == NULL && netsurf_path == NULL &&
 	    (error = add_directory("/usr/share", 0755)) != 0) ||
 	    (error = add_directory("/usr/share/feh", 0755)) != 0 ||
 	    (error = add_directory("/usr/share/feh/fonts", 0755)) != 0 ||
@@ -405,12 +447,13 @@ main(int argc, char **argv)
 		fclose(image);
 		return 1;
 	}
-	if (dillo_path != NULL &&
-	    ((error = add_file("/bin/dillo", dillo_path, 0755)) != 0 ||
-	    (error = add_directory("/etc/dillo", 0755)) != 0 ||
-	    (error = add_file("/etc/dillo/dillorc",
-	    "src/user/thirdparty/dillo/opensillicon/dillorc", 0644)) != 0)) {
-		fprintf(stderr, "SilliconFS Dillo population failed: %d\n", error);
+	if (netsurf_path != NULL &&
+	    ((error = add_file("/bin/netsurf", netsurf_path, 0755)) != 0 ||
+	    (error = add_directory("/etc/ssl", 0755)) != 0 ||
+	    (error = add_file("/etc/ssl/cert.pem",
+	    "src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt", 0644)) != 0 ||
+	    (error = add_netsurf_resources()) != 0)) {
+		fprintf(stderr, "SilliconFS NetSurf population failed: %d\n", error);
 		fclose(image);
 		return 1;
 	}

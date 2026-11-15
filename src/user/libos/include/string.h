@@ -1,5 +1,6 @@
 #ifndef LIBOS_STRING_H
 #define LIBOS_STRING_H
+#include <stddef.h>
 char *strpbrk(const char *, const char *);
 char *strcasestr(const char *, const char *);
 #include <sys/types.h>

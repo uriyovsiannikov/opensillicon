@@ -41,6 +41,7 @@ int fputs(const char *, FILE *);
 int puts(const char *);
 void perror(const char *);
 int fflush(FILE *);
+void setbuf(FILE *, char *);
 void setlinebuf(FILE *);
 int printf(const char *, ...);
 int vprintf(const char *, va_list);
@@ -52,4 +53,5 @@ int vsprintf(char *, const char *, va_list);
 int snprintf(char *, size_t, const char *, ...);
 int vsnprintf(char *, size_t, const char *, va_list);
 int asprintf(char **, const char *, ...);
+int vasprintf(char **, const char *, va_list);
 #endif

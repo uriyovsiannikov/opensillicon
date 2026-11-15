@@ -7,6 +7,12 @@
 #define LIBOS_LONG_MIN (-LIBOS_LONG_MAX - 1L)
 #define LIBOS_ULONG_MAX 18446744073709551615UL
 
+_Static_assert(sizeof(long) == sizeof(long long), "native LP64 integer conversions");
+long long strtoll(const char *text, char **end, int base)
+{ return (long long)strtol(text, end, base); }
+unsigned long long strtoull(const char *text, char **end, int base)
+{ return (unsigned long long)strtoul(text, end, base); }
+
 int
 system(const char *command)
 {

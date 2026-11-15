@@ -2,6 +2,7 @@
 #define LIBOS_TIME_H
 
 #include <sys/types.h>
+#include <stddef.h>
 
 #ifndef LIBOS_STRUCT_TIMESPEC
 #define LIBOS_STRUCT_TIMESPEC
@@ -26,5 +27,7 @@ time_t time(time_t *);
 time_t mktime(struct tm *);
 struct tm *gmtime(const time_t *);
 struct tm *localtime(const time_t *);
+size_t strftime(char *, size_t, const char *, const struct tm *);
+char *ctime(const time_t *);
 
 #endif

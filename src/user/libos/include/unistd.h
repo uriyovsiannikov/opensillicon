@@ -1,5 +1,10 @@
 #ifndef LIBOS_UNISTD_H
 #define LIBOS_UNISTD_H
+#ifndef SEEK_SET
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+#endif
 #include <stdlib.h>
 #include <sys/types.h>
 #define STDIN_FILENO 0

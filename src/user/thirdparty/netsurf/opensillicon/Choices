@@ -1,0 +1,11 @@
+homepage_url:https://frogfind.com/
+window_width:1000
+window_height:720
+font_size:140
+font_min_size:100
+fb_font_monochrome:0
+fb_font_cachesize:2048
+ca_bundle:/etc/ssl/cert.pem
+max_fetchers:4
+max_fetchers_per_host:2
+max_cached_fetch_handles:4

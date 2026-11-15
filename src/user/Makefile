@@ -86,7 +86,7 @@ $(BUILD_DIR)/populate_root: src/tools/populate_root.c src/kernel/fs/vfs/vfs.c \
 		src/tools/populate_root.c src/kernel/fs/vfs/vfs.c src/kernel/fs/silliconfs/silliconfs.c \
 		src/kernel/proc/fd.c -o $@
 
-LIBOS_SOURCES := mount syscall unistd mman string stat allocator dirent stdio socket select uio fcntl pipe pty termios time poll signal ioctl uname env math random stdlib passwd termcap regex path getopt getopt_long
+LIBOS_SOURCES := iconv mount syscall unistd mman string stat allocator dirent stdio socket select uio fcntl pipe pty termios time strftime poll signal ioctl uname env math random stdlib passwd termcap regex path getopt getopt_long
 LIBOS_OBJECTS := $(addprefix $(LIBOS_BUILD_DIR)/,$(addsuffix .o,$(LIBOS_SOURCES)))
 
 $(LIBOS_BUILD_DIR)/setjmp.o: src/user/libos/src/setjmp.S | $(LIBOS_BUILD_DIR)
@@ -116,7 +116,7 @@ $(LIBOS_BUILD_DIR)/crt0.o: src/user/libos/src/crt0.S | $(LIBOS_BUILD_DIR)
 $(LIBOS_BUILD_DIR)/syscall_abi.o: src/user/libos/src/syscall_abi.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
-LIBZ_SOURCES := adler32 crc32 deflate trees inflate inffast inftrees zutil
+LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
 LIBZ_OBJECTS := $(addprefix $(LIBZ_BUILD_DIR)/,$(addsuffix .o,$(LIBZ_SOURCES)))
 
 $(LIBZ_BUILD_DIR):
@@ -124,7 +124,7 @@ $(LIBZ_BUILD_DIR):
 
 $(LIBZ_BUILD_DIR)/%.o: src/user/thirdparty/xorg/deps/libz/%.c $(wildcard src/user/thirdparty/xorg/deps/libz/*.h) \
 		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBZ_BUILD_DIR)
-	$(CC) $(LIBOS_CFLAGS) -DDYNAMIC_CRC_TABLE \
+	$(CC) $(LIBOS_CFLAGS) -DDYNAMIC_CRC_TABLE -DNO_GZCOMPRESS -DZ_HAVE_UNISTD_H \
 		-Isrc/user/thirdparty/xorg/deps/libz -c $< -o $@
 
 $(LIBZ_ARCHIVE): $(LIBZ_OBJECTS)
@@ -263,14 +263,14 @@ $(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
 		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE)
 	sh src/tools/builders/build_x11_if_needed.sh
 
-.PHONY: $(BUILD_DIR)/dillo/.ready
-$(BUILD_DIR)/dillo/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
-	sh src/tools/builders/build_dillo.sh
+.PHONY: $(BUILD_DIR)/netsurf/.ready
+$(BUILD_DIR)/netsurf/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
+	sh src/tools/builders/build_netsurf.sh
 
 SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 
 $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
-		src/limine/BOOTX64.EFI $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/dillo/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
+		src/limine/BOOTX64.EFI $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/netsurf/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/htop/htop \
@@ -278,6 +278,9 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		$(BUILD_DIR)/populate_root \
 		$(SERVICE_CONFIGS) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
 		other/img1.jpg \
+		src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt \
+		$(wildcard src/user/thirdparty/xorg/fonts/truetype/liberation/*) \
+		src/user/thirdparty/netsurf/opensillicon/Choices \
 		src/user/thirdparty/xorg/fonts/gallant.bdf src/user/thirdparty/xorg/fonts/fonts.dir \
 		src/user/thirdparty/xorg/startx/system.twmrc \
 		$(TINYX_BINARY) \
@@ -292,7 +295,7 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_D
 		--twm $(BUILD_DIR)/x11/twm/src/twm --xterm $(BUILD_DIR)/x11/xterm/xterm \
 		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
-		--dillo $(BUILD_DIR)/dillo/target/src/dillo \
+		--netsurf $(BUILD_DIR)/netsurf/netsurf \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		$(foreach module,$(MODULE_OBJECTS),--module $(module)) \
 		--svctl $(BUILD_DIR)/coreutils/svctl.elf --scinstall $(BUILD_DIR)/scinstall/scinstall.elf \
