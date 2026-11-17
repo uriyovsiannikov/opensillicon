@@ -69,6 +69,63 @@ The server exposes `GET /index` and `GET /packages/<name>-<version>.spkg`.
 Archives belong in `src/tools/pkg/repo/_pkges/`. Sources and build recipes
 belong in `src/tools/pkg/repo/_src/<name>/`.
 
+## Desktop packages
+
+The base image does not contain the desktop stack, browser or Doom. Build
+these packages on demand from the repository root:
+
+```sh
+make -C src/tools/pkg/repo/_src/twm
+make -C src/tools/pkg/repo/_src/xeyes
+make -C src/tools/pkg/repo/_src/xclock
+make -C src/tools/pkg/repo/_src/netsurf
+make -C src/tools/pkg/repo/_src/doom
+```
+
+Publish the generated archives by serving `src/tools/pkg/repo`. Install the
+`twm` package first; `netsurf` and `doom` use its X server, window manager and
+fonts, as do `xeyes` and `xclock`. Install the desktop with `doas pkg add twm`
+and install each client separately, for example with `doas pkg add xeyes` or
+`doas pkg add xclock`. Run them from an X terminal after starting `startx`.
+`xclock -digital` selects the digital display. The clock uses the system's
+UTC time.
+
+If an older `twm` package already installed `xeyes`, remove `twm` with
+`doas pkg remove twm` and reinstall it from the updated repository before
+adding the standalone `xeyes` package.
+
+## Quake
+
+Build the engine with `make -C src/tools/pkg/repo/_src/quake`. Install
+`twm` and `quake` from the package repository. After `startx`, launch
+`quake -basedir /path/to/quake-data` from an X terminal. Supply the data
+as `id1/pak0.pak` inside that directory. See the
+[Quake port README](../../tools/pkg/repo/_src/quake/README.md) for the
+shareware archive and installation details.
+
+## C compiler
+
+Build TinyCC with `make -C src/tools/pkg/repo/_src/tcc` and install it
+from the package repository with `doas pkg add tcc`. The package includes
+the libos headers, startup object and static libraries needed for native builds.
+
+```sh
+tcc hello.c -o hello
+./hello
+```
+
+The port produces static x86-64 ELF executables and relocatable objects.
+`tcc -ar` creates static archives. The port does not provide shared
+libraries, thread-local storage or the in-process `tcc -run` mode.
+
+## Java
+
+Build miniJVM with `make -C src/tools/pkg/repo/_src/minijvm` and install
+it with `doas pkg add minijvm`. Run a class with
+`java -cp /path/to/classes Example` or pass a JAR as the class path.
+The port supports Java 8 bytecode with miniJVM's own class library.
+[Build requirements and current limits](../../tools/pkg/repo/_src/minijvm/README.md)
+
 ## Package creation
 
 Compile native OpenSillicon programs against libos, then create a staging
