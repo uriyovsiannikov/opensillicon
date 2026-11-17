@@ -61,16 +61,6 @@ add_directory(const char *path, uint32_t mode)
 	return error;
 }
 
-/* Like add_directory, but tolerates a directory that already exists. */
-static int
-add_directory_if_missing(const char *path, uint32_t mode)
-{
-	int error = add_directory(path, mode);
-
-	/* The kernel reports EEXIST as -17; host errno uses the same value. */
-	return error == -EEXIST ? 0 : error;
-}
-
 static int
 add_file(const char *path, const char *host_path, uint32_t mode)
 {
@@ -120,58 +110,6 @@ add_file(const char *path, const char *host_path, uint32_t mode)
 
 
 static int
-add_x11_fonts(void)
-{
-	int error = add_file("/usr/share/fonts/misc/gallant.bdf",
-	    "src/user/thirdparty/xorg/fonts/gallant.bdf", 0644);
-	return error != 0 ? error : add_file("/usr/share/fonts/misc/fonts.dir",
-	    "src/user/thirdparty/xorg/fonts/fonts.dir", 0644);
-}
-
-static int
-add_netsurf_resources(void)
-{
-	static const char *resources[] = {
-		"adblock.css", "credits.html", "default.css", "internal.css",
-		"licence.html", "netsurf.png", "quirks.css", "welcome.html", "Messages"
-	};
-	static const char *fonts[] = {
-		"LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf",
-		"LiberationSans-Italic.ttf", "LiberationSans-BoldItalic.ttf",
-		"LiberationSerif-Regular.ttf", "LiberationSerif-Bold.ttf",
-		"LiberationSerif-Italic.ttf", "LiberationSerif-BoldItalic.ttf",
-		"LiberationMono-Regular.ttf", "LiberationMono-Bold.ttf",
-		"LiberationMono-Italic.ttf", "LiberationMono-BoldItalic.ttf", "OFL.txt"
-	};
-	int error;
-	char source[512], destination[256];
-	if ((error = add_directory("/etc/netsurf", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/netsurf", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/fonts/truetype", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/fonts/truetype/liberation", 0755)) != 0 ||
-	    (error = add_file("/etc/netsurf/Choices",
-	    "src/user/thirdparty/netsurf/opensillicon/Choices", 0644)) != 0)
-		return error;
-	for (size_t i = 0; i < sizeof(resources) / sizeof(resources[0]); i++) {
-		snprintf(source, sizeof(source), "src/build/netsurf/resources/%s", resources[i]);
-		snprintf(destination, sizeof(destination), "/usr/share/netsurf/%s", resources[i]);
-		if ((error = add_file(destination, source, 0644)) != 0)
-			return error;
-	}
-	for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
-		snprintf(source, sizeof(source),
-		    "src/user/thirdparty/xorg/fonts/truetype/liberation/%s", fonts[i]);
-		snprintf(destination, sizeof(destination),
-		    "/usr/share/fonts/truetype/liberation/%s", fonts[i]);
-		if ((error = add_file(destination, source, 0644)) != 0)
-			return error;
-	}
-	return add_file("/usr/share/netsurf/COPYING",
-	    "src/user/thirdparty/netsurf/netsurf/COPYING", 0644);
-}
-
-
-static int
 add_data(const char *path, const void *data, size_t length, uint32_t mode)
 {
 	struct vnode *node = NULL;
@@ -197,17 +135,8 @@ main(int argc, char **argv)
 	int coreutils_start = 0;
 	int coreutils_count = 0;
 	const char *libos_path = NULL;
-	const char *tinyx_path = NULL;
-	const char *startx_path = NULL;
-	const char *twm_path = NULL;
-	const char *xterm_path = NULL;
-	const char *xeyes_path = NULL;
-	const char *feh_path = NULL;
 	const char *nano_path = NULL;
 	const char *htop_path = NULL;
-	const char *doom_path = NULL;
-	const char *doom_wad_path = NULL;
-	const char *netsurf_path = NULL;
 	const char *pkg_ca_path = NULL;
 	const char *svctl_path = NULL;
 	const char *scinstall_path = NULL;
@@ -220,7 +149,7 @@ main(int argc, char **argv)
 
 	if (argc < 4) {
 		fprintf(stderr,
-		    "usage: %s image init-elf shell-elf [--libos elf] [--tinyx elf] [--startx elf] [--twm elf] [--xterm elf] [--xeyes elf] [--feh elf] [--nano elf] [--htop elf] [--doom elf] [--doom-wad wad] [--netsurf elf] [--pkg-ca file.pem] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
+		    "usage: %s image init-elf shell-elf [--nano elf] [--htop elf] [--pkg-ca file.pem] [--svctl elf] [--scinstall elf] [--service file.conf] [--boot-files loader kernel initramfs] [--module file.ko] [--coreutils coreutils...]\n",
 		    argv[0]);
 		return 2;
 	}
@@ -228,42 +157,15 @@ main(int argc, char **argv)
 		if (strcmp(argv[arg], "--libos") == 0 && arg + 1 < argc) {
 			if (libos_path != NULL) return 2;
 			libos_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--tinyx") == 0 && arg + 1 < argc) {
-			if (tinyx_path != NULL) return 2;
-			tinyx_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--startx") == 0 && arg + 1 < argc) {
-			if (startx_path != NULL) return 2;
-			startx_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--twm") == 0 && arg + 1 < argc) {
-			if (twm_path != NULL) return 2;
-			twm_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--xterm") == 0 && arg + 1 < argc) {
-			if (xterm_path != NULL) return 2;
-			xterm_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--xeyes") == 0 && arg + 1 < argc) {
-			if (xeyes_path != NULL) return 2;
-			xeyes_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--feh") == 0 && arg + 1 < argc) {
-			if (feh_path != NULL) return 2;
-			feh_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--nano") == 0 && arg + 1 < argc) {
 			if (nano_path != NULL) return 2;
 			nano_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--htop") == 0 && arg + 1 < argc) {
 			if (htop_path != NULL) return 2;
 			htop_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--doom") == 0 && arg + 1 < argc) {
-			if (doom_path != NULL) return 2;
-			doom_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--doom-wad") == 0 && arg + 1 < argc) {
-			if (doom_wad_path != NULL) return 2;
-			doom_wad_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--pkg-ca") == 0 && arg + 1 < argc) {
 			if (pkg_ca_path != NULL) return 2;
 			pkg_ca_path = argv[++arg];
-		} else if (strcmp(argv[arg], "--netsurf") == 0 && arg + 1 < argc) {
-			if (netsurf_path != NULL) return 2;
-			netsurf_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--boot-files") == 0 &&
 		    arg + 3 < argc) {
 			if (boot_files[0] != NULL)
@@ -327,7 +229,6 @@ main(int argc, char **argv)
 	    (error = add_directory("/var/db", 0755)) != 0 ||
 	    (error = add_directory("/var/db/pkg", 0755)) != 0 ||
 	    (error = add_directory("/tmp", 01777)) != 0 ||
-	    (error = add_file("/tmp/img1.jpg", "other/img1.jpg", 0644)) != 0 ||
 	    (error = add_file("/sbin/init", argv[2], 0755)) != 0 ||
 	    (error = add_file("/bin/sh", argv[3], 0755)) != 0) {
 		fprintf(stderr, "SilliconFS population failed: %d\n", error);
@@ -416,73 +317,12 @@ main(int argc, char **argv)
 		fclose(image);
 		return 1;
 	}
-	if (tinyx_path != NULL &&
-	    (error = add_file("/bin/X", tinyx_path, 0755)) != 0) {
-		fprintf(stderr, "SilliconFS TinyX population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (startx_path != NULL &&
-	    (error = add_file("/bin/startx", startx_path, 0755)) != 0) {
-		fprintf(stderr, "SilliconFS startx population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (twm_path != NULL &&
-	    ((error = add_file("/bin/twm", twm_path, 0755)) != 0 ||
-	    (error = add_file("/etc/twmrc",
-	    "src/user/thirdparty/xorg/startx/system.twmrc", 0644)) != 0)) {
-		fprintf(stderr, "SilliconFS twm population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if ((xterm_path != NULL || netsurf_path != NULL) &&
-	    ((xterm_path != NULL &&
-	    (error = add_file("/bin/xterm", xterm_path, 0755)) != 0) ||
-	    (error = add_directory("/usr/share", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/fonts", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/fonts/misc", 0755)) != 0 ||
-	    (error = add_x11_fonts()) != 0)) {
-		fprintf(stderr, "SilliconFS X11 font population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (xeyes_path != NULL &&
-	    (error = add_file("/bin/xeyes", xeyes_path, 0755)) != 0) {
-		fprintf(stderr, "SilliconFS xeyes population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (feh_path != NULL &&
-	    ((error = add_file("/bin/feh", feh_path, 0755)) != 0 ||
-	    (xterm_path == NULL && netsurf_path == NULL &&
-	    (error = add_directory("/usr/share", 0755)) != 0) ||
-	    (error = add_directory("/usr/share/feh", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/feh/fonts", 0755)) != 0 ||
-	    (error = add_directory("/usr/share/feh/images", 0755)) != 0 ||
-	    (error = add_file("/usr/share/feh/fonts/yudit.ttf",
-	    "src/user/thirdparty/xorg/feh/share/fonts/yudit.ttf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/feh/fonts/NotoSans-Medium.ttf",
-	    "src/user/thirdparty/xorg/feh/share/fonts/NotoSans-Medium.ttf", 0644)) != 0 ||
-	    (error = add_file("/usr/share/feh/images/feh.png",
-	    "src/user/thirdparty/xorg/feh/share/images/feh.png", 0644)) != 0)) {
-		fprintf(stderr, "SilliconFS feh population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
 	if ((error = add_directory("/etc/ssl", 0755)) != 0 ||
 	    (error = add_file("/etc/ssl/cert.pem",
 	    "src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt", 0644)) != 0 ||
 	    (pkg_ca_path != NULL && (error = add_file("/etc/ssl/pkg-ca.pem",
 	    pkg_ca_path, 0644)) != 0)) {
 		fprintf(stderr, "SilliconFS TLS trust population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (netsurf_path != NULL &&
-	    ((error = add_file("/bin/netsurf", netsurf_path, 0755)) != 0 ||
-	    (error = add_netsurf_resources()) != 0)) {
-		fprintf(stderr, "SilliconFS NetSurf population failed: %d\n", error);
 		fclose(image);
 		return 1;
 	}
@@ -495,22 +335,6 @@ main(int argc, char **argv)
 	if (htop_path != NULL &&
 	    (error = add_file("/bin/htop", htop_path, 0755)) != 0) {
 		fprintf(stderr, "SilliconFS htop population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (doom_path != NULL &&
-	    (error = add_file("/bin/doom", doom_path, 0755)) != 0) {
-		fprintf(stderr, "SilliconFS Doom population failed: %d\n", error);
-		fclose(image);
-		return 1;
-	}
-	if (doom_wad_path != NULL &&
-	    ((error = add_directory_if_missing("/usr/share", 0755)) != 0 ||
-	    (error = add_directory_if_missing("/usr/share/doom", 0755)) != 0 ||
-	    (error = add_file("/usr/share/doom/doom.wad", doom_wad_path, 0644))
-	    != 0)) {
-		fprintf(stderr, "SilliconFS Doom WAD population failed: %d\n",
-		    error);
 		fclose(image);
 		return 1;
 	}

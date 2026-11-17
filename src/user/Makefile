@@ -129,177 +129,8 @@ $(LIBOS_BUILD_DIR)/crt0.o: $(LIBOS_SRC_DIR)/crt/crt0.S | $(LIBOS_BUILD_DIR)
 $(LIBOS_BUILD_DIR)/syscall_abi.o: $(LIBOS_SRC_DIR)/crt/syscall_abi.S | $(LIBOS_BUILD_DIR)
 	$(CC) -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -c $< -o $@
 
-# Doom (doomgeneric) with the X11 back-end from opensillicon/.
-DOOM_DIR := src/user/thirdparty/doomgeneric
-DOOM_BUILD_DIR := $(BUILD_DIR)/doom
-DOOM_RESX ?= 320
-DOOM_RESY ?= 200
-
-X11_PREFIX ?= $(BUILD_DIR)/x11/prefix
-
-DOOM_VENDOR_SOURCES := dummy am_map doomdef doomstat dstrings d_event d_items \
-	d_iwad d_loop d_main d_mode d_net f_finale f_wipe g_game hu_lib hu_stuff \
-	info i_cdmus i_endoom i_joystick i_scale i_sound i_system i_timer memio \
-	m_argv m_bbox m_cheat m_config m_controls m_fixed m_menu m_misc m_random \
-	p_ceilng p_doors p_enemy p_floor p_inter p_lights p_map p_maputl p_mobj \
-	p_plats p_pspr p_saveg p_setup p_sight p_spec p_switch p_telept p_tick \
-	p_user r_bsp r_data r_draw r_main r_plane r_segs r_sky r_things sha1 sounds \
-	statdump st_lib st_stuff s_sound tables v_video wi_stuff w_checksum \
-	w_file w_main w_wad z_zone w_file_stdc i_input i_video doomgeneric
-DOOM_OBJECTS := $(addprefix $(DOOM_BUILD_DIR)/,$(addsuffix .o,$(DOOM_VENDOR_SOURCES))) \
-	$(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o
-
-# Upstream is C89-era code: keep its warnings visible but do not let them fail
-# the build.  Doom prints floats through varargs, so SSE must stay enabled like
-# the other X11 clients; only the kernel and the core libos are SSE-free.
-DOOM_CFLAGS := $(filter-out -mno-sse -mno-sse2 -mno-mmx -msoft-float,$(LIBOS_CFLAGS)) \
-	-Wno-error -I$(DOOM_DIR)/doomgeneric -I$(X11_PREFIX)/include \
-	-idirafter /usr/include -DOPEN_SILLICON \
-	-DDOOMGENERIC_RESX=$(DOOM_RESX) -DDOOMGENERIC_RESY=$(DOOM_RESY)
-
-X11_DOOM_LIBS := $(X11_PREFIX)/lib/libX11.a $(X11_PREFIX)/lib/libxcb.a \
-	$(X11_PREFIX)/lib/libXau.a
-
-$(DOOM_BUILD_DIR):
-	mkdir -p $@
-
-$(DOOM_BUILD_DIR)/%.o: $(DOOM_DIR)/doomgeneric/%.c \
-		$(wildcard $(DOOM_DIR)/doomgeneric/*.h) | $(DOOM_BUILD_DIR)
-	$(CC) $(DOOM_CFLAGS) -c $< -o $@
-
-$(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o: \
-		$(DOOM_DIR)/opensillicon/doomgeneric_opensillicon.c \
-		$(wildcard $(DOOM_DIR)/doomgeneric/*.h) | $(DOOM_BUILD_DIR)
-	$(CC) $(DOOM_CFLAGS) -c $< -o $@
-
-# The X11 client libraries come from the shared X11 build prefix.
-$(BUILD_DIR)/doom/doom: $(DOOM_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) \
-		$(BUILD_DIR)/x11/.apps-ready
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(DOOM_OBJECTS) \
-		--start-group $(LIBOS_ARCHIVE) $(X11_DOOM_LIBS) --end-group -o $@
-
-LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
-LIBZ_OBJECTS := $(addprefix $(LIBZ_BUILD_DIR)/,$(addsuffix .o,$(LIBZ_SOURCES)))
-
-$(LIBZ_BUILD_DIR):
-	mkdir -p $@
-
-$(LIBZ_BUILD_DIR)/%.o: src/user/thirdparty/xorg/deps/libz/%.c $(wildcard src/user/thirdparty/xorg/deps/libz/*.h) \
-		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBZ_BUILD_DIR)
-	$(CC) $(LIBOS_CFLAGS) -DDYNAMIC_CRC_TABLE -DNO_GZCOMPRESS -DZ_HAVE_UNISTD_H \
-		-Isrc/user/thirdparty/xorg/deps/libz -c $< -o $@
-
-$(LIBZ_ARCHIVE): $(LIBZ_OBJECTS)
-	ar rcs $@ $^
-
-LIBFONTENC_CPPFLAGS := -nostdinc -I$(abspath src/user/libos/include) \
-	-I$(abspath src/user/thirdparty/xorg/tinyx/include) -I$(abspath src/user/thirdparty/xorg/deps/libfontenc/include) \
-	-isystem $(shell $(CC) -print-file-name=include) -idirafter /usr/include \
-	-DFONT_ENCODINGS_DIRECTORY=\"/usr/share/fonts/encodings\"
-LIBFONTENC_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin \
-	-fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -Wall -Wextra
-LIBFONTENC_OBJECTS := $(addprefix $(LIBFONTENC_BUILD_DIR)/,fontenc.o encparse.o reallocarray.o)
-
-$(LIBFONTENC_BUILD_DIR):
-	mkdir -p $@
-
-$(LIBFONTENC_BUILD_DIR)/%.o: src/user/thirdparty/xorg/deps/libfontenc/src/%.c \
-		$(wildcard src/user/thirdparty/xorg/deps/libfontenc/src/*.h) \
-		$(wildcard src/user/thirdparty/xorg/deps/libfontenc/include/X11/fonts/*.h) | $(LIBFONTENC_BUILD_DIR)
-	$(CC) $(LIBFONTENC_CPPFLAGS) $(LIBFONTENC_CFLAGS) -c $< -o $@
-
-$(LIBFONTENC_ARCHIVE): $(LIBFONTENC_OBJECTS)
-	ar rcs $@ $^
-
-LIBXFONT_CPPFLAGS := -nostdinc -I$(abspath src/user/libos/include) \
-	-I$(abspath src/user/thirdparty/xorg/deps/libz) -I$(abspath src/user/thirdparty/xorg/tinyx/include) \
-	-I$(abspath src/user/thirdparty/xorg/deps/libxfont/include) \
-	-isystem $(shell $(CC) -print-file-name=include) \
-	-idirafter /usr/include -DOPEN_SILLICON
-LIBXFONT_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin \
-	-fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -mno-mmx \
-	-msse2 -mfpmath=sse -Wall -Wextra
-
-$(LIBXFONT_BUILD_DIR):
-	mkdir -p $@
-
-$(LIBXFONT_ARCHIVE): $(LIBZ_ARCHIVE) $(LIBFONTENC_ARCHIVE) \
-		src/user/thirdparty/xorg/deps/libxfont/configure src/user/thirdparty/xorg/deps/libxfont/configure.ac \
-		$(wildcard src/user/thirdparty/xorg/deps/libxfont/src/*.[ch]) \
-		$(wildcard src/user/thirdparty/xorg/deps/libxfont/src/*/*.[ch]) \
-		$(wildcard src/user/thirdparty/xorg/deps/libxfont/include/X11/fonts/*.h) | $(LIBXFONT_BUILD_DIR)
-	cd $(LIBXFONT_BUILD_DIR) && \
-		ac_cv_func_readlink=no ac_cv_lib_z_inflateInit2_=yes \
-		ac_cv_lib_m_hypot=yes \
-		CPPFLAGS='$(LIBXFONT_CPPFLAGS)' CFLAGS='$(LIBXFONT_CFLAGS)' \
-		PKG_CONFIG_PATH=/usr/lib64/pkgconfig:/usr/share/pkgconfig \
-		$(abspath src/user/thirdparty/xorg/deps/libxfont/configure) --host=x86_64-elf \
-		--disable-freetype --disable-fc --enable-bdfformat \
-		--disable-shared --enable-static
-	$(MAKE) -C $(LIBXFONT_BUILD_DIR) ACLOCAL=true AUTOMAKE=true \
-		AUTOCONF=true AUTOHEADER=true
-	cp $(LIBXFONT_BUILD_DIR)/src/.libs/libXfont.a $@
-
-TINYX_CPPFLAGS := -nostdinc -I$(abspath src/include) \
-	-I$(abspath src/user/libos/include) -I$(abspath src/user/thirdparty/xorg/deps/libz) \
-	-I$(abspath src/user/thirdparty/xorg/deps/libfontenc/include) -I$(abspath src/user/thirdparty/xorg/deps/libxfont/include) \
-	-I$(abspath $(TINYX_SOURCE_DIR)/include) \
-	-I$(abspath $(TINYX_BUILD_DIR)/include) \
-	-isystem $(shell $(CC) -print-file-name=include) -idirafter /usr/include \
-	-DOPEN_SILLICON
-TINYX_CFLAGS := -std=gnu11 -O2 -ffreestanding -fno-builtin \
-	-fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone \
-	-msse2 -mfpmath=sse -Wno-unused-parameter
-TINYX_FONT_LIBS := -Wl,--start-group $(abspath $(LIBXFONT_ARCHIVE)) \
-	$(abspath $(LIBFONTENC_ARCHIVE)) $(abspath $(LIBZ_ARCHIVE)) \
-	$(abspath $(LIBOS_ARCHIVE)) -Wl,--end-group
-TINYX_SOURCES := $(shell find src/user/thirdparty/xorg/tinyx -type f ! -path '*/.git/*' -print)
-
-# Configure only when sources or the build configuration change. Runtime
-# archives are link inputs; changing libc must not regenerate the source tree.
-TINYX_CONFIG_STAMP := $(TINYX_BUILD_DIR)/.opensillicon-configured
-$(TINYX_CONFIG_STAMP): $(TINYX_SOURCES) src/user/Makefile src/mk/common.mk \
-        $(wildcard src/user/libos/include/*.h src/user/libos/include/sys/*.h) \
-        $(wildcard src/include/abi/*.h) src/user/c_linker.ld | $(LIBXFONT_ARCHIVE) \
-        $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
-	mkdir -p $(TINYX_SOURCE_DIR) $(TINYX_BUILD_DIR)
-	tar --exclude=.git -cf - -C src/user/thirdparty/xorg/tinyx . | tar -xf - -C $(TINYX_SOURCE_DIR)
-	find $(TINYX_SOURCE_DIR) -name Makefile.am -exec touch {} +
-	touch $(TINYX_SOURCE_DIR)/configure.ac
-	cd $(TINYX_SOURCE_DIR) && autoreconf -fi
-	cd $(TINYX_BUILD_DIR) && \
-		OPEN_SILLICON_LIBS='$(TINYX_FONT_LIBS)' \
-		OPEN_SILLICON_CRT0='$(abspath $(LIBOS_BUILD_DIR)/crt0.o)' \
-		OPEN_SILLICON_LDFLAGS='-nostdlib -static -no-pie \
-			-Wl,--build-id=none -Wl,-z,noexecstack \
-			-Wl,-T,$(abspath src/user/c_linker.ld)' \
-		CPPFLAGS='$(TINYX_CPPFLAGS)' CFLAGS='$(TINYX_CFLAGS)' \
-		PKG_CONFIG_PATH='$(abspath $(LIBXFONT_BUILD_DIR))'$${PKG_CONFIG_PATH:+:"$$PKG_CONFIG_PATH"} \
-		ac_cv_func_readlink=no \
-		ac_cv_lib_z_inflateInit2_=yes ac_cv_lib_m_hypot=yes \
-		$(abspath $(TINYX_SOURCE_DIR))/configure --host=x86_64-elf \
-		--enable-kdrive --enable-xopensillicon \
-				--with-fontdir=/usr/share/fonts \
-		--with-default-font-path=built-ins,/usr/share/fonts/misc
-	touch $@
-
-$(TINYX_BINARY): $(TINYX_CONFIG_STAMP) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
-        $(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
-	$(MAKE) -C $(TINYX_BUILD_DIR)
-	test -x "$@"
-
-$(TINYX_BINARY): | $(BUILD_DIR)
-
 $(LIBOS_ARCHIVE): $(LIBOS_OBJECTS) $(LIBOS_BUILD_DIR)/syscall_abi.o $(LIBOS_BUILD_DIR)/setjmp.o
 	ar rcs $@ $^
-
-$(BUILD_DIR)/startx.o: src/user/thirdparty/xorg/startx/startx.c | $(BUILD_DIR)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
-	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(BUILD_DIR)/startx.o $(LIBOS_ARCHIVE) -o $@
 
 NANO_SOURCES := $(shell find src/user/thirdparty/nano/src -type f ! -path '*/.git/*'; find src/user/thirdparty/nano -maxdepth 1 -type f ! -path '*/.git/*')
 
@@ -320,50 +151,31 @@ $(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) src/tools/builders/build_htop.sh \
 		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
 	sh src/tools/builders/build_htop.sh
 
-.PHONY: $(BUILD_DIR)/x11/.apps-ready
-$(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
-		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE)
-	sh src/tools/builders/build_x11_if_needed.sh
-
-.PHONY: $(BUILD_DIR)/netsurf/.ready
-$(BUILD_DIR)/netsurf/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
-	sh src/tools/builders/build_netsurf.sh
-
 # Optional CA for a private HTTPS package repository.
 PKG_CA_CERT ?=
 
 SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 
-$(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
-		src/limine/BOOTX64.EFI $(BUILD_DIR)/x11/.apps-ready $(BUILD_DIR)/netsurf/.ready $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
+ROOT_PAYLOAD = $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
+		src/limine/BOOTX64.EFI $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
 		$(BUILD_DIR)/nano/nano \
 		$(BUILD_DIR)/htop/htop \
-		$(BUILD_DIR)/doom/doom \
-		$(if $(DOOM_WAD),$(DOOM_WAD)) \
-		$(BUILD_DIR)/startx.elf \
-		$(BUILD_DIR)/populate_root \
 		$(SERVICE_CONFIGS) $(PKG_CA_CERT) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
-		other/img1.jpg \
 		src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt \
-		$(wildcard src/user/thirdparty/xorg/fonts/truetype/liberation/*) \
-		src/user/thirdparty/netsurf/opensillicon/Choices \
-		src/user/thirdparty/xorg/fonts/gallant.bdf src/user/thirdparty/xorg/fonts/fonts.dir \
-		src/user/thirdparty/xorg/startx/system.twmrc \
-		$(TINYX_BINARY) \
-		$(COREUTILS_ELFS) \
-		src/tools/packers/mksilliconfs.py | $(BUILD_DIR)
+		$(COREUTILS_ELFS)
+
+# The live root is loaded into RAM. Leave more room on the writable disk image.
+$(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(ROOT_PAYLOAD) $(BUILD_DIR)/populate_root \
+		src/user/Makefile src/tools/packers/mksilliconfs.py | $(BUILD_DIR)
 	@set -eu; image_tmp=$$(mktemp '$@.tmp.XXXXXX'); \
 	trap 'rm -f "$$image_tmp"' EXIT HUP INT TERM; \
-	python3 src/tools/packers/mksilliconfs.py "$$image_tmp" --blocks 32768 --inodes 1024; \
+	python3 src/tools/packers/mksilliconfs.py "$$image_tmp" --inodes 1024 \
+		--reserve-mib $(if $(filter $(LIVE_ROOT_IMAGE),$@),32,64) \
+		--size-from $(foreach file,$(ROOT_PAYLOAD),'$(file)'); \
 	$(BUILD_DIR)/populate_root "$$image_tmp" $(BUILD_DIR)/init.elf \
-		$(BUILD_DIR)/shell.elf --tinyx $(TINYX_BINARY) \
-		--startx $(BUILD_DIR)/startx.elf \
-		--twm $(BUILD_DIR)/x11/twm/src/twm --xterm $(BUILD_DIR)/x11/xterm/xterm \
-		--xeyes $(BUILD_DIR)/x11/xeyes/xeyes --feh $(BUILD_DIR)/x11/feh/src/feh \
+		$(BUILD_DIR)/shell.elf \
 		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
-		--doom $(BUILD_DIR)/doom/doom $(if $(DOOM_WAD),--doom-wad '$(DOOM_WAD)') \
-		--netsurf $(BUILD_DIR)/netsurf/netsurf \
 		$(if $(PKG_CA_CERT),--pkg-ca '$(PKG_CA_CERT)') \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		$(foreach module,$(MODULE_OBJECTS),--module $(module)) \

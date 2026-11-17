@@ -19,11 +19,6 @@ TINYX_BINARY := $(TINYX_BUILD_DIR)/kdrive/opensillicon/X
 LIBOS_TEST := $(LIBOS_BUILD_DIR)/libos-test.elf
 LIBOS_ARCHIVE := $(LIBOS_BUILD_DIR)/liblibos.a
 
-# Optional IWAD (Freedoom or shareware DOOM1.WAD), installed as
-# /usr/share/doom/doom.wad in the root image.  A WAD dropped into the vendor
-# directory is picked up automatically.
-DOOM_WAD ?= $(firstword $(wildcard src/user/thirdparty/doomgeneric/freedoom1.wad \
-	src/user/thirdparty/doomgeneric/doom1.wad))
 LIBZ_ARCHIVE := $(LIBZ_BUILD_DIR)/libz.a
 LIBFONTENC_ARCHIVE := $(LIBFONTENC_BUILD_DIR)/libfontenc.a
 LIBXFONT_ARCHIVE := $(LIBXFONT_BUILD_DIR)/libXfont.a
@@ -77,7 +72,6 @@ $(BUILD_DIR):
 # Shared variables are exported for nested make invocations and tool scripts.
 export CC LD XORRISO QEMU OVMF_CODE BUILD_DIR ISO_ROOT
 export LIBOS_BUILD_DIR LIBOS_QEMU_BUILD_DIR LIBOS_TEST LIBOS_ARCHIVE LIBOS_CFLAGS
-export DOOM_WAD
 export LIBZ_BUILD_DIR LIBZ_ARCHIVE LIBFONTENC_BUILD_DIR LIBFONTENC_ARCHIVE
 export LIBXFONT_BUILD_DIR LIBXFONT_ARCHIVE
 export TINYX_BUILD_DIR TINYX_SOURCE_DIR TINYX_BINARY
