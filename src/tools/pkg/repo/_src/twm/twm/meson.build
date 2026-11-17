@@ -8,15 +8,15 @@ project(
     version: '1.0.13.1',
 )
 
-os_root = meson.project_source_root() / '../../../../..'
+os_root = meson.project_source_root() / '../../../../../../..'
 x11_prefix = os_root / 'src/build/x11/prefix'
 gcc_include = run_command('gcc', '-print-file-name=include', check: true).stdout().strip()
 add_project_arguments(
     '-DOPEN_SILLICON', '-nostdinc', '-I' + gcc_include,
     '-I' + os_root / 'src/user/libos/include', '-I' + x11_prefix / 'include',
-    '-I' + os_root / 'src/user/thirdparty/xorg/deps/libX11/include',
+    '-I' + os_root / 'src/tools/pkg/repo/_src/twm/deps/libX11/include',
     '-I' + os_root / 'src/build/x11/libX11/include',
-    '-I' + os_root / 'src/user/thirdparty/xorg/deps/libxtrans',
+    '-I' + os_root / 'src/tools/pkg/repo/_src/twm/deps/libxtrans',
     '-idirafter', '/usr/include',
     language: 'c',
 )

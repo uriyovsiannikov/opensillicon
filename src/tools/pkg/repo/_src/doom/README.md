@@ -46,13 +46,18 @@ depends on `src/build/x11/.apps-ready`.
 doom -iwad /usr/share/doom/doom.wad
 ```
 
-`DOOM_WAD` defaults to `freedoom1.wad` (or `doom1.wad`) placed next to this
-README, and the root image installs it as `/usr/share/doom/doom.wad`.  Override
-with `make DOOM_WAD=/path/to/iwad.wad`.  A 17 MiB IWAD fits because SilliconFS
+The Doom package installs the Doom v1.9 shareware IWAD `doom1.wad` as
+`/usr/share/doom/doom.wad`. It contains the first episode only; its MD5 is
+`f0cefca49926d00903cf57551d901abe`.
+The WAD is from id Software's original `doom95.zip` shareware distribution
+(`https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/doom/win95/doom95.zip`).
+Build the installable package with `make -C src/tools/pkg/repo/_src/doom`.
+Install `twm` first because Doom opens an X11 window. A 4 MiB IWAD fits because SilliconFS
 version 2 adds a double-indirect block to the inode map: a file may now span
 12 + 1024 + 1024² blocks (about 4 GiB) instead of 1036 blocks (4 MiB).
 
-The twm root menu entry "Doom" starts exactly that file.  `doom` also accepts
+After installing the `twm` and Doom packages, the twm root menu entry "Doom"
+starts exactly that file. `doom` also accepts
 the usual `-iwad`, `DOOMWADDIR` and `DOOMWADPATH` lookup.
 
 ## Limitations

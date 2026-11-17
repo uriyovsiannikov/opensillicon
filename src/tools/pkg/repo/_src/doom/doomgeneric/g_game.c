@@ -2180,9 +2180,16 @@ void G_DoPlayDemo (void)
                                   "/info/patches.php\n"
                         "    This appears to be %s.";
 
-        //I_Error(message, demoversion, G_VanillaVersionCode(),
+        // IWADs may ship demos recorded by a newer engine.  Do not parse
+        // their version-specific header as a vanilla demo: malformed game
+        // state can otherwise lead to missing-lump errors (or worse).
         printf(message, demoversion, G_VanillaVersionCode(),
                          DemoVersionDescription(demoversion));
+        demoplayback = false;
+        singledemo = false;
+        usergame = false;
+        D_AdvanceDemo();
+        return;
     }
     
     skill = *demo_p++; 

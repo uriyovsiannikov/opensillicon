@@ -264,7 +264,7 @@ void I_Quit (void)
 #endif
 }
 
-#if !defined(_WIN32) && !defined(__MACOSX__) && !defined(__DJGPP__)
+#if !defined(_WIN32) && !defined(__MACOSX__) && !defined(__DJGPP__) && !defined(OPEN_SILLICON)
 #define ZENITY_BINARY "/usr/bin/zenity"
 
 // returns non-zero if zenity is available
@@ -452,6 +452,11 @@ void I_Error (char *error, ...)
     {
         printf("%s\n", msgbuf);
         exit(-1);
+    }
+
+#elif defined(OPEN_SILLICON)
+    {
+        /* The X11 port writes errors to stderr; zenity is not available. */
     }
 
 #else

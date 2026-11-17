@@ -2,11 +2,13 @@
 
 NetSurf 3.11 uses its framebuffer frontend in an X11 window through the native
 XCB surface in libnsfb. It does not access the console framebuffer directly.
-It is included in both root images and the twm menu; launch it with
-`netsurf` or `netsurf https://example.org/`. `-f x` explicitly selects XCB.
+It is provided by the optional `netsurf` package and the twm menu. Build the
+package with `make -C src/tools/pkg/repo/_src/netsurf`; install `xorg` first,
+then launch it with `netsurf` or `netsurf https://example.org/`. `-f x`
+explicitly selects XCB.
 The default homepage is `https://frogfind.com/`.
 
-Build `make live-iso` or `make iso root`. The native binary is
+The native binary is
 `src/build/netsurf/netsurf`; the unstripped executable is
 `src/build/netsurf/source/netsurf/nsfb`. The builder fingerprints sources,
 compiler and native libraries, uses a lock, and builds in `src/build/netsurf`.
@@ -22,7 +24,7 @@ Sources, versions and archive checksums are in SOURCES.md.
   hostname/chain/date verification and the shared Mozilla certificate bundle.
 * IDN processing with utf8proc, public suffix handling, normal XCB keyboard
   and mouse input, and WM_DELETE_WINDOW handling in twm.
-* `/etc/netsurf/Choices` holds defaults. Resources are installed in
+* `/usr/etc/netsurf/Choices` holds defaults. Resources are installed in
   `/usr/share/netsurf`, fonts in `/usr/share/fonts/truetype/liberation`, and
   trust roots in `/etc/ssl/cert.pem`.
 

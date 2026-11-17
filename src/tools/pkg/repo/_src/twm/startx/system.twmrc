@@ -85,9 +85,9 @@ menu "defops"
 "Show Iconmgr"	f.showiconmgr
 "Hide Iconmgr"	f.hideiconmgr
 ""		f.nop
-"Xterm"		f.exec "exec xterm -display :0 -e /bin/sh --xterm &"
-"NetSurf"	f.exec "exec netsurf &"
-"Doom"		f.exec "exec doom -iwad /usr/share/doom/doom.wad &"
+"Xterm"		f.exec "exec /usr/bin/xterm -display :0 -e /bin/sh --xterm &"
+"NetSurf"	f.exec "exec /usr/bin/netsurf &"
+"Doom"		f.exec "exec /usr/bin/doom -iwad /usr/share/doom/doom.wad &"
 ""		f.nop
 "Kill"		f.destroy
 "Delete"	f.delete

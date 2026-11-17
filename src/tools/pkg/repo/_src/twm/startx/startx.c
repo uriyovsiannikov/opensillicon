@@ -42,11 +42,11 @@ static pid_t launch(char *const argv[])
 
 int main(void)
 {
-	char *server_args[] = {"/bin/X", ":0", NULL};
-	char *wm_args[] = {"/bin/twm", "-display", ":0", "-f", "/etc/twmrc", NULL};
-	char *wallpaper_args[] = {"/bin/feh", "--no-fehbg", "--bg-fill",
-	    "/tmp/img1.jpg", NULL};
-	char *term_args[] = {"/bin/xterm", "-display", ":0", "-geometry", "80x24+40+40",
+	char *server_args[] = {"/usr/bin/X", ":0", NULL};
+	char *wm_args[] = {"/usr/bin/twm", "-display", ":0", "-f", "/usr/etc/twmrc", NULL};
+	char *wallpaper_args[] = {"/usr/bin/feh", "--no-fehbg", "--bg-fill",
+	    "/usr/share/xorg/background.jpg", NULL};
+	char *term_args[] = {"/usr/bin/xterm", "-display", ":0", "-geometry", "80x24+40+40",
 	    "-e", "/bin/sh", "--xterm", NULL};
 	pid_t children[4] = {-1, -1, -1, -1};
 	int result = 1, fd, status, framebuffer_console = 0;
@@ -92,7 +92,7 @@ int main(void)
 		goto cleanup;
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-		fputs("startx: could not set /tmp/img1.jpg as wallpaper\n", stderr);
+		fputs("startx: could not set desktop wallpaper\n", stderr);
 	children[2] = -1;
 	children[3] = launch(term_args);
 	if (children[3] < 0) goto cleanup;
