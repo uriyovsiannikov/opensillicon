@@ -157,7 +157,7 @@ with tempfile.TemporaryDirectory(prefix='scinstall-') as directory:
         p=start(False)
         try:
             wait(p,'/% ');keys=Input()
-            for name in ['/bin/scinstall','/bin/X','/boot/kernel.elf','/var/log/install.log']:
+            for name in ['/bin/scinstall','/bin/pkg','/boot/kernel.elf','/var/log/install.log']:
                 keys.type('stat '+name);wait(p,'File: '+name)
             if boot==0:keys.type('touch /tmp/persist')
             keys.type('stat /tmp/persist');wait(p,'File: /tmp/persist')

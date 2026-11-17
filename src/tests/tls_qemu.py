@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import ssl
 import subprocess
@@ -96,7 +97,7 @@ def build_probe():
     run(compiler, "-std=c11", "-O2", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-fno-pic", "-fno-pie", "-m64", "-mno-red-zone",
         "-nostdinc", "-isystem", includes, "-Isrc/user/libos/include",
-        "-Isrc/user/thirdparty/xorg/deps/libxcb/include",
+        "-Isrc/tools/pkg/repo/_src/twm/deps/libxcb/include",
         "-Isrc/build/netsurf/prefix/include", "-Isrc/build/x11/prefix/include",
         "-nostdlib", "-static", "-no-pie", "-Wl,--build-id=none",
         "-Wl,-T,src/user/c_linker.ld", "src/build/libos/crt0.o",
@@ -104,9 +105,12 @@ def build_probe():
         "src/build/netsurf/prefix/lib/libxcb-keysyms.a", "src/build/x11/prefix/lib/libxcb.a",
         "src/build/x11/prefix/lib/libXau.a", "src/build/libos/liblibos.a",
         "-Wl,--end-group", "-lgcc", "-o", stage / "usr/bin/browsercheck")
-    (BUILD / "repo/_pkges").mkdir(parents=True, exist_ok=True)
+    packages = BUILD / "repo/_pkges"
+    packages.mkdir(parents=True, exist_ok=True)
     run("src/build/pkg/pkg-build", "tlscheck", "1.0", stage,
-        BUILD / "repo/_pkges/tlscheck-1.0.spkg", "Native TLS regression")
+        packages / "tlscheck-1.0.spkg", "Native TLS regression")
+    for name in ("twm", "netsurf"):
+        shutil.copy(f"src/tools/pkg/repo/_pkges/{name}-1.0.0.spkg", packages)
 
 
 requests = []
@@ -129,7 +133,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    run("make", "-j8", "live-iso", "src/build/pkg/pkg-server", "src/build/pkg/pkg-build")
+    run("make", "-j8", "live-iso", "src/build/pkg/pkg-server", "src/build/pkg/pkg-build",
+        "src/tools/pkg/repo/_pkges/twm-1.0.0.spkg",
+        "src/tools/pkg/repo/_pkges/netsurf-1.0.0.spkg")
     fixture_certificates()
     build_probe()
     servers = []
@@ -203,9 +209,13 @@ def main():
         type_command("doas pkg repo http://10.15.3.2:18089")
         wait("Repository saved in /etc/pkg.conf")
         type_command("doas pkg update")
-        wait("Repository updated: 1 packages")
+        wait("Repository updated: 3 packages")
         type_command("doas pkg add tlscheck")
         wait("Installed tlscheck")
+        type_command("doas pkg add twm")
+        wait("Installed twm")
+        type_command("doas pkg add netsurf")
+        wait("Installed netsurf")
         type_command("tlscheck")
         wait("TLS NATIVE PASS")
         print("Native HTTPS and certificate rejection checks passed", flush=True)

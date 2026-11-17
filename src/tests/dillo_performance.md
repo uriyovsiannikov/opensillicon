@@ -45,7 +45,8 @@ TLS_PROFILE_SECONDS=40 TLS_BROWSER_URL=https://www.google.com/ \
 ```
 
 The harness first checks valid TLS, certificate rejection and native entropy,
-then starts TinyX, twm, xterm and NetSurf in a disposable live VM. It writes
+installs the `twm` and NetSurf packages, then starts TinyX, twm, xterm and
+NetSurf in a disposable live VM. It writes
 `src/build/tls-guest/profile.json` (elapsed seconds and HMP register snapshots)
 and `src/build/tls-guest/netsurf.ppm`. Resolve kernel RIP values using
 `addr2line -f -e src/build/kernel.elf ADDRESS`. Module addresses must be resolved

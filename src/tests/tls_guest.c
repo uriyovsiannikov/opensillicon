@@ -125,7 +125,7 @@ launch_browser(char *url)
 	/* Let startx finish mapping xterm before the test browser is mapped. */
 	sleep(8);
 	puts("TLS browser executing NetSurf");
-	char *arguments[] = {"/bin/netsurf", "--ca_bundle=/tmp/netsurf-test-ca.pem", url, NULL};
+	char *arguments[] = {"/usr/bin/netsurf", "--ca_bundle=/tmp/netsurf-test-ca.pem", url, NULL};
 	execv(arguments[0], arguments);
 	perror("TLS browser exec");
 	return 1;
