@@ -2,7 +2,7 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 . "$root/src/tools/builders/build_helpers.sh"
-s=$root/src/user/thirdparty/netsurf
+s=$root/src/tools/pkg/repo/_src/netsurf
 b=$root/src/build/netsurf
 p=$b/prefix
 x=$root/src/build/x11/prefix
@@ -15,7 +15,7 @@ temporary="$stamp.tmp.$$"
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 {
     find "$s" "$root/src/user/thirdparty/mbedtls" \
-        "$root/src/user/thirdparty/xorg/deps/freetype" \
+        "$root/src/tools/pkg/repo/_src/twm/deps/freetype" \
         "$root/src/user/libos/include" -type f ! -name '*.md' ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum
     sha256sum "$0" "$root/src/tools/builders/build_mbedtls.sh" \
         "$root/src/build/libos/liblibos.a" "$root/src/build/libos/crt0.o" \
@@ -39,7 +39,7 @@ source = Path(sys.argv[1])
 source.rename(source.with_name("source.previous." + str(time.time_ns())))
 RESTART
 fi
-f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/user/libos/include -I$root/src/user/thirdparty/xorg/deps/libxcb/include -I$p/include -I$x/include -I$root/src/user/thirdparty/xorg/deps/libz -idirafter /usr/include"
+f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/user/libos/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxcb/include -I$p/include -I$x/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
 export PKG_CONFIG_LIBDIR="$p/lib/pkgconfig:$x/lib/pkgconfig:$x/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 # Describe the actual native XCB build, which has no XDMCP or host pthread libs.
@@ -53,11 +53,11 @@ sed 's/-I${includedir}/-idirafter ${includedir}/' /usr/share/pkgconfig/xproto.pc
 cat > "$p/lib/pkgconfig/zlib.pc" <<ZLIB_PC
 Name: zlib
 Description: Native zlib
-Version: $(sed -n 's/^#define ZLIB_VERSION "\(.*\)"/\1/p' "$root/src/user/thirdparty/xorg/deps/libz/zlib.h")
+Version: $(sed -n 's/^#define ZLIB_VERSION "\(.*\)"/\1/p' "$root/src/tools/pkg/repo/_src/twm/deps/libz/zlib.h")
 Libs: -L$root/src/build/libz -lz
-Cflags: -I$root/src/user/thirdparty/xorg/deps/libz
+Cflags: -I$root/src/tools/pkg/repo/_src/twm/deps/libz
 ZLIB_PC
-triplet=$(sh "$root/src/user/thirdparty/xorg/deps/libX11/config.guess")
+triplet=$(sh "$root/src/tools/pkg/repo/_src/twm/deps/libX11/config.guess")
 # Build release sources in the build directory, keeping the vendored tree clean.
 mkdir -p "$b/source"
 cp -a "$s/buildsystem" "$b/source/"
@@ -147,7 +147,7 @@ build_component "LIB curl configure" cmake -S "$s/deps/curl" -B "$b/curl" \
     -DCURL_DISABLE_MQTT=ON -DCURL_DISABLE_DOH=ON \
     -DCURL_CA_BUNDLE=/etc/ssl/cert.pem -DCURL_CA_PATH=none \
     -DCURL_ZLIB=ON -DZLIB_LIBRARY="$root/src/build/libz/libz.a" \
-    -DZLIB_INCLUDE_DIR="$root/src/user/thirdparty/xorg/deps/libz" \
+    -DZLIB_INCLUDE_DIR="$root/src/tools/pkg/repo/_src/twm/deps/libz" \
     -DMBEDTLS_INCLUDE_DIR="$tls_source/include" -DMBEDTLS_LIBRARY="$tls/libmbedtls.a" \
     -DMBEDX509_LIBRARY="$tls/libmbedx509.a" -DMBEDCRYPTO_LIBRARY="$tls/libmbedcrypto.a"
 build_component "LIB curl" cmake --build "$b/curl" -j8
@@ -158,7 +158,7 @@ sed -i '/^Libs.private:/c\Libs.private: -lmbedtls -lmbedx509 -lmbedcrypto -lz' "
 # A private FreeType build keeps only font drivers used by the shipped TTFs.
 # This leaves the full FreeType build used by feh unchanged.
 build_component "LIB browser FreeType configure" cmake \
-    -S "$root/src/user/thirdparty/xorg/deps/freetype" -B "$b/freetype" \
+    -S "$root/src/tools/pkg/repo/_src/twm/deps/freetype" -B "$b/freetype" \
     -DCMAKE_SYSTEM_NAME=Generic -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
     -DCMAKE_C_COMPILER="$cc" -DCMAKE_C_FLAGS="$f -I$s/opensillicon -include $s/opensillicon/freetype_config.h" \
     -DCMAKE_INSTALL_PREFIX="$p" -DCMAKE_BUILD_TYPE=MinSizeRel \
@@ -168,15 +168,15 @@ build_component "LIB browser FreeType" cmake --build "$b/freetype" -j8
 build_component "LIB browser FreeType install" cmake --install "$b/freetype"
 build_component "LIB native runtime" make -C "$root" -j8 src/build/libos/liblibos.a
 # Supply native implementations for libraries requested by upstream makefiles.
-ar rcs "$p/lib/libm.a" "$root/src/build/libos/math.o"
-ar rcs "$p/lib/libiconv.a" "$root/src/build/libos/iconv.o"
+ar rcs "$p/lib/libm.a" "$root/src/build/libos/math/math.o"
+ar rcs "$p/lib/libiconv.a" "$root/src/build/libos/text/iconv.o"
 "$cc" $f -c "$s/opensillicon/runtime.c" -o "$b/runtime.o"
 if [ ! -f "$b/source/netsurf/Makefile" ]; then cp -a "$s/netsurf" "$b/source/"; fi
 cp "$s/opensillicon/Makefile.config" "$b/source/netsurf/Makefile.config"
 # Hold native libraries in a group: their dependency graph contains cycles.
 link="-flto -Os -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--gc-sections -Wl,-T,$s/opensillicon/linker.ld -Wl,--wrap=main $root/src/build/libos/crt0.o $b/runtime.o -L$p/lib -L$x/lib -L$root/src/build/libz -L$tls -Wl,--whole-archive $p/lib/libnsfb.a -Wl,--no-whole-archive -Wl,--start-group $root/src/build/libos/liblibos.a -lcss -ldom -lhubbub -lparserutils -lwapcaplet -lnsutils -lnspsl -lutf8proc -lnsbmp -lnsgif -lsvgtiny -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lexpat -lxcb-shm -lxcb-image -lxcb-icccm -lxcb-keysyms -lxcb-util -lxcb -lXau -lfreetype -lpng -ljpeg -lz -liconv -lgcc -Wl,--end-group"
 CFLAGS="$f" \
-    build_component "USER NetSurf XCB" make -j8 -C "$b/source/netsurf" \
+    build_component "PKG NetSurf XCB" make -j8 -C "$b/source/netsurf" \
     TARGET=framebuffer HOST=OpenSillicon CC="$cc" CXX="${CXX:-g++}" CCACHE= \
     BUILD_CC="$cc" CWARNFLAGS= CXXWARNFLAGS= COMMON_WARNFLAGS= LDFLAGS="$link" \
     NETSURF_BUILTIN_LOG_FILTER=level:WARNING \

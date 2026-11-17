@@ -15,29 +15,28 @@ flock 9
 
 {
 	find \
-		"$root/src/user/thirdparty/xorg/deps/libXau" \
-		"$root/src/user/thirdparty/xorg/deps/libxcb" \
-		"$root/src/user/thirdparty/xorg/deps/libX11" \
-		"$root/src/user/thirdparty/xorg/deps/libXext" \
-		"$root/src/user/thirdparty/xorg/deps/libICE" \
-		"$root/src/user/thirdparty/xorg/deps/libSM" \
-		"$root/src/user/thirdparty/xorg/deps/libXt" \
-		"$root/src/user/thirdparty/xorg/deps/libXmu" \
-		"$root/src/user/thirdparty/xorg/deps/libXpm" \
-		"$root/src/user/thirdparty/xorg/deps/libXaw" \
-		"$root/src/user/thirdparty/xorg/deps/libxtrans" \
-		"$root/src/user/thirdparty/xorg/deps/xcb-proto" \
-		"$root/src/user/thirdparty/xorg/deps/libXfixes-6.0.2" \
-		"$root/src/user/thirdparty/xorg/deps/libXi-1.8.4" \
-		"$root/src/user/thirdparty/xorg/deps/libpng" \
-		"$root/src/user/thirdparty/xorg/deps/libz" \
-		"$root/src/user/thirdparty/xorg/deps/freetype" \
-		"$root/src/user/thirdparty/xorg/deps/libjpeg-turbo" \
-		"$root/src/user/thirdparty/xorg/deps/imlib2" \
-		"$root/src/user/thirdparty/xorg/twm" \
-		"$root/src/user/thirdparty/xorg/xterm" \
-		"$root/src/user/thirdparty/xorg/xeyes" \
-		"$root/src/user/thirdparty/xorg/feh" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXau" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libxcb" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libX11" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXext" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libICE" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libSM" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXt" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXmu" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXpm" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXaw" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libxtrans" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/xcb-proto" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXfixes-6.0.2" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libXi-1.8.4" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libpng" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libz" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/freetype" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/libjpeg-turbo" \
+		"$root/src/tools/pkg/repo/_src/twm/deps/imlib2" \
+		"$root/src/tools/pkg/repo/_src/twm/twm" \
+		"$root/src/tools/pkg/repo/_src/twm/xterm" \
+		"$root/src/tools/pkg/repo/_src/twm/feh" \
 		"$root/src/user/libos/include" \
 		"$root/src/include/abi" \
 		"$root/src/tools/builders/build_x11_if_needed.sh" \
@@ -57,7 +56,6 @@ if [ -f "$stamp" ] && cmp -s "$tmp" "$stamp" &&
 	[ -x "$root/src/build/tinyx/target/kdrive/opensillicon/X" ] &&
 	[ -x "$root/src/build/x11/twm/src/twm" ] &&
 	[ -x "$root/src/build/x11/xterm/xterm" ] &&
-	[ -x "$root/src/build/x11/xeyes/xeyes" ] &&
 	[ -x "$root/src/build/x11/feh/src/feh" ]; then
 	if [ -f "$link_stamp" ] && cmp -s "$link_tmp" "$link_stamp"; then
 		echo "X11 inputs unchanged; reusing existing applications"
