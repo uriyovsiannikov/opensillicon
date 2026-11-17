@@ -1,6 +1,6 @@
 <div align="center">
   <img src="other/logo.png" alt="OpenSillicon logo" width="88">
-  <h1>OpenSillicon</h1>
+  <h1>opensillicon</h1>
   <p>a small x86_64 operating system built from the ground up.</p>
   <img src="other/screenshot2.png" alt="OpenSillicon shell" width="620">
 </div>
