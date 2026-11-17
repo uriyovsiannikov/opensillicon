@@ -10,7 +10,6 @@ __libos_assert_fail(const char *expression, const char *file, int line)
 {
     fprintf(stderr, "%s:%d: assertion failed: %s\n", file, line, expression);
     abort();
-    __builtin_unreachable();
 }
 #define assert(expression) ((expression) ? (void)0 : \
     __libos_assert_fail(#expression, __FILE__, __LINE__))
