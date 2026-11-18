@@ -3,7 +3,7 @@
 The system package manager supports four commands.
 
 ```sh
-doas pkg repo https://192.168.1.112:8080
+doas pkg repo https://packages.chipset.bond
 doas pkg update
 doas pkg add hello
 hello
@@ -39,10 +39,10 @@ src/build/pkg/pkg-server --repo src/tools/pkg/repo --bind 0.0.0.0 --port 8080 \
   --cert /absolute/path/fullchain.pem --key /absolute/path/privkey.pem
 ```
 
-The default configuration points at QEMU's `https://10.15.3.2:8080`.
-On physical hardware, configure the reachable LAN address or DNS name of the
-host. The server certificate must cover the chosen name or IP in its SANs.
-Without an explicit port, HTTPS uses 443 and HTTP uses 80.
+New system images default to the public repository at
+`https://packages.chipset.bond`. To use a different repository, set its URL
+with `doas pkg repo URL`. The server certificate must cover the chosen name or
+IP in its SANs. Without an explicit port, HTTPS uses 443 and HTTP uses 80.
 
 TLS uses the shared Mbed TLS library. The client verifies the certificate
 chain, server name/IP and expiry against `/etc/ssl/cert.pem`, using the native
@@ -68,6 +68,30 @@ to HTTPS. The four package commands are unchanged.
 The server exposes `GET /index` and `GET /packages/<name>-<version>.spkg`.
 Archives belong in `src/tools/pkg/repo/_pkges/`. Sources and build recipes
 belong in `src/tools/pkg/repo/_src/<name>/`.
+
+## Adding and publishing packages
+
+Create a starter recipe with:
+
+```sh
+make pkg-new NAME=hello VERSION=1.0.0
+```
+
+Edit `src/tools/pkg/repo/_src/hello/build.sh` to build the program and install
+its files into the staging directory. Then build and publish just that package:
+
+```sh
+make pkg-publish PKGS=hello
+```
+
+For an existing port, the same command rebuilds its recipe and publishes its
+archive. Running `make pkg-publish` without `PKGS` uploads the currently built
+archives. Package archives are sent to the VDS over SSH using the dedicated
+`pkgpublish` account and the private key at
+`~/.ssh/opensillicon_pkg_publish`. The helper scripts live in
+`src/tools/pkg/scripts/`. The command checks the public repository index after
+publishing. Set `PKG_PUBLISH_HOST`, `PKG_PUBLISH_KEY` or `PKG_PUBLISH_URL` to
+override the defaults.
 
 ## Desktop packages
 

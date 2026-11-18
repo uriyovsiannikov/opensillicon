@@ -15,8 +15,14 @@ ifneq ($(filter clean,$(MAKECMDGOALS)),)
 .NOTPARALLEL:
 endif
 
-.PHONY: clean iso live-iso kernel modules root run run-gui run-live
+.PHONY: clean iso live-iso kernel modules root run run-gui run-live pkg-new pkg-publish
 root: $(ROOT_IMAGE)
+
+pkg-new:
+	python3 src/tools/pkg/scripts/pkg-new.py "$(NAME)" "$(VERSION)" "$(DESCRIPTION)"
+
+pkg-publish:
+	PKGS="$(PKGS)" python3 src/tools/pkg/scripts/pkg-publish.py
 
 run: iso $(ROOT_IMAGE)
 	$(QEMU) -machine q35 -cpu $(QEMU_CPU) -m 1024M -bios $(OVMF_CODE) -cdrom $(BUILD_DIR)/opensillicon.iso \

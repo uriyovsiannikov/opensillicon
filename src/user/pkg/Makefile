@@ -11,6 +11,15 @@ PKG_TLS_FLAGS := -Isrc/user/thirdparty/mbedtls/include \
 PKG_TLS_LIBS := $(addprefix $(BUILD_DIR)/mbedtls/,libmbedtls.a libmbedx509.a libmbedcrypto.a)
 PKG_HOST_TLS_LIBS := $(addprefix $(BUILD_DIR)/mbedtls-host/,libmbedtls.a libmbedx509.a libmbedcrypto.a)
 .PHONY: $(BUILD_DIR)/mbedtls/.pkg-ready $(BUILD_DIR)/mbedtls-host/.pkg-ready
+
+# Generic hook used by package recipes created with `make pkg-new`.
+.PHONY: pkg-from-stage
+pkg-from-stage: $(BUILD_DIR)/pkg/pkg-build
+	@test -n "$(PKG_NAME)" -a -n "$(PKG_VERSION)" -a -n "$(PKG_STAGE)" || \
+		{ echo 'pkg-from-stage requires PKG_NAME, PKG_VERSION and PKG_STAGE' >&2; exit 2; }
+	$(BUILD_DIR)/pkg/pkg-build "$(PKG_NAME)" "$(PKG_VERSION)" "$(PKG_STAGE)" \
+		src/tools/pkg/repo/_pkges/$(PKG_NAME)-$(PKG_VERSION).spkg "$(PKG_DESCRIPTION)"
+
 $(BUILD_DIR)/mbedtls/.pkg-ready:
 	sh src/tools/builders/build_mbedtls.sh
 $(BUILD_DIR)/mbedtls-host/.pkg-ready:
