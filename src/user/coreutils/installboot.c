@@ -95,8 +95,12 @@ main(int argc, char **argv)
 	uuid_format(uuid, id);
 	char config[512];
 	int length = snprintf(config, sizeof(config),
-	    "timeout: 10\n/OpenSillicon\n protocol: limine\n path: boot():/boot/kernel.elf\n module_path: boot():/boot/init.cpi\n module_string: initramfs\n resolution: 1920x1080x32\n cmdline: root=PARTUUID=%s\n",
-	    id);
+	    "timeout: 10\ndefault_entry: 1\n"
+	    "/OpenSillicon A\n protocol: limine\n path: boot():/boot/kernelA.elf\n"
+	    " module_path: boot():/boot/initA.cpi\n cmdline: root=PARTUUID=%s kernel-slot=A\n"
+	    "/OpenSillicon B\n protocol: limine\n path: boot():/boot/kernelB.elf\n"
+	    " module_path: boot():/boot/initB.cpi\n cmdline: root=PARTUUID=%s kernel-slot=B\n",
+	    id, id);
 	if (length < 0 || (size_t)length >= sizeof(config))
 		return 1;
 	struct memory_file memory = {config, (size_t)length};

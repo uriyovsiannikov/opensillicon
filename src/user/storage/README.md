@@ -43,8 +43,10 @@ readback mismatches and independent sgdisk validation. Native end-to-end check:
 it with sgdisk, reboots, and formats the discovered root partition with newfs.
 
 ESP formatting uses FAT32 with two allocation tables, FSInfo and backup boot
-records. It writes /EFI/BOOT/BOOTX64.EFI, /EFI/BOOT/limine.conf, /boot/kernel.elf
-and /boot/init.cpi; Limine can read these files without SilliconFS support.
+records. It writes /EFI/BOOT/BOOTX64.EFI, /EFI/BOOT/limine.conf, the legacy
+/boot/kernel.elf and /boot/init.cpi names, and two bootable kernel/initramfs
+slots at /boot/kernelA.elf + /boot/initA.cpi and /boot/kernelB.elf +
+/boot/initB.cpi. Limine reads these files without SilliconFS support.
 The writer uses 512- or 4096-byte logical sectors and one sector per cluster,
 checks FAT32's cluster-count limits, verifies metadata and file payloads, and
 publishes the primary boot record only after data has been flushed.
@@ -74,6 +76,31 @@ its root files are prepopulated on the host, so it does not claim to test the
 full installer copy stage. The complete blank-disk installation test is
 `python3 src/tests/scinstall_qemu.py`; it also compares persisted system
 contents, ownership and modes with the Live image. See INSTALL.md for usage.
+
+`doas sysupgrade check` downloads the `os-kernel` package over the configured
+HTTPS repository and verifies the package hashes and the release's RSA
+signature. It compares the release ABI with the running kernel's
+`/proc/dapi` value. `doas sysupgrade apply` finds the ESP belonging to
+the running root partition through GPT PARTUUIDs,
+writes and reads back the inactive slot, then selects it in `limine.conf`. The
+current slot remains available as a manual Limine rollback choice. Existing
+installations with the legacy single-kernel layout are migrated on the first
+apply by preserving their current kernel/initramfs in slot A and placing the
+new release in slot B. The updater never formats the ESP.
+
+Build and publish the updater separately from system releases with
+`make pkg-publish PKGS=sysupgrade`. To build and publish a signed kernel
+release, use `make pkg-publish PKGS=os-kernel`; the signing key defaults to
+`~/.config/opensillicon/sysupgrade-signing.pem` and can be overridden with
+`SIGNING_KEY=/path/to/key`. The matching public key is compiled into
+`sysupgrade`; keep the private key outside the source repository. Install the
+`sysupgrade` package with `doas pkg add sysupgrade`, then check and apply
+releases with the commands above. This kernel-only updater refuses releases
+whose module ABI differs, so a kernel and driver-module ABI transition still
+requires a full system update. After the updater package is published, install
+it with `doas pkg update && doas pkg add sysupgrade`. A signed `os-kernel`
+archive is built locally as part of its publish recipe; publishing either
+package to the VDS remains an explicit `make pkg-publish PKGS=...` command.
 
 Temporary target filesystems can now be mounted in the Live session:
 mount -t silliconfs /dev/ada0p2 /mnt; then use umount /mnt after closing files.

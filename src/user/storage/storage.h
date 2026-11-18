@@ -40,11 +40,15 @@ struct esp_file {
 	uint64_t bytes;
 	int (*read)(void *, uint64_t, void *, size_t);
 };
-/* File order: BOOTX64.EFI, limine.conf, kernel.elf, init.cpi. */
+/* Input order: BOOTX64.EFI, limine.conf, kernel.elf, init.cpi. */
 struct fat32_layout {
 	uint32_t sectors, fat_sectors, data_start, clusters;
 };
 int fat32_plan(const struct storage_io *, struct fat32_layout *);
 int esp_format(const struct storage_io *, uint32_t hidden_sectors,
     uint32_t serial, const struct esp_file files[4]);
+/* Replaces only the inactive Limine kernel/initramfs pair, then selects it. */
+int esp_update_slots(const struct storage_io *, const struct esp_file *kernel,
+    const struct esp_file *initramfs, char active_slot,
+    const uint8_t root_uuid[16], char *new_slot);
 #endif

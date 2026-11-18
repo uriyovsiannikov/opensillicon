@@ -234,6 +234,30 @@ $(BUILD_DIR)/coreutils/installboot.elf: $(BUILD_DIR)/coreutils/installboot.o \
 		$(BUILD_DIR)/coreutils/installboot.o $(BUILD_DIR)/storage/esp.o \
 		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(LIBOS_ARCHIVE) -o $@
 
+SYSUPGRADE_FLAGS := -Isrc/user/thirdparty/mbedtls/include \
+	-Isrc/user/thirdparty/mbedtls/opensillicon \
+	-DMBEDTLS_CONFIG_FILE='"opensillicon_mbedtls_config.h"'
+$(BUILD_DIR)/coreutils/sysupgrade.o: src/user/coreutils/sysupgrade.c \
+		src/user/storage/storage.h $(PKG_HEADERS) src/include/common/uuid.h \
+		src/include/abi/disk.h
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -Isrc/user $(SYSUPGRADE_FLAGS) -c $< -o $@
+
+SYSUPGRADE_PKG_OBJECTS := $(BUILD_DIR)/pkg/http.o $(BUILD_DIR)/pkg/tls.o \
+	$(BUILD_DIR)/pkg/format.o $(BUILD_DIR)/pkg/sha256.o
+$(BUILD_DIR)/coreutils/sysupgrade.elf: $(BUILD_DIR)/coreutils/sysupgrade.o \
+		$(BUILD_DIR)/storage/esp_update.o $(BUILD_DIR)/storage/esp.o \
+		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o \
+		$(SYSUPGRADE_PKG_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) \
+		$(BUILD_DIR)/mbedtls/.pkg-ready src/user/c_linker.ld
+	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
+		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
+		$(BUILD_DIR)/coreutils/sysupgrade.o $(BUILD_DIR)/storage/esp_update.o \
+		$(BUILD_DIR)/storage/esp.o $(BUILD_DIR)/storage/encoding.o \
+		$(BUILD_DIR)/storage/device.o $(SYSUPGRADE_PKG_OBJECTS) \
+		-Wl,--start-group $(PKG_TLS_LIBS) $(LIBOS_ARCHIVE) \
+		-Wl,--end-group -lgcc -o $@
+
 $(BUILD_DIR)/tests/installboot_guest.o: src/tests/installboot_guest.c | $(BUILD_DIR)
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
