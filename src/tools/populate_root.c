@@ -374,7 +374,7 @@ main(int argc, char **argv)
 		    "root:*:0:0:OpenSillicon root:/:/bin/sh\n"
 		    "user:*:1000:1000:OpenSillicon user:/tmp:/bin/sh\n";
 		static const char group[] = "root:*:0:\nuser:*:1000:\n";
-		static const char pkg_conf[] = "https://10.15.3.2:8080\n";
+		static const char pkg_conf[] = "https://packages.chipset.bond\n";
 		static const char doas_conf[] =
 		    "permit nopass 1000 as root cmd /bin/pkg\n";
 		static const char resolv_conf[] = "nameserver 10.15.3.3\n";

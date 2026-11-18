@@ -19,7 +19,7 @@
 #endif
 
 static const char *root = "";
-static const char *repository = "https://10.15.3.2:8080";
+static const char *repository = "https://packages.chipset.bond";
 static char configured_repository[256];
 static struct pkg_index_entry index_entries[PKG_MAX_PACKAGES];
 static size_t index_count;
