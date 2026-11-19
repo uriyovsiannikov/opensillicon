@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/logo_pixels.h"
 #include "kernel/framebuffer.h"
 #include "kernel/terminal.h"
 
@@ -382,50 +383,153 @@ panic_draw_char(unsigned int column, unsigned int row, uint8_t character)
 }
 
 static void
-panic_draw_text(unsigned int *column, unsigned int *row, const char *text)
+panic_draw_logo(uint64_t x, uint64_t y)
 {
-	while (*text != '\0' && *row < framebuffer_rows) {
-		if ((uint8_t)*text == 0x1bU) {
-			text++;
-			if (*text == '[') {
-				text++;
-				while (*text != '\0' && !(*text >= '@' && *text <= '~'))
-					text++;
-				if (*text != '\0')
-					text++;
+	for (unsigned int row = 0; row < OS_LOGO_HEIGHT; row++) {
+		for (unsigned int column = 0; column < OS_LOGO_WIDTH; column++) {
+			size_t index = (size_t)row * OS_LOGO_WIDTH + column;
+			uint8_t gray_packed = os_logo_gray4[index / 2U];
+			uint8_t alpha_packed = os_logo_alpha4[index / 2U];
+			uint8_t gray = (index & 1U) == 0 ? gray_packed >> 4 :
+			    gray_packed & 0x0fU;
+			uint8_t alpha = (index & 1U) == 0 ? alpha_packed >> 4 :
+			    alpha_packed & 0x0fU;
+			uint8_t red = (uint8_t)((gray * alpha +
+			    8U * (15U - alpha) + 7U) / 15U);
+			uint8_t green = (uint8_t)((gray * alpha + 7U) / 15U);
+			uint32_t color = ((uint32_t)(red * 17U) << 16) |
+			    ((uint32_t)(green * 17U) << 8) | (green * 17U);
+
+			if (x + column < active_framebuffer->width &&
+			    y + row < active_framebuffer->height)
+				put_pixel(x + column, y + row, color);
+		}
+	}
+}
+
+static bool
+panic_next_character(const char **text, uint8_t *character)
+{
+	while (**text != '\0') {
+		uint8_t current = (uint8_t)*(*text)++;
+		if (current == 0x1bU) {
+			if (**text == '[') {
+				(*text)++;
+				while (**text != '\0' && !(**text >= '@' && **text <= '~'))
+					(*text)++;
+				if (**text != '\0')
+					(*text)++;
 			}
 			continue;
 		}
-		if (*text == '\n' || *column >= framebuffer_columns - 1U) {
-			*column = 2;
-			(*row)++;
-			if (*text == '\n') {
-				text++;
-				continue;
-			}
-		}
-		if (*row >= framebuffer_rows)
-			break;
-		panic_draw_char((*column)++, (*row), (uint8_t)*text++);
+		if (current < ' ' && current != '\n')
+			continue;
+		*character = current;
+		return true;
 	}
+	return false;
+}
+
+static unsigned int
+panic_text_rows(const char *text, unsigned int width)
+{
+	unsigned int rows = 0;
+	unsigned int column = 0;
+	uint8_t character;
+
+	while (panic_next_character(&text, &character)) {
+		if (character == '\n') {
+			rows++;
+			column = 0;
+		} else {
+			if (column == width) {
+				rows++;
+				column = 0;
+			}
+			column++;
+		}
+	}
+	if (column != 0 || rows == 0)
+		rows++;
+	return rows;
+}
+
+static unsigned int
+panic_draw_centered_text(const char *text, unsigned int row, unsigned int width)
+{
+	char line[TERMINAL_MAX_COLUMNS];
+	size_t length = 0;
+	uint8_t character;
+
+	while (panic_next_character(&text, &character)) {
+		if (character == '\n' || length == width) {
+			unsigned int column = (framebuffer_columns -
+			    (unsigned int)length) / 2U;
+			for (size_t i = 0; i < length && row < framebuffer_rows; i++)
+				panic_draw_char(column++, row, (uint8_t)line[i]);
+			row++;
+			length = 0;
+			if (character == '\n')
+				continue;
+		}
+		line[length++] = (char)character;
+	}
+	if (length != 0) {
+		unsigned int column = (framebuffer_columns - (unsigned int)length) / 2U;
+		for (size_t i = 0; i < length && row < framebuffer_rows; i++)
+			panic_draw_char(column++, row, (uint8_t)line[i]);
+		row++;
+	}
+	return row;
 }
 
 void
 framebuffer_panic_screen(const char *diagnostic)
 {
-	unsigned int column = 2;
-	unsigned int row = 2;
+	static const char banner[] = "Try to reboot?";
+	static const char prefix[] =
+	    "kernel panic\n\nthe system halted\nrecent kernel diagnostics:\n\n";
+	static const char suffix[] =
+	    "\n\ndiagnostic saved to the serial console\n";
+	const char *details = diagnostic != NULL && diagnostic[0] != '\0' ?
+	    diagnostic : "no diagnostic text was recorded\n";
+	unsigned int width;
+	unsigned int message_rows;
+	unsigned int message_top;
+	unsigned int row;
+	uint64_t logo_x, logo_y = FONT_HEIGHT;
+	uint64_t banner_width = (sizeof(banner) - 1U) * FONT_WIDTH;
+	uint64_t group_width = OS_LOGO_WIDTH + 24U + banner_width;
+	unsigned int banner_row;
 	if (active_framebuffer == NULL || framebuffer_columns < 24U ||
 	    framebuffer_rows < 5U)
 		return;
 	fill(0x880000U);
-	panic_draw_text(&column, &row, "*** KERNEL PANIC ***\n\n");
-	panic_draw_text(&column, &row,
-	    "The system halted. Recent kernel diagnostics:\n\n");
-	if (diagnostic != NULL && diagnostic[0] != '\0')
-		panic_draw_text(&column, &row, diagnostic);
-	else
-		panic_draw_text(&column, &row, "No diagnostic text was recorded.\n");
-	panic_draw_text(&column, &row,
-	    "\n\nThe same diagnostic was written to the serial console.\n");
+	if (group_width <= active_framebuffer->width) {
+		logo_x = (active_framebuffer->width - group_width) / 2U;
+		panic_draw_logo(logo_x, logo_y);
+		banner_row = (unsigned int)((logo_y +
+		    (OS_LOGO_HEIGHT - FONT_HEIGHT) / 2U) / FONT_HEIGHT);
+		/* Place the phrase beside the logo when the framebuffer is wide enough. */
+		for (size_t i = 0; i < sizeof(banner) - 1U; i++)
+			panic_draw_char((unsigned int)((logo_x + OS_LOGO_WIDTH + 24U) /
+			    FONT_WIDTH + i), banner_row, (uint8_t)banner[i]);
+	} else {
+		logo_x = (active_framebuffer->width - OS_LOGO_WIDTH) / 2U;
+		panic_draw_logo(logo_x, logo_y);
+		row = (unsigned int)((logo_y + OS_LOGO_HEIGHT + FONT_HEIGHT) /
+		    FONT_HEIGHT);
+		row = panic_draw_centered_text(banner, row, framebuffer_columns - 4U);
+	}
+	width = framebuffer_columns - 4U;
+	message_rows = panic_text_rows(prefix, width) +
+	    panic_text_rows(details, width) + panic_text_rows(suffix, width);
+	message_top = (unsigned int)((logo_y + OS_LOGO_HEIGHT +
+	    FONT_HEIGHT * 2U - 1U) / FONT_HEIGHT);
+	if (message_top < framebuffer_rows &&
+	    message_rows <= framebuffer_rows - message_top)
+		message_top += (framebuffer_rows - message_top - message_rows) / 2U;
+	row = panic_draw_centered_text(prefix, message_top, width);
+	row = panic_draw_centered_text(details, row, width);
+	(void)panic_draw_centered_text(suffix, row, width);
 }

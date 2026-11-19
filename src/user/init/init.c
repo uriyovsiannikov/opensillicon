@@ -1,5 +1,5 @@
 #include "include/os.h"
-#include "logo_pixels.h"
+#include "common/logo_pixels.h"
 #include "service.h"
 
 struct startup_phdr {
@@ -24,7 +24,7 @@ static __thread volatile uint64_t tls_initialized = TLS_INITIAL_VALUE;
 static __thread volatile uint64_t tls_zero;
 static uint64_t tls_storage[TLS_STORAGE_WORDS] __attribute__((aligned(16)));
 
-static uint32_t init_logo_pixels[INIT_LOGO_WIDTH * INIT_LOGO_HEIGHT];
+static uint32_t init_logo_pixels[OS_LOGO_WIDTH * OS_LOGO_HEIGHT];
 
 static size_t
 cpu_brand(char *buffer, size_t capacity)
@@ -74,10 +74,10 @@ show_init_banner(void)
 	    info.red_mask_size != 0 && info.red_mask_size <= 8 &&
 	    info.green_mask_size != 0 && info.green_mask_size <= 8 &&
 	    info.blue_mask_size != 0 && info.blue_mask_size <= 8 &&
-	    INIT_LOGO_WIDTH + 12U <= info.width &&
-	    INIT_LOGO_HEIGHT + 12U <= info.height) {
-		for (size_t i = 0; i < INIT_LOGO_WIDTH * INIT_LOGO_HEIGHT; i++) {
-			uint8_t packed = init_logo_gray4[i / 2U];
+	    OS_LOGO_WIDTH + 12U <= info.width &&
+	    OS_LOGO_HEIGHT + 12U <= info.height) {
+		for (size_t i = 0; i < OS_LOGO_WIDTH * OS_LOGO_HEIGHT; i++) {
+			uint8_t packed = os_logo_gray4[i / 2U];
 			uint8_t gray = (uint8_t)(((i & 1U) == 0 ? packed >> 4 :
 			    packed & 0x0fU) * 17U);
 			init_logo_pixels[i] = logo_channel(gray, info.red_mask_size,
@@ -91,9 +91,9 @@ show_init_banner(void)
 			.source = (uintptr_t)init_logo_pixels,
 			.x = 12,
 			.y = 12,
-			.width = INIT_LOGO_WIDTH,
-			.height = INIT_LOGO_HEIGHT,
-			.source_pitch = INIT_LOGO_WIDTH * sizeof(uint32_t)
+			.width = OS_LOGO_WIDTH,
+			.height = OS_LOGO_HEIGHT,
+			.source_pitch = OS_LOGO_WIDTH * sizeof(uint32_t)
 		};
 		(void)u_framebuffer_present_rect(&rect);
 	}

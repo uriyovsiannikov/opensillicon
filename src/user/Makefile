@@ -8,7 +8,7 @@ $(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/
 $(BUILD_DIR)/user_path.o: src/user/path/path.c src/user/include/os.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user_init.o: src/user/init/init.c src/user/init/logo_pixels.h \
+$(BUILD_DIR)/user_init.o: src/user/init/init.c src/include/common/logo_pixels.h \
 		src/user/init/service.h src/user/include/os.h other/logo.png | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
