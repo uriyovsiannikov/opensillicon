@@ -559,6 +559,10 @@ complete_line(char *line, size_t *length, size_t *cursor)
 				    replacement_length - word_length);
 		}
 		if (count > 1) {
+			int restore_cursor = cursor_visible;
+			cursor_visible = 0;
+			redraw_line(line, *length, *cursor);
+			cursor_visible = restore_cursor;
 			u_puts("\r\n");
 			for (size_t i = 0; i < count; i++) {
 				u_puts(candidates[i].name);
@@ -583,6 +587,10 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	if (count == 1 && *cursor == *length)
 		insert_completion(line, length, cursor, " ", 1);
 	if (count > 1) {
+		int restore_cursor = cursor_visible;
+		cursor_visible = 0;
+		redraw_line(line, *length, *cursor);
+		cursor_visible = restore_cursor;
 		u_puts("\r\n");
 		for (size_t i = 0; i < count; i++) {
 			u_puts(candidates[i].name);
@@ -620,7 +628,7 @@ read_command_line(char *line)
 			/* The cursor is a highlighted character. Remove the highlight
 			 * from the screen before leaving the editor for command output. */
 			cursor_visible = 0;
-			redraw_line(line, length, cursor);
+			redraw_line(line, length, length);
 			u_puts("\n");
 			remember_command(line);
 			return 1;
