@@ -24,6 +24,7 @@ static char configured_repository[256];
 static struct pkg_index_entry index_entries[PKG_MAX_PACKAGES];
 static size_t index_count;
 static char target_path[256];
+static int package_lock = -1;
 
 static int rooted(char out[256], const char *path)
 {
@@ -53,6 +54,8 @@ static int ensure_directory(const char *relative)
 static int lock_database(void)
 {
 	char path[256];
+	if (package_lock >= 0)
+		return package_lock;
 
 	if (ensure_directory("var/db/pkg") < 0 ||
 	    rooted(path, "var/db/pkg") < 0)
@@ -60,7 +63,7 @@ static int lock_database(void)
 #ifdef PKG_HOST
 	int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
 	if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0)
-		return fd;
+		return package_lock = fd;
 #else
 	const struct sockaddr_un address = { .sun_family = AF_UNIX,
 	    .sun_path = "\0opensillicon:pkg" };
@@ -68,7 +71,7 @@ static int lock_database(void)
 	if (fd >= 0 && bind(fd, (const struct sockaddr *)&address,
 	    offsetof(struct sockaddr_un, sun_path) +
 	    sizeof("\0opensillicon:pkg") - 1) == 0)
-		return fd;
+		return package_lock = fd;
 #endif
 	perror("pkg: lock database");
 	if (fd >= 0)
@@ -505,6 +508,159 @@ static int install_remote(const char *name)
 	free(bytes);
 	return result;
 }
+
+static struct pkg_index_entry *repository_entry(const char *name)
+{
+	for (size_t i = 0; i < index_count; i++)
+		if (!strcmp(name, index_entries[i].name))
+			return &index_entries[i];
+	return NULL;
+}
+
+static int download_entry(const struct pkg_index_entry *entry,
+			  uint8_t **bytes, size_t *size)
+{
+	char path[160], hex[65];
+	snprintf(path, sizeof(path), "/packages/%s", entry->filename);
+	printf("Downloading %s %s (%u bytes)\n", entry->name, entry->version,
+	       entry->size);
+	*bytes = pkg_http_get(repository, path, PKG_MAX_SIZE, size, true);
+	if (!*bytes)
+		return 1;
+	uint8_t hash[32];
+	pkg_sha256(*bytes, *size, hash);
+	pkg_hex(hash, hex);
+	if (*size != entry->size || strcmp(hex, entry->hash)) {
+		free(*bytes);
+		*bytes = NULL;
+		return fail("repository package SHA-256 or length mismatch; run pkg update");
+	}
+	return 0;
+}
+
+static int package_owns_path(const struct pkg_archive *package,
+			     const char *path)
+{
+	for (uint32_t i = 0; i < package->count; i++)
+		if (!strcmp(package->files[i].path, path))
+			return (int)i + 1;
+	return 0;
+}
+
+static int preflight_upgrade(const struct pkg_archive *old,
+			     const struct pkg_archive *next)
+{
+	struct stat st;
+	if (old->installed != PKG_INSTALLED)
+		return fail("package has an incomplete transaction; remove or repair it before upgrading");
+	if (check_reservations(next))
+		return 1;
+	for (uint32_t i = 0; i < old->count; i++)
+		if (check_payload(&old->files[i], false) < 0)
+			return 1;
+	for (uint32_t i = 0; i < next->count; i++) {
+		int owned = package_owns_path(old, next->files[i].path);
+		if (owned) {
+			if (check_payload(&old->files[owned - 1], false) < 0)
+				return 1;
+			continue;
+		}
+		if (rooted(target_path, next->files[i].path) < 0 ||
+		    check_parents(target_path))
+			return 1;
+#ifdef PKG_HOST
+		int exists = lstat(target_path, &st);
+#else
+		int exists = stat(target_path, &st);
+#endif
+		if (exists == 0) {
+			fprintf(stderr, "pkg: file already exists: /%s\n",
+				next->files[i].path);
+			return 1;
+		}
+		if (errno != ENOENT) {
+			perror("pkg: destination lookup");
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int upgrade_one(const char *name)
+{
+	struct pkg_index_entry *entry = repository_entry(name);
+	if (!entry)
+		return fail("package not found in repository index");
+	if (lock_database() < 0)
+		return 1;
+	struct pkg_archive old;
+	uint8_t *old_bytes = NULL;
+	if (installed_record(name, &old, &old_bytes))
+		return 1;
+	if (old.installed != PKG_INSTALLED) {
+		free(old_bytes);
+		return fail("package has an incomplete transaction; remove or repair it before upgrading");
+	}
+	if (!strcmp(old.version, entry->version)) {
+		printf("%s %s is already current\n", name, old.version);
+		free(old_bytes);
+		return 0;
+	}
+	uint8_t *bytes = NULL;
+	size_t size = 0;
+	if (download_entry(entry, &bytes, &size)) {
+		free(old_bytes);
+		return 1;
+	}
+	struct pkg_archive next;
+	const char *error = pkg_parse(bytes, size, 0, &next);
+	if (error || strcmp(next.name, name) || strcmp(next.version, entry->version)) {
+		free(bytes);
+		free(old_bytes);
+		return fail(error ? error : "downloaded package does not match repository metadata");
+	}
+	if (preflight_upgrade(&old, &next)) {
+		free(bytes);
+		free(old_bytes);
+		return 1;
+	}
+	printf("Upgrading %s %s -> %s\n", name, old.version, next.version);
+	free(old_bytes);
+	if (remove_package(name)) {
+		free(bytes);
+		return 1;
+	}
+	int result = install_archive(bytes, size, entry);
+	free(bytes);
+	return result;
+}
+
+static int upgrade_all(void)
+{
+	char path[256];
+	int failures = 0;
+	size_t upgrades = 0;
+	for (size_t i = 0; i < index_count; i++) {
+		struct stat st;
+		if (record_path(path, index_entries[i].name) < 0)
+			return fail("invalid package name in repository index");
+		if (stat(path, &st) < 0) {
+			if (errno == ENOENT)
+				continue;
+			perror("pkg: package database lookup");
+			failures++;
+			continue;
+		}
+		if (upgrade_one(index_entries[i].name))
+			failures++;
+		else
+			upgrades++;
+	}
+	if (failures)
+		return fail("one or more package upgrades failed");
+	printf("Upgrade complete: %zu installed package(s) checked\n", upgrades);
+	return 0;
+}
 static int
 load_repository_file(const char *path)
 {
@@ -572,7 +728,7 @@ save_repository(const char *url)
 
 static int usage(void)
 {
-	puts("usage: pkg repo URL | pkg add name|file.spkg | pkg update | pkg remove name");
+	puts("usage: pkg repo URL | pkg add name|file.spkg | pkg update | pkg upgrade [name] | pkg remove name");
 	return 2;
 }
 
@@ -593,8 +749,10 @@ int main(int argc, char **argv)
 		return usage();
 	const char *command = argv[1];
 	int valid = (argc == 2 && strcmp(command, "update") == 0) ||
+	    (argc == 2 && strcmp(command, "upgrade") == 0) ||
 	    (argc == 3 && (strcmp(command, "repo") == 0 ||
-	    strcmp(command, "add") == 0 || strcmp(command, "remove") == 0));
+	    strcmp(command, "add") == 0 || strcmp(command, "remove") == 0 ||
+	    strcmp(command, "upgrade") == 0));
 	if (!valid)
 		return usage();
 	if (!*root && geteuid() != 0)
@@ -603,6 +761,11 @@ int main(int argc, char **argv)
 		return save_repository(argv[2]);
 	if (strcmp(command, "update") == 0)
 		return load_repository() || update_index();
+	if (strcmp(command, "upgrade") == 0) {
+		if (load_repository() || update_index())
+			return 1;
+		return argc == 2 ? upgrade_all() : upgrade_one(argv[2]);
+	}
 	if (strcmp(command, "remove") == 0)
 		return remove_package(argv[2]);
 
