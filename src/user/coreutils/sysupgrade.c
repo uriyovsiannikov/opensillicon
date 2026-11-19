@@ -66,7 +66,7 @@ static int fetch_release(struct pkg_archive *archive, uint8_t **package_bytes)
 	struct pkg_index_entry entries[PKG_MAX_PACKAGES], *selected = NULL;
 	int result = -1;
 	if (repository(repo)) { fputs("sysupgrade: invalid /etc/pkg.conf\n", stderr); goto done; }
-	index = pkg_http_get(repo, index_path, PKG_INDEX_MAX, &index_size);
+	index = pkg_http_get(repo, index_path, PKG_INDEX_MAX, &index_size, false);
 	if (!index || memchr(index, 0, index_size)) goto done;
 	char *index_text = malloc(index_size + 1);
 	if (!index_text) goto done;
@@ -80,7 +80,7 @@ static int fetch_release(struct pkg_archive *archive, uint8_t **package_bytes)
 			selected = &entries[i];
 	if (!selected) { fputs("sysupgrade: no os-kernel release in repository\n", stderr); goto done; }
 	snprintf(package_path, sizeof(package_path), "/packages/%s", selected->filename);
-	bytes = pkg_http_get(repo, package_path, PKG_MAX_SIZE, &package_size);
+	bytes = pkg_http_get(repo, package_path, PKG_MAX_SIZE, &package_size, true);
 	if (!bytes || package_size != selected->size) goto done;
 	uint8_t digest[32]; char hex[65];
 	pkg_sha256(bytes, package_size, digest); pkg_hex(digest, hex);
@@ -251,9 +251,8 @@ int main(int argc, char **argv)
 	printf("Verified OpenSillicon kernel release %s (driver ABI %u.%u)\n",
 	    release.version, running_major, running_minor);
 	if (!strcmp(argv[1], "check")) { free(package); return 0; }
-	char slot[8] = "A", active_slot[8] = {0}, esp_path[64], selected = 0; uint8_t root_uuid[16];
-	(void)proc_value("kernel-slot", active_slot, sizeof(active_slot));
-	if ((active_slot[0] == 'A' || active_slot[0] == 'B') && !active_slot[1]) slot[0] = active_slot[0];
+	char esp_path[64];
+	uint8_t root_uuid[16];
 	if (locate_esp(esp_path, root_uuid)) {
 		fputs("sysupgrade: could not find this system's EFI partition\n", stderr); free(package); return 1;
 	}
@@ -264,10 +263,12 @@ int main(int argc, char **argv)
 		const struct pkg_file *init_file = find_file(&archive, "opt/os-kernel/init.cpi");
 		struct esp_file kernel = {.context = (void *)kernel_file, .bytes = kernel_file->size, .read = memory_read};
 		struct esp_file init = {.context = (void *)init_file, .bytes = init_file->size, .read = memory_read};
-		error = esp_update_slots(&device.io, &kernel, &init, slot[0], root_uuid, &selected);
-		storage_close(&device);
+		error = esp_update_boot(&device.io, &kernel, &init, root_uuid);
+		int close_error = storage_close(&device);
+		if (!error)
+			error = close_error;
 	}
 	if (error) { fprintf(stderr, "sysupgrade: install failed (%d)\n", error); free(package); return 1; }
-	printf("Installed to EFI slot %c; reboot to start it. The previous slot remains available in Limine.\n", selected);
+	puts("Kernel and initramfs installed. Reboot to start the new kernel.");
 	free(package); return 0;
 }

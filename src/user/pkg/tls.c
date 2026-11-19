@@ -186,6 +186,11 @@ struct pkg_tls *pkg_tls_accept(int fd, const char *cert, const char *key,
 	return tls_open(fd, NULL, cert, key, deadline);
 }
 
+void pkg_tls_set_deadline(struct pkg_tls *tls, long long deadline)
+{
+	tls->deadline = deadline;
+}
+
 static ssize_t tls_io(struct pkg_tls *tls, void *buffer, size_t size, int writing)
 {
 	if (size > 4096) size = 4096;

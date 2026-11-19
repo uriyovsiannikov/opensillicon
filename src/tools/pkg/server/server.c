@@ -30,8 +30,22 @@ static int server_write_all(int fd, const void *buffer, size_t length)
 	if (client_tls == NULL) return pkg_write_all(fd, buffer, length);
 	const unsigned char *p = buffer;
 	while (length) {
+		/* Limit a stalled write, not the total duration of a download. */
+		struct timespec now;
+		if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+			return -1;
+		pkg_tls_set_deadline(client_tls,
+		    (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000 + 30000);
 		ssize_t n = pkg_tls_write(client_tls, p, length);
-		if (n <= 0) return -1;
+		if (n <= 0) {
+			int saved = errno;
+			fprintf(stderr, "pkg-server: response interrupted after %zu of %zu bytes (errno %d)\n",
+			    (size_t)(p - (const unsigned char *)buffer),
+			    (size_t)(p - (const unsigned char *)buffer) + length,
+			    saved);
+			errno = saved;
+			return -1;
+		}
 		p += n;
 		length -= (size_t)n;
 	}

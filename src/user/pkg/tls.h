@@ -9,6 +9,7 @@ struct pkg_tls;
 struct pkg_tls *pkg_tls_connect(int fd, const char *hostname, long long deadline);
 struct pkg_tls *pkg_tls_accept(int fd, const char *cert, const char *key,
     long long deadline);
+void pkg_tls_set_deadline(struct pkg_tls *, long long deadline);
 ssize_t pkg_tls_read(struct pkg_tls *, void *, size_t);
 ssize_t pkg_tls_write(struct pkg_tls *, const void *, size_t);
 void pkg_tls_free(struct pkg_tls *);

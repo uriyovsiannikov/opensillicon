@@ -1,9 +1,27 @@
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "common/uuid.h"
 #include "storage.h"
 #define RESERVED 32U
 #define EOC 0x0fffffffU
+
+int
+esp_limine_config(char *config, size_t capacity, const uint8_t root_uuid[16])
+{
+	char root[37];
+	uuid_format(root_uuid, root);
+	int length = snprintf(config, capacity,
+	    "timeout: 10\n/OpenSillicon\n protocol: limine\n"
+	    " path: boot():/boot/kernel.elf\n"
+	    " module_path: boot():/boot/init.cpi\n module_string: initramfs\n"
+	    " resolution: 1920x1080x32\n cmdline: root=PARTUUID=%s\n", root);
+	if (length < 0 || (size_t)length >= capacity || length > 512)
+		return -EOVERFLOW;
+	return length;
+}
+
 int
 fat32_plan(const struct storage_io *io, struct fat32_layout *p)
 {
@@ -91,7 +109,7 @@ cluster_offset(
 }
 static int
 put_dir(const struct storage_io *io, const struct fat32_layout *l,
-	uint32_t cluster, const uint32_t first[8], const struct esp_file files[8])
+	uint32_t cluster, const uint32_t first[4], const struct esp_file files[4])
 {
 	uint8_t block[4096];
 	memset(block, 0, sizeof(block));
@@ -116,14 +134,6 @@ put_dir(const struct storage_io *io, const struct fat32_layout *l,
 			    (uint32_t)files[2].bytes);
 			dirent(block + 96, "INIT    CPI", 32, first[3],
 			    (uint32_t)files[3].bytes);
-			dirent(block + 128, "KERNELA ELF", 32, first[4],
-			    (uint32_t)files[4].bytes);
-			dirent(block + 160, "INITA   CPI", 32, first[5],
-			    (uint32_t)files[5].bytes);
-			dirent(block + 192, "KERNELB ELF", 32, first[6],
-			    (uint32_t)files[6].bytes);
-			dirent(block + 224, "INITB   CPI", 32, first[7],
-			    (uint32_t)files[7].bytes);
 		}
 	}
 	int error =
@@ -143,15 +153,11 @@ esp_format(const struct storage_io *io, uint32_t hidden, uint32_t serial,
 		return error;
 	if (!files || !io->write || !io->read || !io->flush)
 		return -EINVAL;
-	static const unsigned source[8] = {0, 1, 2, 3, 2, 3, 2, 3};
-	struct esp_file boot_files[8];
-	uint32_t first[8], count[8], next = 6;
-	for (unsigned i = 0; i < 8; i++) {
-		boot_files[i] = files[source[i]];
-		if (!boot_files[i].read || !boot_files[i].bytes ||
-		    boot_files[i].bytes > UINT32_MAX)
+	uint32_t first[4], count[4], next = 6;
+	for (unsigned i = 0; i < 4; i++) {
+		if (!files[i].read || !files[i].bytes || files[i].bytes > UINT32_MAX)
 			return -EINVAL;
-		count[i] = (uint32_t)((boot_files[i].bytes + io->sector - 1) / io->sector);
+		count[i] = (uint32_t)((files[i].bytes + io->sector - 1) / io->sector);
 		if (count[i] > l.clusters || next - 2 > l.clusters - count[i])
 			return -ENOSPC;
 		first[i] = next;
@@ -165,7 +171,7 @@ esp_format(const struct storage_io *io, uint32_t hidden, uint32_t serial,
 	storage_le32(fat + 4, 0x0fffffff);
 	for (uint32_t i = 2; i < 6; i++)
 		storage_le32(fat + i * 4, EOC);
-	for (unsigned i = 0; i < 8; i++)
+	for (unsigned i = 0; i < 4; i++)
 		for (uint32_t c = 0; c < count[i]; c++)
 			storage_le32(fat + (size_t)(first[i] + c) * 4,
 			    c + 1 == count[i] ? EOC : first[i] + c + 1);
@@ -193,21 +199,21 @@ esp_format(const struct storage_io *io, uint32_t hidden, uint32_t serial,
 			goto out;
 	}
 	for (uint32_t cluster = 2; cluster < 6; cluster++)
-		if ((error = put_dir(io, &l, cluster, first, boot_files)))
+		if ((error = put_dir(io, &l, cluster, first, files)))
 			goto out;
-	for (unsigned i = 0; i < 8; i++) {
+	for (unsigned i = 0; i < 4; i++) {
 		uint64_t offset = 0,
 			 allocated = (uint64_t)count[i] * io->sector;
 		while (offset < allocated) {
 			size_t n = (size_t)(allocated - offset > sizeof(block)
 				? sizeof(block)
 				: allocated - offset);
-			size_t actual = (size_t)(boot_files[i].bytes - offset > n
+			size_t actual = (size_t)(files[i].bytes - offset > n
 				? n
-				: boot_files[i].bytes - offset);
+				: files[i].bytes - offset);
 			memset(block, 0, n);
-			if ((error = boot_files[i].read(
-				 boot_files[i].context, offset, block, actual)))
+			if ((error = files[i].read(
+				 files[i].context, offset, block, actual)))
 				goto out;
 			uint64_t target =
 			    cluster_offset(io, &l, first[i]) + offset;

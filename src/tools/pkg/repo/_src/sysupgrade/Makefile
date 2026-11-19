@@ -1,7 +1,7 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../../../..)
 NAME := sysupgrade
-VERSION := 1.0.0
-DESCRIPTION := Signed BSD style kernel slot updater
+VERSION := 1.1.0
+DESCRIPTION := Signed OpenSillicon kernel updater
 STAGE := $(ROOT)/src/build/pkg/sysupgrade-stage
 
 .DEFAULT_GOAL := all

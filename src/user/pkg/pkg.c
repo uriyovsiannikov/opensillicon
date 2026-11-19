@@ -122,7 +122,7 @@ static int update_index(void)
 {
 	printf("Fetching repository index from %s\n", repository);
 	size_t size;
-	uint8_t *bytes = pkg_http_get(repository, "/index", PKG_INDEX_MAX, &size);
+	uint8_t *bytes = pkg_http_get(repository, "/index", PKG_INDEX_MAX, &size, false);
 	if (!bytes)
 		return 1;
 	uint8_t *copy = malloc(size + 1);
@@ -492,7 +492,7 @@ static int install_remote(const char *name)
 	printf("Downloading %s %s (%u bytes)\n", entry->name, entry->version,
 	       entry->size);
 	size_t size;
-	uint8_t *bytes = pkg_http_get(repository, path, PKG_MAX_SIZE, &size);
+	uint8_t *bytes = pkg_http_get(repository, path, PKG_MAX_SIZE, &size, true);
 	if (!bytes)
 		return 1;
 	uint8_t hash[32];

@@ -45,10 +45,11 @@ struct fat32_layout {
 	uint32_t sectors, fat_sectors, data_start, clusters;
 };
 int fat32_plan(const struct storage_io *, struct fat32_layout *);
+/* Returns the config length, or a negative errno. Must fit in one sector. */
+int esp_limine_config(char *, size_t, const uint8_t root_uuid[16]);
 int esp_format(const struct storage_io *, uint32_t hidden_sectors,
     uint32_t serial, const struct esp_file files[4]);
-/* Replaces only the inactive Limine kernel/initramfs pair, then selects it. */
-int esp_update_slots(const struct storage_io *, const struct esp_file *kernel,
-    const struct esp_file *initramfs, char active_slot,
-    const uint8_t root_uuid[16], char *new_slot);
+/* Replaces the installed kernel, initramfs and Limine configuration. */
+int esp_update_boot(const struct storage_io *, const struct esp_file *kernel,
+    const struct esp_file *initramfs, const uint8_t root_uuid[16]);
 #endif

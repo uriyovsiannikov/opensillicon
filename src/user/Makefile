@@ -42,7 +42,7 @@ $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/include/os.h \
 	mkdir -p $(@D)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/coreutils/fetch.o: src/user/fetch/fetch.c src/user/include/os.h | $(BUILD_DIR)
+$(BUILD_DIR)/coreutils/fetch.o: src/tools/pkg/repo/_src/fetch/fetch.c src/user/include/os.h | $(BUILD_DIR)
 	mkdir -p $(@D)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
@@ -132,24 +132,15 @@ $(LIBOS_BUILD_DIR)/syscall_abi.o: $(LIBOS_SRC_DIR)/crt/syscall_abi.S | $(LIBOS_B
 $(LIBOS_ARCHIVE): $(LIBOS_OBJECTS) $(LIBOS_BUILD_DIR)/syscall_abi.o $(LIBOS_BUILD_DIR)/setjmp.o
 	ar rcs $@ $^
 
-NANO_SOURCES := $(shell find src/user/thirdparty/nano/src -type f ! -path '*/.git/*'; find src/user/thirdparty/nano -maxdepth 1 -type f ! -path '*/.git/*')
-
+NANO_DIR := src/tools/pkg/repo/_src/nano
+NANO_NCURSES_TARBALL := $(NANO_DIR)/upstream/deps/ncurses-6.5.tar.gz
 NCURSES_DIR := $(BUILD_DIR)/nano/ncurses
 NCURSES_ARCHIVE := $(NCURSES_DIR)/lib/libncurses.a
 
-$(BUILD_DIR)/nano/nano $(NCURSES_ARCHIVE) &: $(NANO_SOURCES) src/tools/builders/build_nano.sh $(LIBOS_ARCHIVE) \
-		$(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
-	sh src/tools/builders/build_nano.sh
+$(NCURSES_ARCHIVE): $(NANO_NCURSES_TARBALL) $(NANO_DIR)/build-ncurses.sh \
+		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+	sh $(NANO_DIR)/build-ncurses.sh
 	touch $(NCURSES_ARCHIVE)
-
-HTOP_SOURCES := $(wildcard src/user/thirdparty/htop/*.[ch] \
-	src/user/thirdparty/htop/generic/*.[ch] src/user/thirdparty/htop/unsupported/*.[ch] \
-	src/user/thirdparty/htop/opensillicon/*.[ch]) src/user/thirdparty/htop/Makefile.am
-
-$(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) src/tools/builders/build_htop.sh \
-		$(BUILD_DIR)/nano/nano $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o \
-		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
-	sh src/tools/builders/build_htop.sh
 
 # Optional CA for a private HTTPS package repository.
 PKG_CA_CERT ?=
@@ -163,13 +154,17 @@ ROOT_PAYLOAD = $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt \
 		$(COREUTILS_ELFS)
 
-# The live root is loaded into RAM. Leave more room on the writable disk image.
+# Include room for installed graphical packages and application data (Minecraft
+# writes several MiB of region files even while creating its first world).
+# The live root is loaded into RAM, so keep its reserve smaller than the disk's.
+LIVE_ROOT_RESERVE_MIB ?= 128
+ROOT_RESERVE_MIB ?= 256
 $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(ROOT_PAYLOAD) $(BUILD_DIR)/populate_root \
 		src/user/Makefile src/tools/packers/mksilliconfs.py | $(BUILD_DIR)
 	@set -eu; image_tmp=$$(mktemp '$@.tmp.XXXXXX'); \
 	trap 'rm -f "$$image_tmp"' EXIT HUP INT TERM; \
 	python3 src/tools/packers/mksilliconfs.py "$$image_tmp" --inodes 1024 \
-		--reserve-mib $(if $(filter $(LIVE_ROOT_IMAGE),$@),32,64) \
+		--reserve-mib $(if $(filter $(LIVE_ROOT_IMAGE),$@),$(LIVE_ROOT_RESERVE_MIB),$(ROOT_RESERVE_MIB)) \
 		--size-from $(foreach file,$(ROOT_PAYLOAD),'$(file)'); \
 	$(BUILD_DIR)/populate_root "$$image_tmp" $(BUILD_DIR)/init.elf \
 		$(BUILD_DIR)/shell.elf \
@@ -183,6 +178,8 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(ROOT_PAYLOAD) $(BUILD_DIR)/populate_
 $(BUILD_DIR)/storage/%.o: src/user/storage/%.c src/user/storage/storage.h | $(BUILD_DIR)
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/storage/esp.o: src/include/common/uuid.h
 
 $(BUILD_DIR)/coreutils/newfs_silliconfs.o: src/user/coreutils/newfs_silliconfs.c src/user/storage/storage.h
 	mkdir -p $(@D)

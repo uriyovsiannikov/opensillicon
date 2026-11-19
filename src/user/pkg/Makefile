@@ -333,6 +333,12 @@ src/tools/pkg/repo/_pkges/fetch-1.0.0.spkg: $(BUILD_DIR)/coreutils/fetch.elf \
 NANO_DIR := src/tools/pkg/repo/_src/nano
 NANO_STAGE := $(BUILD_DIR)/nano/stage
 NANO_NCURSES_COPYING := $(BUILD_DIR)/nano/deps/ncurses-6.5/COPYING
+NANO_SOURCES := $(shell find $(NANO_DIR)/upstream/src -type f ! -path '*/.git/*'; find $(NANO_DIR)/upstream -maxdepth 1 -type f ! -path '*/.git/*')
+
+$(BUILD_DIR)/nano/nano: $(NANO_SOURCES) $(NANO_DIR)/build.sh $(NCURSES_ARCHIVE) \
+		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+	sh $(NANO_DIR)/build.sh
+
 src/tools/pkg/repo/_pkges/nano-9.3.spkg: $(BUILD_DIR)/nano/nano \
 		$(NANO_DIR)/README.md $(NANO_DIR)/GPL-3.0.txt $(NANO_NCURSES_COPYING) \
 		$(BUILD_DIR)/pkg/pkg-build
@@ -346,12 +352,21 @@ src/tools/pkg/repo/_pkges/nano-9.3.spkg: $(BUILD_DIR)/nano/nano \
 HTOP_DIR := src/tools/pkg/repo/_src/htop
 HTOP_STAGE := $(BUILD_DIR)/htop/stage
 HTOP_NCURSES_COPYING := $(BUILD_DIR)/nano/deps/ncurses-6.5/COPYING
+HTOP_SOURCES := $(wildcard $(HTOP_DIR)/upstream/*.[ch] \
+	$(HTOP_DIR)/upstream/generic/*.[ch] $(HTOP_DIR)/upstream/unsupported/*.[ch] \
+	$(HTOP_DIR)/upstream/opensillicon/*.[ch]) $(HTOP_DIR)/upstream/Makefile.am
+
+$(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) $(HTOP_DIR)/build.sh $(NCURSES_ARCHIVE) \
+		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o \
+		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
+	sh $(HTOP_DIR)/build.sh
+
 src/tools/pkg/repo/_pkges/htop-3.5.3.spkg: $(BUILD_DIR)/htop/htop \
-		$(HTOP_DIR)/README.md src/user/thirdparty/htop/COPYING \
+		$(HTOP_DIR)/README.md $(HTOP_DIR)/upstream/COPYING \
 		$(HTOP_NCURSES_COPYING) $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(HTOP_STAGE)
 	install -D -m 755 $(BUILD_DIR)/htop/htop $(HTOP_STAGE)/usr/bin/htop
-	install -D -m 644 src/user/thirdparty/htop/COPYING $(HTOP_STAGE)/usr/share/licenses/htop/COPYING
+	install -D -m 644 $(HTOP_DIR)/upstream/COPYING $(HTOP_STAGE)/usr/share/licenses/htop/COPYING
 	install -D -m 644 $(HTOP_NCURSES_COPYING) $(HTOP_STAGE)/usr/share/licenses/htop/ncurses-COPYING
 	install -D -m 644 $(HTOP_DIR)/README.md $(HTOP_STAGE)/usr/share/doc/htop/README.md
 	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
@@ -440,6 +455,29 @@ src/tools/pkg/repo/_pkges/minijvm-2021.12.spkg: $(MINIJVM_BUILD)/java \
 	install -D -m 644 $(MINIJVM_DIR)/licenses/mbedtls.Apache-2.0.txt $(MINIJVM_STAGE)/usr/share/licenses/minijvm/mbedtls.Apache-2.0.txt
 	install -D -m 644 $(MINIJVM_DIR)/README.md $(MINIJVM_STAGE)/usr/share/doc/minijvm/README.md
 	$(BUILD_DIR)/pkg/pkg-build minijvm 2021.12 $(MINIJVM_STAGE) $@ 'miniJVM with a Java 8 class library subset'
+
+MINECRAFT_DIR := src/tools/pkg/repo/_src/minecraft
+MINECRAFT_BUILD := $(BUILD_DIR)/minecraft
+MINECRAFT_STAGE := $(MINECRAFT_BUILD)/stage
+MINECRAFT_CLIENT_JAR ?= src/build/minecraft-package-input/client.jar
+MINECRAFT_SUPPORT_JARS := \
+	src/build/minecraft-package-input/lwjgl-2.9.0.jar \
+	src/build/minecraft-package-input/lwjgl_util-2.9.0.jar \
+	src/build/minecraft-package-input/jinput-2.0.5.jar \
+	src/build/minecraft-package-input/jutils-1.0.0.jar
+
+src/tools/pkg/repo/_pkges/minecraft-1.0.0.spkg: $(MINECRAFT_DIR)/minecraft \
+		$(MINECRAFT_DIR)/README.md $(MINECRAFT_CLIENT_JAR) $(MINECRAFT_SUPPORT_JARS) \
+		$(BUILD_DIR)/pkg/pkg-build
+	@test -f "$(MINECRAFT_CLIENT_JAR)" || { echo 'Minecraft 1.0.0 client JAR is missing; set MINECRAFT_CLIENT_JAR=...' >&2; exit 1; }
+	install -D -m 755 $(MINECRAFT_DIR)/minecraft $(MINECRAFT_STAGE)/usr/bin/minecraft
+	install -D -m 644 $(MINECRAFT_CLIENT_JAR) $(MINECRAFT_STAGE)/usr/share/minecraft/client.jar
+	install -D -m 644 src/build/minecraft-package-input/lwjgl-2.9.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/lwjgl-2.9.0.jar
+	install -D -m 644 src/build/minecraft-package-input/lwjgl_util-2.9.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/lwjgl_util-2.9.0.jar
+	install -D -m 644 src/build/minecraft-package-input/jinput-2.0.5.jar $(MINECRAFT_STAGE)/usr/share/minecraft/jinput-2.0.5.jar
+	install -D -m 644 src/build/minecraft-package-input/jutils-1.0.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/jutils-1.0.0.jar
+	install -D -m 644 $(MINECRAFT_DIR)/README.md $(MINECRAFT_STAGE)/usr/share/doc/minecraft/README.md
+	$(BUILD_DIR)/pkg/pkg-build minecraft 1.0.0 $(MINECRAFT_STAGE) $@ 'Minecraft 1.0.0 client for OpenSillicon'
 
 TCC_PACKAGE_DIR := src/tools/pkg/repo/_src/tcc
 TCC_SOURCE := $(TCC_PACKAGE_DIR)/tinycc
