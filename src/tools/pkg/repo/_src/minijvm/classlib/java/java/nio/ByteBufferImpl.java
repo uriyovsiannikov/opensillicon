@@ -414,7 +414,8 @@ class ByteBufferImpl extends ByteBuffer {
                 if (offset < 0 || length < 0 || offset > source.length - length)
                     throw new IndexOutOfBoundsException();
                 checkPut(position, length, false);
-                for (int i = 0; i < length; i++) doPut(position + i, source[offset + i]);
+                if (length != 0) RefNative.heap_copy(ReflectArray.getBodyPtr(source) + offset * 2L, 0,
+                        address + position * 2L, 0, length * 2);
                 position += length;
                 return this;
             }
@@ -424,7 +425,8 @@ class ByteBufferImpl extends ByteBuffer {
                 if (offset < 0 || length < 0 || offset > target.length - length)
                     throw new IndexOutOfBoundsException();
                 checkGet(position, length, false);
-                for (int i = 0; i < length; i++) target[offset + i] = doGet(position + i);
+                if (length != 0) RefNative.heap_copy(address + position * 2L, 0,
+                        ReflectArray.getBodyPtr(target) + offset * 2L, 0, length * 2);
                 position += length;
                 return this;
             }
@@ -646,7 +648,8 @@ class ByteBufferImpl extends ByteBuffer {
                 if (offset < 0 || length < 0 || offset > source.length - length)
                     throw new IndexOutOfBoundsException();
                 checkPut(position, length, false);
-                for (int i = 0; i < length; i++) doPut(position + i, source[offset + i]);
+                if (length != 0) RefNative.heap_copy(ReflectArray.getBodyPtr(source) + offset * 4L, 0,
+                        address + position * 4L, 0, length * 4);
                 position += length;
                 return this;
             }
@@ -656,7 +659,8 @@ class ByteBufferImpl extends ByteBuffer {
                 if (offset < 0 || length < 0 || offset > target.length - length)
                     throw new IndexOutOfBoundsException();
                 checkGet(position, length, false);
-                for (int i = 0; i < length; i++) target[offset + i] = doGet(position + i);
+                if (length != 0) RefNative.heap_copy(address + position * 4L, 0,
+                        ReflectArray.getBodyPtr(target) + offset * 4L, 0, length * 4);
                 position += length;
                 return this;
             }

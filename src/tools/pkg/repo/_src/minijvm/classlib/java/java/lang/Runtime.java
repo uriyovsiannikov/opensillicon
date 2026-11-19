@@ -100,6 +100,9 @@ public class Runtime {
      */
     public native long totalMemory();
 
+    /** Return the configured heap collection threshold. */
+    public long maxMemory() { return totalMemory(); }
+
     /**
      * Runs the garbage collector.
      * Calling this method suggests that the Java Virtual Machine expend 

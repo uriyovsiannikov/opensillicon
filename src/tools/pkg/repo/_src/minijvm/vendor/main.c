@@ -16,14 +16,40 @@ void reg_zip_stream_native_lib(MiniJVM *jvm);
 
 static void usage(FILE *stream)
 {
-    fputs("usage: java [-Dkey=value] [-cp path] [-bootclasspath path] class [args...]\n"
+    fputs("usage: java [-Xmx<size>] [-Dkey=value] [-cp path] [-bootclasspath path] class [args...]\n"
           "       java -version\n", stream);
+}
+
+static int parse_heap_size(const char *text, s64 *result)
+{
+    /* Leave room for the collector's percentage arithmetic. */
+    const uint64_t limit = INT64_MAX / 100;
+    uint64_t size = 0, multiplier = 1;
+    const char *cursor = text;
+    while (*cursor >= '0' && *cursor <= '9') {
+        unsigned digit = *cursor++ - '0';
+        if (size > (limit - digit) / 10) return -1;
+        size = size * 10 + digit;
+    }
+    if (cursor == text) return -1;
+    if (*cursor) {
+        switch (*cursor++) {
+        case 'k': case 'K': multiplier = 1024; break;
+        case 'm': case 'M': multiplier = 1024 * 1024; break;
+        case 'g': case 'G': multiplier = 1024 * 1024 * 1024; break;
+        default: return -1;
+        }
+    }
+    if (*cursor || size > limit / multiplier || size * multiplier < 1024 * 1024) return -1;
+    *result = size * multiplier;
+    return 0;
 }
 
 int main(int argc, char **argv)
 {
     char *bootclasspath = "/usr/share/minijvm/minijvm_rt.jar";
     char *classpath = ".";
+    s64 heap_size = MAX_HEAP_SIZE_DEFAULT;
     int i = 1;
 
     while (i < argc && argv[i][0] == '-') {
@@ -35,6 +61,13 @@ int main(int argc, char **argv)
         if (!strcmp(option, "-help") || !strcmp(option, "--help")) {
             usage(stdout);
             return 0;
+        }
+        if (!strncmp(option, "-Xmx", 4)) {
+            if (parse_heap_size(option + 4, &heap_size)) {
+                fprintf(stderr, "java: invalid heap size %s (use at least 1m)\n", option + 4);
+                return 2;
+            }
+            continue;
         }
         if (!strncmp(option, "-D", 2)) {
             if (!option[2] || option[2] == '=') {
@@ -79,11 +112,17 @@ int main(int argc, char **argv)
     for (; i < argc; i++)
         arraylist_push_back(arguments, argv[i]);
 
-    jvm->max_heap_size = MAX_HEAP_SIZE_DEFAULT;
+    jvm->max_heap_size = heap_size;
     if (jvm_init(jvm, bootclasspath, classpath) != 0) {
         fputs("java: could not initialize virtual machine\n", stderr);
         return 1;
     }
+#ifdef OPEN_SILLICON
+    /* The native allocator maps slabs through the kernel. Waiting ten minutes
+     * between collections retains terrain-generation garbage and makes later
+     * allocations increasingly expensive, well before Java's heap is full. */
+    jvm->garbage_collect_period_ms = 1000;
+#endif
     reg_awt_native_lib(jvm);
     reg_lwjgl_native_lib(jvm);
     reg_imageio_native_lib(jvm);
@@ -106,6 +145,7 @@ int main(int argc, char **argv)
         sys_properties_set_c(jvm, "user.home", home);
     }
     for (int option = 1; option < class_index; option++) {
+        if (!strncmp(argv[option], "-Xmx", 4)) continue;
         if (strncmp(argv[option], "-D", 2)) {
             option++; // The classpath options each consume one argument.
             continue;

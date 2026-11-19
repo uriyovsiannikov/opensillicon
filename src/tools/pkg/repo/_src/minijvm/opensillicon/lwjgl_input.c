@@ -19,6 +19,7 @@ struct event_queue {
 
 static struct {
     int keyboard, mouse, repeat, grabbed;
+    int trace;
     int keys[256], buttons[3];
     int x, y, dx, dy;
     Cursor invisible;
@@ -41,6 +42,9 @@ static s32 next_event(Runtime *runtime, struct event_queue *queue, int length)
 {
     Instance *event = NULL;
     if (queue->count) {
+        if (input.trace && queue == &input.mouse_events && queue->values[queue->read][0] >= 0)
+            jvm_printf("INPUT delivered button %d state %d at %d %d\n", queue->values[queue->read][0],
+                queue->values[queue->read][1], queue->values[queue->read][2], queue->values[queue->read][3]);
         event = jarray_create_by_type_index(runtime, length, DATATYPE_INT);
         memcpy(event->arr_body, queue->values[queue->read], length * sizeof(int));
         queue->read = (queue->read + 1) % QUEUE_CAPACITY;
@@ -131,7 +135,13 @@ static void pump_events(void)
             queue_event(&input.keyboard_events, code,
                 pressed && length == 1 ? (unsigned char) character[0] : 0, pressed, 0, 0);
         } else if (event.type == FocusOut) {
-            release_keys();
+            /* The window manager focuses the frame, then a click focuses its
+             * Canvas. That transfer is not a loss of focus for the game. A
+             * queued FocusOut may also be older than a subsequent FocusIn. */
+            Window focus;
+            int revert;
+            XGetInputFocus(display, &focus, &revert);
+            if (focus != canvas && focus != parent) release_keys();
         } else if (event.type == MotionNotify && input.mouse) {
             int width, height;
             lwjgl_canvas_size(&width, &height);
@@ -156,6 +166,9 @@ static void pump_events(void)
             input.y = height - 1 - event.xbutton.y;
             unsigned button = event.xbutton.button;
             int pressed = event.type == ButtonPress;
+            if (input.trace) jvm_printf("INPUT received button %u state %d at %d %d size %d %d\n",
+                button, pressed, input.x, input.y, width, height);
+            if (pressed) XSetInputFocus(display, canvas, RevertToParent, CurrentTime);
             if ((button == Button4 || button == Button5) && pressed) {
                 queue_event(&input.mouse_events, -1, 0, input.x, input.y,
                     button == Button4 ? 120 : -120);
@@ -222,6 +235,10 @@ static s32 keyboard_repeat(Runtime *runtime, JClass *clazz)
 
 static s32 mouse_create(Runtime *runtime, JClass *clazz)
 {
+    Utf8String *trace_key = utf8_create_c("minijvm.input.trace");
+    Utf8String *trace = hashtable_get(runtime->jvm->sys_prop, trace_key);
+    input.trace = trace && utf8_equals_c(trace, "true");
+    utf8_destory(trace_key);
     input.mouse = select_input();
     if (input.mouse) {
         Window root, child;

@@ -32,6 +32,49 @@ public class WorldIoProbe implements Runnable {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && Runtime.getRuntime().maxMemory() != Long.parseLong(args[0]))
+            throw new AssertionError("Configured heap size");
+        if (Runtime.getRuntime().maxMemory() < Runtime.getRuntime().totalMemory())
+            throw new AssertionError("Heap limit");
+        java.nio.ByteBuffer raw = java.nio.ByteBuffer.allocate(64).order(java.nio.ByteOrder.nativeOrder());
+        raw.position(4);
+        java.nio.IntBuffer view = raw.slice().order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
+        view.position(2);
+        view.put(new int[]{0, 0x12345678, -1, 0x10203040, 0}, 1, 3);
+        if (view.position() != 5 || raw.getInt(12) != 0x12345678 || raw.getInt(16) != -1 ||
+                raw.getInt(20) != 0x10203040)
+            throw new AssertionError("Bulk integer view write");
+        view.position(2);
+        int[] integers = new int[5];
+        view.get(integers, 1, 3);
+        if (!Arrays.equals(integers, new int[]{0, 0x12345678, -1, 0x10203040, 0}) || view.position() != 5)
+            throw new AssertionError("Bulk integer view read");
+        try {
+            view.asReadOnlyBuffer().put(new int[1]);
+            throw new AssertionError("Read-only integer view write");
+        } catch (java.nio.ReadOnlyBufferException expected) {}
+        byte[] shortStorage = new byte[32];
+        Arrays.fill(shortStorage, (byte) 0x5a);
+        java.nio.ByteBuffer shortBytes = java.nio.ByteBuffer.wrap(shortStorage).order(java.nio.ByteOrder.nativeOrder());
+        shortBytes.position(4);
+        shortBytes.limit(20);
+        java.nio.ShortBuffer shorts = shortBytes.asShortBuffer();
+        shorts.position(1);
+        shorts.put(new short[]{0, 0x1234, -1, 0x2345, 0}, 1, 3);
+        if (shorts.position() != 4 || shortBytes.position() != 4 || shortBytes.getShort(6) != 0x1234 ||
+                shortBytes.getShort(8) != -1 || shortBytes.getShort(10) != 0x2345 ||
+                shortBytes.getShort(4) != 0x5a5a || shortBytes.getShort(12) != 0x5a5a)
+            throw new AssertionError("Short view bulk write boundaries");
+        shorts.position(1);
+        short[] shortValues = {7, 7, 7, 7, 7};
+        shorts.get(shortValues, 1, 3);
+        if (!Arrays.equals(shortValues, new short[]{7, 0x1234, -1, 0x2345, 7}) || shorts.position() != 4)
+            throw new AssertionError("Short view bulk read boundaries");
+        File cleanPath = new File("/tmp/minijvm-check/region/r.0.0.mcr");
+        if (!cleanPath.getAbsolutePath().equals("/tmp/minijvm-check/region/r.0.0.mcr") ||
+                !cleanPath.getCanonicalPath().equals(cleanPath.getAbsolutePath()) ||
+                !new File("/tmp/minijvm-check//region/r.0.0.mcr").equals(cleanPath))
+            throw new AssertionError("Normalized file paths");
         WorldIoProbe recursive = new WorldIoProbe();
         Thread thread = new Thread(recursive);
         thread.start();
@@ -96,6 +139,31 @@ public class WorldIoProbe implements Runnable {
             }
         }
         ByteArrayOutputStream small = new ByteArrayOutputStream();
+        GZIPOutputStream singles = new GZIPOutputStream(small, 7);
+        for (int i = 0; i < payload.length; i++) {
+            if (i % 257 == 0) singles.write(payload, i, 1);
+            else singles.write(payload[i]);
+            if (i == 9000) singles.flush();
+        }
+        singles.close();
+        GZIPInputStream singleInput = new GZIPInputStream(new ByteArrayInputStream(small.toByteArray()), 3);
+        for (int i = 0; i < payload.length; i++) {
+            int value;
+            if (i % 257 == 0) {
+                byte[] one = new byte[1];
+                if (singleInput.read(one) != 1) throw new AssertionError("Mixed read length");
+                value = one[0] & 255;
+            } else value = singleInput.read();
+            if (value != (payload[i] & 255)) throw new AssertionError("Mixed single-byte compression");
+        }
+        if (singleInput.read() != -1 || singleInput.available() != 0)
+            throw new AssertionError("Buffered decompression EOF");
+        singleInput.close();
+        try {
+            singleInput.read();
+            throw new AssertionError("Read after compressed close");
+        } catch (IOException expected) {}
+        small = new ByteArrayOutputStream();
         DeflaterOutputStream compressor = new DeflaterOutputStream(small);
         compressor.write("Minecraft".getBytes("UTF-8"));
         compressor.close();
@@ -143,6 +211,22 @@ public class WorldIoProbe implements Runnable {
         if (image.getRGB(0, 0) != 0xff123456 || image.getRGB(0, 0, 1, 1, null, 0, 1)[0] != 0xff123456)
             throw new AssertionError("Opaque RGB raster");
         if (!path.delete()) throw new AssertionError("Cannot remove I/O fixture");
+        File original = new File("/tmp/minijvm-rename-test.dat");
+        File renamed = new File("/tmp/minijvm-rename-moved.dat");
+        original.delete(); renamed.delete();
+        FileOutputStream fileOutput = new FileOutputStream(original);
+        fileOutput.write(new byte[0]);
+        fileOutput.write(payload); fileOutput.close();
+        if (!original.renameTo(renamed) || original.exists() || !renamed.exists() ||
+                !Arrays.equals(payload, readAll(new FileInputStream(renamed))))
+            throw new AssertionError("File rename preserved data");
+        if (!renamed.renameTo(renamed)) throw new AssertionError("Same-path rename");
+        FileOutputStream sentinel = new FileOutputStream(original);
+        sentinel.write(42); sentinel.close();
+        if ("OpenSillicon".equals(System.getProperty("os.name")) &&
+                (renamed.renameTo(original) || original.length() != 1 || !renamed.exists()))
+            throw new AssertionError("Rename destination preservation");
+        if (!original.delete() || !renamed.delete()) throw new AssertionError("Rename fixture cleanup");
         System.out.println("JAVA WORLD IO PASS");
     }
 }

@@ -193,9 +193,7 @@ s32 org_mini_fs_InnerFile_writebuf(Runtime *runtime, JClass *clazz) {
     s32 ret = -1;
     if (fd && bytes_arr) {
         ret = (s32) fwrite(bytes_arr->arr_body + offset, 1, len, fd);
-        if (ret == 0) {
-            ret = -1;
-        }
+		if (ret == 0 && len != 0) ret = -1;
         push_int(runtime->stack, ret);
     } else {
         push_int(runtime->stack, ret);
@@ -421,7 +419,12 @@ s32 org_mini_fs_InnerFile_rename0(Runtime *runtime, JClass *clazz) {
     Instance *old_arr = localvar_getRefer(runtime->localvar, 0);
     Instance *new_arr = localvar_getRefer(runtime->localvar, 1);
     if (old_arr && new_arr) {
+#ifdef OPEN_SILLICON
+        extern int minijvm_rename(const char *, const char *);
+        s32 ret = minijvm_rename(old_arr->arr_body, new_arr->arr_body);
+#else
         s32 ret = rename(old_arr->arr_body, new_arr->arr_body);
+#endif
         push_int(runtime->stack, ret);
     } else {
         push_int(runtime->stack, -1);

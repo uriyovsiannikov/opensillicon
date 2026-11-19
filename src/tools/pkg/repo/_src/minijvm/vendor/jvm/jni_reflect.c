@@ -340,7 +340,7 @@ void _list_iter_getthread(ArrayListValue value, void *para) {
         Runtime *r = value;
         struct _ListGetThreadPara *p = para;
         p->val = (intptr_t) r->thrd_info->jthread;
-        jarray_set_field(p->jarr, p->i, p->val);
+        jarray_set_field(p->jarr, p->i++, p->val);
     }
 }
 

@@ -10,7 +10,9 @@ public class InflaterInputStream extends FilterInputStream {
     protected final byte[] buf;
     private final boolean ownsInflater;
     private boolean closed;
-    private final byte[] single = new byte[1];
+    private final byte[] decoded = new byte[8192];
+    private int decodedOffset;
+    private int decodedLength;
 
     public InflaterInputStream(InputStream input) {
         this(input, new Inflater(), 8192, true);
@@ -34,7 +36,14 @@ public class InflaterInputStream extends FilterInputStream {
     }
 
     public int read() throws IOException {
-        return read(single, 0, 1) == -1 ? -1 : single[0] & 255;
+        if (closed) throw new IOException("Stream is closed");
+        if (decodedOffset == decodedLength) {
+            int count = inflate(decoded, 0, decoded.length);
+            if (count < 0) return -1;
+            decodedOffset = 0;
+            decodedLength = count;
+        }
+        return decoded[decodedOffset++] & 255;
     }
 
     public int read(byte[] output, int offset, int length) throws IOException {
@@ -42,6 +51,16 @@ public class InflaterInputStream extends FilterInputStream {
         if (offset < 0 || length < 0 || offset > output.length - length)
             throw new IndexOutOfBoundsException();
         if (length == 0) return 0;
+        if (decodedOffset < decodedLength) {
+            int count = Math.min(length, decodedLength - decodedOffset);
+            System.arraycopy(decoded, decodedOffset, output, offset, count);
+            decodedOffset += count;
+            return count;
+        }
+        return inflate(output, offset, length);
+    }
+
+    private int inflate(byte[] output, int offset, int length) throws IOException {
         try {
             while (!inf.finished()) {
                 int read = inf.inflate(output, offset, length);
@@ -85,7 +104,7 @@ public class InflaterInputStream extends FilterInputStream {
 
     public int available() throws IOException {
         if (closed) throw new IOException("Stream is closed");
-        return inf.finished() ? 0 : 1;
+        return decodedOffset < decodedLength || !inf.finished() ? 1 : 0;
     }
 
     public void close() throws IOException {

@@ -132,7 +132,8 @@ static s32 filterClassName(Utf8String *clsName) {
         if (thrd_info->is_interrupt) {\
             goto label_exit_while;\
         }\
-        thrd_yield();\
+		/* Keep loop safepoints while amortizing scheduler syscalls. */\
+		if ((++thrd_info->cooperative_branches & 255) == 0) thrd_yield();\
         check_suspend_and_pause(runtime);\
     }\
 }
