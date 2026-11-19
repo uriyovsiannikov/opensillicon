@@ -15,7 +15,6 @@
 #define UDP_AF_INET 2U
 #define UDP_SOCK_DGRAM 2U
 #define UDP_PROTOCOL 17U
-#define UDP_RX_BATCH 8U /* Matches the bounded Cyclone/e1000 RX batch. */
 
 struct udp_queue_entry {
 	struct udp_socket_endpoint source;
@@ -428,7 +427,7 @@ udp_socket_poll(void)
 	}
 	receive_poll_active = true;
 	state_guard_leave(flags);
-	size_t processed = cyclone_net_poll(UDP_RX_BATCH);
+	size_t processed = cyclone_net_poll(CYCLONE_RX_BUDGET);
 	bool link_up = cyclone_net_link_up();
 	flags = state_guard_enter();
 	receive_poll_active = false;

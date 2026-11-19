@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "abi/tcp_diag.h"
 #include "kernel/fd.h"
 
 #define TCP_SOCKET_AF_INET 2U

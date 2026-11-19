@@ -7,6 +7,8 @@
 
 #include "kernel/netdev.h"
 
+#define CYCLONE_RX_BUDGET 16U
+
 typedef void (*cyclone_udp_callback)(void *context, const uint8_t source[4],
 	uint16_t source_port, const uint8_t *payload, size_t length);
 

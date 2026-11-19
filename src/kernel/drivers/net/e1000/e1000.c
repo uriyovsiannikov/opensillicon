@@ -41,6 +41,12 @@
 #define E1000_REG_RDLEN 0x2808U
 #define E1000_REG_RDH 0x2810U
 #define E1000_REG_RDT 0x2818U
+#define E1000_REG_RDTR 0x2820U
+#define E1000_REG_RADV 0x282cU
+#define E1000_REG_RXDCTL 0x2828U
+#define E1000_RXDCTL_THRESHOLDS 0x003f3f3fU
+#define E1000_RXDCTL_DESCRIPTOR_GRANULARITY (1U << 24)
+#define E1000_RXDCTL_POLL_THRESHOLDS ((1U << 16) | (1U << 8) | 8U)
 
 #define E1000_STATUS_LINK_UP (1U << 1)
 #define E1000_RAH_ADDRESS_VALID (1U << 31)
@@ -385,10 +391,21 @@ i219_quiesce(void)
 static bool
 i219_legacy_receive(void)
 {
-	uint32_t filter;
+	uint32_t filter, descriptor_control;
+	/* RX is polled. Disable firmware receive interrupt delays so completed
+	 * descriptors can be written back without waiting for a delayed flush. */
 	return e1000_read(E1000_REG_RFCTL, &filter) && filter != UINT32_MAX &&
+	    e1000_read(E1000_REG_RXDCTL, &descriptor_control) &&
+	    descriptor_control != UINT32_MAX &&
 	    e1000_write(E1000_REG_RFCTL, filter & ~E1000_RFCTL_EXTENDED) &&
-	    e1000_write(E1000_REG_RXCSUM, 0);
+	    e1000_write(E1000_REG_RXCSUM, 0) &&
+	    e1000_write(E1000_REG_RDTR, 0) && e1000_write(E1000_REG_RADV, 0) &&
+	    /* One completed descriptor must be visible even when no interrupt
+	     * or subsequent packet arrives to flush a firmware-sized batch. */
+	    e1000_write(E1000_REG_RXDCTL,
+		(descriptor_control & ~E1000_RXDCTL_THRESHOLDS) |
+		E1000_RXDCTL_DESCRIPTOR_GRANULARITY |
+		E1000_RXDCTL_POLL_THRESHOLDS);
 }
 
 static bool
@@ -722,7 +739,9 @@ e1000_initialize(void)
 	klog(is_i219() ? "i219: DMA rings ready TX/RX " :
 	    "OpenSillicon: e1000 DMA rings ready TX/RX ");
 	klog_u64(E1000_TX_RING_COUNT);
-	klog(" descriptors each; RX buffer ");
+	klog("/");
+	klog_u64(E1000_RX_RING_COUNT);
+	klog(" descriptors; RX buffer ");
 	klog_u64(E1000_DMA_BUFFER_SIZE);
 	klog("; PCI command ");
 	klog_u64(device.pci_command_after);

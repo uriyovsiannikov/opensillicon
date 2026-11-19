@@ -21,7 +21,6 @@
 #include "ipv4/icmp.h"
 #include "ipv4/ipv4_misc.h"
 
-#define CYCLONE_RX_BUDGET 8U
 #define CYCLONE_TX_POLL_LIMIT 1000000U
 #define CYCLONE_LINK_POLL_NS UINT64_C(100000000)
 

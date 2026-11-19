@@ -358,6 +358,14 @@ struct _Socket
    uint32_t rcvNxt;               ///<Receive next sequence number
    uint32_t rcvUser;              ///<Number of data received but not yet consumed
    uint32_t rcvWnd;               ///<Receive window
+   uint32_t rcvAdv;               ///<Right edge of the last advertised receive window
+   bool_t rcvAdvValid;            ///<An ACK has advertised a receive window
+#ifdef OPEN_SILLICON_TCP_DIAG
+   uint32_t diagRejectedSegments;
+   uint32_t diagAckSent;
+   uint32_t diagAckFailed;
+   uint32_t diagLastAckWindow;
+#endif
 
    bool_t rttBusy;                ///<RTT measurement is being performed
    uint32_t rttSeqNum;            ///<Sequence number identifying a TCP segment

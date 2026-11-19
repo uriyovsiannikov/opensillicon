@@ -334,7 +334,10 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_TCP_GETSOCKOPT:
 		{
-			int value;
+			union {
+				int integer;
+				struct os_tcp_diag diag;
+			} value;
 			size_t actual;
 			uint32_t length;
 			struct address_space *space = vmm_active_address_space();
@@ -350,17 +353,17 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (frame->r8 == 0 || !vmm_copy_from_user(space, &length,
-			    frame->r8, sizeof(length)) || length < sizeof(value)) {
+			    frame->r8, sizeof(length)) || length < sizeof(value.integer)) {
 				syscall_error(frame, EINVAL);
 				break;
 			}
 			if (!vmm_validate_user_write(space, frame->r10,
-			    sizeof(value)) || !vmm_validate_user_write(space, frame->r8,
+			    sizeof(value.integer)) || !vmm_validate_user_write(space, frame->r8,
 			    sizeof(length))) {
 				syscall_error(frame, EFAULT);
 				break;
 			}
-			actual = length;
+			actual = length < sizeof(value) ? length : sizeof(value);
 			result = tcp_socket_get_option(object, frame->rsi, frame->rdx,
 			    &value, &actual);
 			if (result != 0) {

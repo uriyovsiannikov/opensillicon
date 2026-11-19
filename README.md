@@ -40,5 +40,5 @@ make run-gui   # graphical display
 
 ## license
 
-project code is available under the [BSD 2-Clause License](LICENSE). Vendored
+project code is available under the [BSD 2-Clause License](LICENSE). vendored
 and third-party components retain their respective licenses.

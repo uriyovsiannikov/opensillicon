@@ -71,6 +71,14 @@ void tcpTick(NetContext *context)
          //Check current TCP state
          if(socket->state != TCP_STATE_CLOSED)
          {
+            //Advertise newly available receive space, retrying failed sends.
+            if(socket->state == TCP_STATE_ESTABLISHED ||
+               socket->state == TCP_STATE_FIN_WAIT_1 ||
+               socket->state == TCP_STATE_FIN_WAIT_2)
+            {
+               tcpUpdateReceiveWindow(socket);
+            }
+
             //Check retransmission timer
             tcpCheckRetransmitTimer(socket);
             //Check persist timer

@@ -53,6 +53,19 @@
 //Check TCP/IP stack configuration
 #if (TCP_SUPPORT == ENABLED)
 
+static void tcpRecordAdvertisedWindow(Socket *socket, const TcpHeader *segment)
+{
+   if((segment->flags & (TCP_FLAG_ACK | TCP_FLAG_RST)) != TCP_FLAG_ACK)
+      return;
+
+   uint32_t window = ntohs(segment->window);
+#if (TCP_WINDOW_SCALE_SUPPORT == ENABLED)
+   if((segment->flags & TCP_FLAG_SYN) == 0 && socket->wndScaleOptionReceived)
+      window <<= socket->rcvWndShift;
+#endif
+   socket->rcvAdv = ntohl(segment->ackNum) + window;
+   socket->rcvAdvValid = TRUE;
+}
 
 /**
  * @brief Send a TCP segment
@@ -400,14 +413,30 @@ error_t tcpSendSegment(Socket *socket, uint8_t flags, uint32_t seqNum,
 #endif
 
    //Send TCP segment
-   (void) ipSendDatagram(socket->interface, &pseudoHeader, buffer, offset,
+   error = ipSendDatagram(socket->interface, &pseudoHeader, buffer, offset,
       &ancillary);
+   if(!error)
+      tcpRecordAdvertisedWindow(socket, segment);
+
+#ifdef OPEN_SILLICON_TCP_DIAG
+   if(flags == TCP_FLAG_ACK && length == 0)
+   {
+      if(error)
+         socket->diagAckFailed++;
+      else
+      {
+         socket->diagAckSent++;
+         socket->diagLastAckWindow = socket->rcvWnd;
+      }
+   }
+#endif
 
    //Free previously allocated memory
    netBufferFree(buffer);
 
-   //Successful processing
-   return NO_ERROR;
+   //Queued segments are retried by the retransmission timer. For an
+   //untracked ACK, report a failed transmission to the caller.
+   return addToQueue ? NO_ERROR : error;
 }
 
 
@@ -833,6 +862,9 @@ error_t tcpCheckSeqNum(Socket *socket, const TcpHeader *segment, size_t length)
    //Non acceptable sequence number?
    if(!acceptable)
    {
+#ifdef OPEN_SILLICON_TCP_DIAG
+      socket->diagRejectedSegments++;
+#endif
       //Debug message
       TRACE_WARNING("Sequence number is not acceptable!\r\n");
 
@@ -1733,33 +1765,27 @@ void tcpUpdateSendWindow(Socket *socket, const TcpHeader *segment)
 
 void tcpUpdateReceiveWindow(Socket *socket)
 {
-   uint32_t reduction;
+   uint32_t available = socket->rxBufferSize - socket->rcvUser;
+   uint32_t threshold = MIN(socket->rmss, socket->rxBufferSize / 2);
 
-   //Space available but not yet advertised
-   reduction = socket->rxBufferSize - socket->rcvUser - socket->rcvWnd;
+   if(available < threshold)
+      return;
 
-   //To avoid SWS, the receiver should not advertise small windows
-   if((socket->rcvWnd + reduction) >= MIN(socket->rmss, socket->rxBufferSize / 2))
+   int32_t advertised = socket->rcvAdvValid
+      ? TCP_CMP_SEQ(socket->rcvAdv, socket->rcvNxt) : 0;
+   if(advertised < 0)
+      advertised = 0;
+
+   //Compare against the window on the wire, not the local window. In
+   //particular, tell the sender as soon as another full segment fits.
+   if(available > (uint32_t) advertised &&
+      (available - (uint32_t) advertised >= threshold ||
+      ((uint32_t) advertised < socket->rmss && available >= socket->rmss)))
    {
-      //Check whether a window update should be sent
-      if(socket->rcvWnd < MIN(socket->rmss, socket->rxBufferSize / 2))
-      {
-         //Debug message
-         TRACE_INFO("%s: TCP sending window update...\r\n",
-            formatSystemTime(osGetSystemTime(), NULL));
-
-         //Update the receive window
-         socket->rcvWnd += reduction;
-
-         //Send an ACK segment to advertise the new window size
-         tcpSendSegment(socket, TCP_FLAG_ACK, socket->sndNxt, socket->rcvNxt,
-            0, FALSE);
-      }
-      else
-      {
-         //The receive window can be updated
-         socket->rcvWnd += reduction;
-      }
+      socket->rcvWnd = available;
+      //Only a successful send advances rcvAdv. The timer retries if needed.
+      tcpSendSegment(socket, TCP_FLAG_ACK, socket->sndNxt, socket->rcvNxt,
+         0, FALSE);
    }
 }
 
@@ -1986,6 +2012,8 @@ error_t tcpRetransmitSegment(Socket *socket)
          //timer to expire
          error = ipSendDatagram(socket->interface, &queueItem->pseudoHeader,
             buffer, offset, &ancillary);
+         if(!error)
+            tcpRecordAdvertisedWindow(socket, segment);
 
          //End of exception handling block
       } while(0);

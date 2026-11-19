@@ -512,6 +512,25 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 		} else {
 			return -EOPNOTSUPP;
 		}
+	} else if (level == TCP_SOCKET_SOL_TCP && option == OS_TCP_DIAG) {
+		if (*length < sizeof(struct os_tcp_diag))
+			return -EINVAL;
+		Socket *socket = state->socket;
+		netLock(socket->netContext);
+		*(struct os_tcp_diag *)value = (struct os_tcp_diag){
+		    .state = socket->state,
+		    .receive_window = socket->rcvWnd,
+		    .receive_queued = socket->rcvUser,
+		    .receive_advanced = socket->rcvNxt - socket->irs - 1,
+		    .out_of_order_blocks = socket->sackBlockCount,
+		    .rejected_segments = socket->diagRejectedSegments,
+		    .ack_sent = socket->diagAckSent,
+		    .ack_failed = socket->diagAckFailed,
+		    .last_ack_window = socket->diagLastAckWindow,
+		};
+		netUnlock(socket->netContext);
+		*length = sizeof(struct os_tcp_diag);
+		return 0;
 	} else if (level == TCP_SOCKET_SOL_TCP &&
 	    option == TCP_SOCKET_TCP_NODELAY) {
 		uint64_t flags = state_guard_enter();
