@@ -8,7 +8,8 @@
 
 #define FONT_WIDTH 12U
 #define FONT_HEIGHT 22U
-#define BOOT_LOG_ROWS 8U
+#define BOOT_LOG_ROWS 512U
+#define BOOT_LOG_LAYOUT_ROWS 8U
 #define BOOT_LOG_MAX_COLUMNS 100U
 
 static const struct limine_framebuffer *active_framebuffer;
@@ -200,19 +201,27 @@ framebuffer_boot_splash(const struct limine_framebuffer *framebuffer,
 	for (i = 0; label[i] != '\0'; i++)
 		label_width += FONT_WIDTH;
 	panel_height = logo_height + FONT_HEIGHT * 4 + 4;
-	uint64_t available_rows = framebuffer->height > panel_height ?
+	uint64_t layout_rows = framebuffer->height > panel_height ?
 	    (framebuffer->height - panel_height) / FONT_HEIGHT : 0;
-	if (available_rows > BOOT_LOG_ROWS)
-		available_rows = BOOT_LOG_ROWS;
-	uint64_t total_height = panel_height + available_rows * FONT_HEIGHT;
+	if (layout_rows > BOOT_LOG_LAYOUT_ROWS)
+		layout_rows = BOOT_LOG_LAYOUT_ROWS;
+	uint64_t total_height = panel_height + layout_rows * FONT_HEIGHT;
 	logo_y = framebuffer->height > total_height ?
 	    (framebuffer->height - total_height) / 2 : 0;
 	if (!boot_splash_active) {
+		uint64_t available_rows;
+
 		boot_log_columns = framebuffer_columns < BOOT_LOG_MAX_COLUMNS ?
 		    framebuffer_columns : BOOT_LOG_MAX_COLUMNS;
-		boot_log_rows = (unsigned int)available_rows;
 		boot_log_x = (framebuffer->width - boot_log_columns * FONT_WIDTH) / 2;
 		boot_log_y = logo_y + panel_height;
+		available_rows = framebuffer->height > boot_log_y ?
+		    (framebuffer->height - boot_log_y) / FONT_HEIGHT : 0;
+		if (available_rows != 0)
+			available_rows--;
+		if (available_rows > BOOT_LOG_ROWS)
+			available_rows = BOOT_LOG_ROWS;
+		boot_log_rows = (unsigned int)available_rows;
 		boot_log_first = boot_log_row = boot_log_column = 0;
 		boot_log_lines[0][0] = '\0';
 		boot_log_state = BOOT_TEXT;
