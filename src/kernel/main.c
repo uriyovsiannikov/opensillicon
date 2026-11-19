@@ -87,7 +87,7 @@ initialize_filesystems(const struct boot_info *info)
 	}
 	vnode_put(initramfs_root);
 	klog_status("initramfs", true, NULL);
-	klog("OpenSillicon: initramfs and RAMFS mounted\n");
+	klog("root: initramfs and ramfs mounted\n");
 }
 
 static struct vnode *
@@ -185,8 +185,8 @@ mount_system_root(const struct limine_file *live_root)
 	} else {
 		device = NULL;
 	}
-	klog(live_root != NULL ? "OpenSillicon: Mounting Live SilliconFS from RAM\n" :
-	    "OpenSillicon: Mounting SilliconFS from disk\n");
+	klog(live_root != NULL ? "root: mounting live image\n" :
+	    "root: mounting disk image\n");
 	if (device != NULL)
 		error = silliconfs_mount(device, &disk_root);
 	else {
@@ -228,9 +228,8 @@ mount_system_root(const struct limine_file *live_root)
 	}
 	vnode_put(temporary_directory);
 	klog_status("SilliconFS", true, NULL);
-	klog(live_root != NULL ?
-	    "OpenSillicon: Live SilliconFS mounted as / in RAM\n" :
-	    "OpenSillicon: SilliconFS mounted as /; initramfs retained at /init\n");
+	klog(live_root != NULL ? "root: live image mounted\n" :
+	    "root: disk image mounted; initramfs at /init\n");
 	{
 		const char *paths[] = { "/dev", "/proc" };
 		const char *labels[] = { "devfs", "procfs" };
@@ -304,7 +303,7 @@ record_pci_device(const struct pci_device_info *device, void *context)
 	if (device->class_code == 0x01 && device->subclass == 0x06 &&
 	    device->programming_interface == 0x01) {
 		size_t disks = ahci_discover(device);
-		klog("OpenSillicon: AHCI disks discovered: ");
+		klog("ahci disks: ");
 		klog_u64(disks);
 		klog("\n");
 	}
@@ -429,26 +428,26 @@ static void
 report_smp_bootstrap(void)
 {
 	if (boot_has_option("nosmp")) {
-		klog("OpenSillicon: SMP disabled by nosmp; using bootstrap CPU only\n");
+		klog("smp: disabled\n");
 	} else if (stack_size_request.response == NULL) {
-		klog("OpenSillicon: SMP unavailable; Limine stack size request was not honored\n");
+		klog("smp: unavailable (stack size)\n");
 	} else if (tsc_frequency_request.response == NULL ||
 	    tsc_frequency_request.response->frequency == 0) {
-		klog("OpenSillicon: SMP unavailable; no Limine TSC frequency for startup timeout\n");
+		klog("smp: unavailable (no timer frequency)\n");
 	} else if (mp_request.response != NULL &&
 	    mp_request.response->cpu_count > SMP_MAX_CPUS) {
-		klog("OpenSillicon: SMP topology rejected; discovered ");
+		klog("smp: too many cpus: ");
 		klog_u64(mp_request.response->cpu_count);
-		klog(" exceeds maximum ");
+		klog(" > ");
 		klog_u64(SMP_MAX_CPUS);
-		klog("; continuing on BSP\n");
+		klog("; using bsp\n");
 	} else if (mp_request.response != NULL && smp_init(mp_request.response,
 	    tsc_frequency_request.response->frequency, timer_ap_initial_count())) {
-		klog("OpenSillicon: SMP BSP initialized; CPUs discovered ");
+		klog("smp: bsp ready; cpus ");
 		klog_u64(smp_discovered_count());
 		klog(" online ");
 		klog_u64(smp_online_count());
-		klog("; APs waiting for kernel work and TLB shootdown NMIs\n");
+		klog("; secondary cpus ready\n");
 		if (!smp_tlb_shootdown_all()) {
 			klog("OpenSillicon panic: SMP TLB shootdown acknowledgement timed out\n");
 			kernel_halt();
@@ -456,14 +455,14 @@ report_smp_bootstrap(void)
 		if (smp_online_count() == smp_discovered_count())
 			klog_status("SMP", true, "all discovered CPUs online");
 		else {
-			klog("OpenSillicon: SMP partial, online ");
+			klog("smp: partial, online ");
 			klog_u64(smp_online_count());
-			klog(" of ");
+			klog("/");
 			klog_u64(smp_discovered_count());
-			klog(" CPUs\n");
+			klog(" cpus\n");
 		}
 	} else {
-		klog("OpenSillicon: SMP unavailable or invalid Limine CPU topology; continuing on BSP\n");
+		klog("smp: unavailable; using bsp\n");
 	}
 }
 
@@ -489,7 +488,7 @@ _start(void)
 	serial_init();
 	if (fb != NULL && fb->framebuffer_count != 0 && fb->framebuffers != NULL &&
 	    framebuffer_text_init(fb->framebuffers[0], &boot_columns, &boot_rows))
-		framebuffer_boot_splash(fb->framebuffers[0], 0, "Booting kernel");
+		framebuffer_boot_splash(fb->framebuffers[0], 0, "booting kernel");
 	loaded_base_revision = LIMINE_LOADED_BASE_REVISION(limine_base_revision);
 	revision_five_honored =
 	    LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision);
@@ -587,13 +586,13 @@ _start(void)
 		kernel_halt();
 	}
 	klog_status("PMM", true, NULL);
-	framebuffer_boot_splash(info.framebuffer, 1, "Booting VMM");
+	framebuffer_boot_splash(info.framebuffer, 1, "booting vmm");
 	if (!vmm_init(&info)) {
 		klog_status("VMM", false, "virtual memory initialization failed");
 		kernel_halt();
 	}
 	klog_status("VMM", true, NULL);
-	framebuffer_boot_splash(info.framebuffer, 2, "Starting kernel services");
+	framebuffer_boot_splash(info.framebuffer, 2, "starting kernel services");
 	if (!dma_init(&validated_dma_contract)) {
 		klog_status("DMA subsystem", false,
 		    "initialization failed");
@@ -606,13 +605,11 @@ _start(void)
 		klog_status("DMA address policy", false,
 		    "unavailable: Limine base revision 5+ IOMMU-disabled contract not established; DMA-dependent drivers disabled");
 	}
-	klog("OpenSillicon: Starting local APIC\n");
 	if (!lapic_init()) {
 		klog_status("LAPIC", false, "local APIC initialization failed");
 		kernel_halt();
 	}
 	klog_status("LAPIC", true, NULL);
-	klog("OpenSillicon: Calibrating scheduler timer\n");
 	if (!timer_init(tsc_frequency_request.response == NULL ? 0 :
 	    tsc_frequency_request.response->frequency)) {
 		klog_status("scheduler timer", false, "LAPIC timer initialization failed");
@@ -621,25 +618,23 @@ _start(void)
 	klog_status("scheduler timer", true, NULL);
 	if (date_request.response != NULL && date_request.response->timestamp >= 0)
 		timer_set_realtime_epoch((uint64_t)date_request.response->timestamp);
-	klog("OpenSillicon: Bringing up SMP\n");
 	report_smp_bootstrap();
 	if (!kheap_init()) {
 		klog_status("heap", false, "kernel heap initialization failed");
 		kernel_halt();
 	}
 	klog_status("heap", true, NULL);
-	framebuffer_boot_splash(info.framebuffer, 3, "Starting console");
+	framebuffer_boot_splash(info.framebuffer, 3, "starting console");
 	if (!kernel_driver_api_export()) {
 		klog_status("kernel module exports", false, "export registration failed");
 		kernel_halt();
 	}
 	klog_status("kernel module exports", true, "driver API 2.0");
-	klog("OpenSillicon: Initializing console and PS/2\n");
 	if (!tty_init(info.framebuffer)) {
 		klog_status("console", false, "terminal initialization failed");
 		kernel_halt();
 	}
-	framebuffer_boot_splash(info.framebuffer, 3, "Starting hardware");
+	framebuffer_boot_splash(info.framebuffer, 3, "starting hardware");
 	if (!framebuffer_device_init(info.framebuffer))
 		klog("OpenSillicon: userspace framebuffer API unavailable\n");
 	klog_status("console", true, NULL);
@@ -647,25 +642,21 @@ _start(void)
 		klog("OpenSillicon: framebuffer unavailable; serial console active\n");
 	if (!tty_keyboard_available())
 		klog("OpenSillicon: PS/2 keyboard unavailable\n");
-	klog("OpenSillicon: Initializing ACPI tables\n");
 	if (!acpi_init(info.rsdp_physical, &madt)) {
 		klog_status("ACPI", false, "initialization or MADT validation failed");
 		kernel_halt();
 	}
-	klog("OpenSillicon: Initializing I/O APIC\n");
 	if (!ioapic_init(&madt)) {
 		klog_status("IOAPIC", false, "initialization failed");
 		kernel_halt();
 	}
 	klog_status("ACPI and IOAPIC", true, NULL);
-	klog("OpenSillicon: Enumerating PCI devices\n");
 	if (!pci_enumerate(record_pci_device, NULL)) {
 		klog_status("PCI", false, "device enumeration failed");
 		kernel_halt();
 	}
 	klog_status("PCI", true, NULL);
 	gpt_discover();
-	klog("OpenSillicon: Initializing USB host controllers\n");
 	if (!usb_host_init())
 		klog_status("USBX", false, "host core initialization failed");
 #ifdef OPEN_SILLICON_ENABLE_QEMU_VIRTIO_RNG
@@ -720,11 +711,10 @@ virtio_rng_probe_done:
 	    "runtime probing disabled outside the explicit QEMU profile");
 #endif
 	klog_status("PCI", true, "device enumeration complete");
-	framebuffer_boot_splash(info.framebuffer, 4, "Mounting system");
+	framebuffer_boot_splash(info.framebuffer, 4, "mounting system");
 	process_system_init();
 	syscall_init();
 	klog_status("process subsystem", true, NULL);
-	klog("OpenSillicon: Initializing filesystems\n");
 	initialize_filesystems(&info);
 	klog_status("VFS", true, NULL);
 	mount_system_root(info.live_root);
@@ -752,7 +742,6 @@ virtio_rng_probe_done:
 	}
 	klog_status("scheduler", true, NULL);
 	__asm__ volatile ("sti" : : : "memory");
-	klog("OpenSillicon: Starting secondary CPUs\n");
 	if (!scheduler_start_secondary_cpus()) {
 		klog("OpenSillicon panic: secondary CPU scheduler initialization failed\n");
 		kernel_halt();
@@ -773,10 +762,9 @@ virtio_rng_probe_done:
 			kernel_halt();
 		}
 	}
-	framebuffer_boot_splash(info.framebuffer, 5, "Starting init");
-	klog(info.live_root != NULL ?
-	    "OpenSillicon: launching /sbin/init from Live ISO\n" :
-	    "OpenSillicon: launching /sbin/init from SilliconFS\n");
+	framebuffer_boot_splash(info.framebuffer, 5, "starting init");
+	klog(info.live_root != NULL ? "kernel: starting init from live image\n" :
+	    "kernel: starting init from disk image\n");
 	klog_flush_boot_log();
 	tty_boot_splash_end();
 	fd_console_framebuffer_enable(true);

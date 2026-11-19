@@ -15,6 +15,7 @@ static char boot_log[BOOT_LOG_BUFFER_SIZE];
 static size_t boot_log_length;
 static bool boot_log_overflow;
 static bool boot_log_flushed;
+static bool boot_log_line_start = true;
 static struct spinlock log_lock = SPINLOCK_INITIALIZER;
 static volatile char panic_context[PANIC_CONTEXT_SIZE];
 static volatile size_t panic_context_next;
@@ -98,12 +99,29 @@ log_write(const char *buffer, size_t length)
 		}
 	}
 	if (!boot_log_flushed) {
-		framebuffer_boot_log_write(buffer, length);
-		if (length <= sizeof(boot_log) - boot_log_length) {
-			for (i = 0; i < length; i++)
-				boot_log[boot_log_length++] = buffer[i];
-		} else {
+		char normalized[256];
+		size_t offset = 0;
+		bool store = length <= sizeof(boot_log) - boot_log_length;
+
+		if (!store)
 			boot_log_overflow = true;
+		while (offset < length) {
+			size_t count = length - offset;
+			if (count > sizeof(normalized))
+				count = sizeof(normalized);
+			for (i = 0; i < count; i++) {
+				char c = buffer[offset + i];
+				if (boot_log_line_start && c >= 'A' && c <= 'Z')
+					c = (char)(c - 'A' + 'a');
+				normalized[i] = c;
+				boot_log_line_start = c == '\n';
+			}
+			framebuffer_boot_log_write(normalized, count);
+			if (store) {
+				for (i = 0; i < count; i++)
+					boot_log[boot_log_length++] = normalized[i];
+			}
+			offset += count;
 		}
 	}
 	spinlock_unlock_irqrestore(&log_lock, flags);
@@ -139,32 +157,28 @@ klog_status(const char *component, bool success, const char *detail)
 {
 	char line[192];
 	size_t length = 0;
-	size_t component_length = 0;
 	const char *part;
 
-	#define APPEND_STATUS(text) do { \
+	#define APPEND_STATUS_LOWER(text) do { \
 		part = (text); \
-		while (*part != '\0' && length < sizeof(line)) \
-			line[length++] = *part++; \
+		while (*part != '\0' && length < sizeof(line)) { \
+			char c = *part++; \
+			if (c >= 'A' && c <= 'Z') \
+				c = (char)(c - 'A' + 'a'); \
+			line[length++] = c; \
+		} \
 	} while (0)
-	APPEND_STATUS("\033[34m*\033[0m Initializing ");
-	APPEND_STATUS(component);
-	while (component[component_length] != '\0')
-		component_length++;
-	APPEND_STATUS(" ...");
-	while (component_length + 20 < 46) {
-		APPEND_STATUS(" ");
-		component_length++;
+	APPEND_STATUS_LOWER(component);
+	if (success) {
+		APPEND_STATUS_LOWER(" ready");
+	} else if (detail != NULL && detail[0] != '\0') {
+		APPEND_STATUS_LOWER(": ");
+		APPEND_STATUS_LOWER(detail);
+	} else {
+		APPEND_STATUS_LOWER(": failed");
 	}
-	APPEND_STATUS(" ");
-	APPEND_STATUS(success ? "\033[32m[ OK ]\033[0m" :
-	    "\033[31m[ ER ]\033[0m");
-	if (!success && detail != NULL && detail[0] != '\0') {
-		APPEND_STATUS(" ");
-		APPEND_STATUS(detail);
-	}
-	APPEND_STATUS("\n");
-	#undef APPEND_STATUS
+	APPEND_STATUS_LOWER("\n");
+	#undef APPEND_STATUS_LOWER
 	log_write(line, length);
 }
 
