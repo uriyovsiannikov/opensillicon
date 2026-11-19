@@ -726,9 +726,91 @@ save_repository(const char *url)
 	return 0;
 }
 
+struct installed_package_entry {
+	char name[PKG_NAME_SIZE];
+	char version[PKG_VERSION_SIZE];
+	char description[PKG_DESCRIPTION_SIZE];
+};
+
+static int compare_installed_entries(const void *left, const void *right)
+{
+	const struct installed_package_entry *a = left;
+	const struct installed_package_entry *b = right;
+	return strcmp(a->name, b->name);
+}
+
+static int list_installed(void)
+{
+	char path[256];
+	struct installed_package_entry packages[PKG_MAX_PACKAGES];
+	size_t count = 0;
+	if (lock_database() < 0 || rooted(path, "var/db/pkg") < 0)
+		return 1;
+	DIR *dir = opendir(path);
+	if (!dir) {
+		perror("pkg: package database");
+		return 1;
+	}
+	int result = 0;
+	for (;;) {
+		errno = 0;
+		const struct dirent *entry = readdir(dir);
+		if (!entry) {
+			if (errno != 0) {
+				perror("pkg: read package database");
+				result = 1;
+			}
+			break;
+		}
+		size_t length = strlen(entry->d_name);
+		if (length < 4 || strcmp(entry->d_name + length - 3, ".db"))
+			continue;
+		if (length - 3 >= PKG_NAME_SIZE || count == PKG_MAX_PACKAGES) {
+			result = fail("invalid or excessive package database entries");
+			break;
+		}
+		char name[PKG_NAME_SIZE];
+		memcpy(name, entry->d_name, length - 3);
+		name[length - 3] = '\0';
+		struct pkg_archive package;
+		uint8_t *bytes;
+		if (installed_record(name, &package, &bytes)) {
+			result = 1;
+			break;
+		}
+		if (package.installed == PKG_INSTALLED) {
+			struct installed_package_entry *listed = &packages[count++];
+			strcpy(listed->name, package.name);
+			strcpy(listed->version, package.version);
+			strcpy(listed->description, package.description);
+		}
+		free(bytes);
+	}
+	closedir(dir);
+	if (result)
+		return result;
+	qsort(packages, count, sizeof(packages[0]), compare_installed_entries);
+	printf("Installed packages (%zu):\n", count);
+	for (size_t i = 0; i < count; i++)
+		printf("%s %s - %s\n", packages[i].name, packages[i].version,
+		    packages[i].description);
+	return 0;
+}
+
+static int list_online(void)
+{
+	if (load_repository() || update_index())
+		return 1;
+	printf("Packages on %s (%zu):\n", repository, index_count);
+	for (size_t i = 0; i < index_count; i++)
+		printf("%s %s - %s\n", index_entries[i].name,
+		    index_entries[i].version, index_entries[i].description);
+	return 0;
+}
+
 static int usage(void)
 {
-	puts("usage: pkg repo URL | pkg add name|file.spkg | pkg update | pkg upgrade [name] | pkg remove name");
+	puts("usage: pkg repo URL | pkg add name|file.spkg | pkg list -i|-o | pkg update | pkg upgrade [name] | pkg remove name");
 	return 2;
 }
 
@@ -750,7 +832,9 @@ int main(int argc, char **argv)
 	const char *command = argv[1];
 	int valid = (argc == 2 && strcmp(command, "update") == 0) ||
 	    (argc == 2 && strcmp(command, "upgrade") == 0) ||
-	    (argc == 3 && (strcmp(command, "repo") == 0 ||
+	    (argc == 3 && ((strcmp(command, "list") == 0 &&
+	    (strcmp(argv[2], "-i") == 0 || strcmp(argv[2], "-o") == 0)) ||
+	    strcmp(command, "repo") == 0 ||
 	    strcmp(command, "add") == 0 || strcmp(command, "remove") == 0 ||
 	    strcmp(command, "upgrade") == 0));
 	if (!valid)
@@ -759,6 +843,8 @@ int main(int argc, char **argv)
 		return fail("root privileges required");
 	if (strcmp(command, "repo") == 0)
 		return save_repository(argv[2]);
+	if (strcmp(command, "list") == 0)
+		return strcmp(argv[2], "-i") == 0 ? list_installed() : list_online();
 	if (strcmp(command, "update") == 0)
 		return load_repository() || update_index();
 	if (strcmp(command, "upgrade") == 0) {
