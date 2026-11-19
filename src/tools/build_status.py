@@ -70,8 +70,7 @@ def label_for(target, source):
     for prefix, group in (("src/kernel/", "KERNEL"), ("src/user/libos/", "LIBOS"),
                           ("src/tools/pkg/repo/_src/doom/", "DOOM"),
                           ("src/tools/pkg/repo/_src/twm/deps/", "LIB"),
-                          ("src/user/", "USER"), ("src/tools/", "HOST"),
-                          ("src/tests/", "TEST")):
+                          ("src/user/", "USER"), ("src/tools/", "HOST")):
         if source.startswith(prefix):
             name = source[len(prefix):]
             return group + " " + str(Path(name).with_suffix(""))

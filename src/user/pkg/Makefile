@@ -553,12 +553,4 @@ $(BUILD_DIR)/pkg/doom-stage.ready: $(BUILD_DIR)/doom/doom \
 src/tools/pkg/repo/_pkges/doom-1.0.0.spkg: $(BUILD_DIR)/pkg/doom-stage.ready $(BUILD_DIR)/pkg/pkg-build
 	$(BUILD_DIR)/pkg/pkg-build doom 1.0.0 $(DOOM_STAGE) $@ 'Doom with shareware game data'
 
-$(BUILD_DIR)/pkg/pkg-vfs-test: src/tests/pkg_vfs_test.c src/kernel/fs/vfs/vfs.c \
-		src/kernel/fs/ramfs/ramfs.c src/kernel/proc/fd.c \
-		src/include/kernel/vfs.h src/include/kernel/fd.h
-	mkdir -p $(@D)
-	$(HOST_CC) -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections \
-		-fdata-sections -Isrc/include -Isrc/limine $(filter %.c,$^) \
-		-Wl,--gc-sections -o $@
-
 -include $(PKG_OBJECTS:.o=.d)

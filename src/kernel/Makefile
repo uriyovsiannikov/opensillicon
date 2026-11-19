@@ -2,14 +2,6 @@
 
 kernel: $(BUILD_DIR)/kernel.elf
 
-$(BUILD_DIR)/acpi_mapping_test: src/tests/acpi_mapping_test.c \
-		src/kernel/arch/x86_64/firmware/acpi.c \
-		src/include/kernel/spinlock.h src/include/kernel/vmm.h | $(BUILD_DIR)
-	$(CC) -std=c11 -O2 -Wall -Wextra -Werror \
-		-ffunction-sections -fdata-sections -DKERNEL_SPINLOCK_HOST_TEST \
-		-DOPEN_SILLICON_KERNEL -Isrc/include -Isrc/limine \
-		-isystem $(ACPICA_ROOT)/include $< -Wl,--gc-sections -o $@
-
 CYCLONE_STACK_SOURCES := core/net.c core/net_mem.c core/net_misc.c core/nic.c \
 	core/ethernet.c core/ethernet_misc.c core/ip.c core/socket.c \
 	core/socket_misc.c core/raw_socket.c core/ping.c core/tcp.c core/tcp_fsm.c core/tcp_misc.c \

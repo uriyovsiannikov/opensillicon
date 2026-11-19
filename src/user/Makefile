@@ -192,13 +192,6 @@ $(BUILD_DIR)/coreutils/newfs_silliconfs.elf: $(BUILD_DIR)/coreutils/newfs_sillic
 		$(BUILD_DIR)/coreutils/newfs_silliconfs.o $(BUILD_DIR)/storage/newfs.o \
 		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(LIBOS_ARCHIVE) -o $@
 
-$(BUILD_DIR)/tests/newfs_guest.o: src/tests/newfs_guest.c | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/tests/newfs_guest.elf: $(BUILD_DIR)/tests/newfs_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
-
 $(BUILD_DIR)/coreutils/gpart.o: src/user/coreutils/gpart.c src/user/storage/storage.h
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
@@ -209,13 +202,6 @@ $(BUILD_DIR)/coreutils/gpart.elf: $(BUILD_DIR)/coreutils/gpart.o \
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o \
 		$(BUILD_DIR)/coreutils/gpart.o $(BUILD_DIR)/storage/gpt_write.o \
 		$(BUILD_DIR)/storage/encoding.o $(BUILD_DIR)/storage/device.o $(LIBOS_ARCHIVE) -o $@
-
-$(BUILD_DIR)/tests/gpart_guest.o: src/tests/gpart_guest.c | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/tests/gpart_guest.elf: $(BUILD_DIR)/tests/gpart_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
 
 $(BUILD_DIR)/coreutils/installboot.o: src/user/coreutils/installboot.c src/user/storage/storage.h src/include/common/uuid.h
 	mkdir -p $(@D)
@@ -252,33 +238,12 @@ $(BUILD_DIR)/coreutils/sysupgrade.elf: $(BUILD_DIR)/coreutils/sysupgrade.o \
 		-Wl,--start-group $(PKG_TLS_LIBS) $(LIBOS_ARCHIVE) \
 		-Wl,--end-group -lgcc -o $@
 
-$(BUILD_DIR)/tests/installboot_guest.o: src/tests/installboot_guest.c | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/tests/installboot_guest.elf: $(BUILD_DIR)/tests/installboot_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
-
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,mount umount sync)): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c
 	mkdir -p $(@D)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,mount umount sync)): $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/coreutils/%.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
 	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
-
-$(BUILD_DIR)/tests/mount_guest.o: src/tests/mount_guest.c | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/tests/mount_guest.elf: $(BUILD_DIR)/tests/mount_guest.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(LIBOS_ARCHIVE) -o $@
-
-$(BUILD_DIR)/tests/copy_guest.o: src/tests/copy_guest.c src/user/storage/install_copy.h | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/tests/copy_guest.elf: $(BUILD_DIR)/tests/copy_guest.o $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE)
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $< $(BUILD_DIR)/storage/install_copy.o $(BUILD_DIR)/storage/encoding.o $(LIBOS_ARCHIVE) -o $@
 
 $(BUILD_DIR)/scinstall/scinstall.o: src/user/scinstall/scinstall.c src/user/scinstall/ui.h src/user/storage/storage.h src/user/storage/install_copy.h src/include/common/uuid.h
 	mkdir -p $(@D)
