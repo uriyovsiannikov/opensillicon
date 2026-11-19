@@ -140,6 +140,7 @@ long u_exec_path_argv(const char *path, size_t argc,
 long u_waitpid(uint64_t pid, uint8_t *status);
 long u_sleep_ticks(uint64_t ticks);
 long u_power_control(uint64_t command);
+long u_kernel_crash(void);
 long u_kldload(const char *path);
 long u_kldunload(const char *name);
 long u_chdir(const char *path);

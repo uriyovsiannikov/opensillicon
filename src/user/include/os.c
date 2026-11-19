@@ -88,6 +88,8 @@ long u_waitpid(uint64_t pid, uint8_t *status)
 long u_sleep_ticks(uint64_t ticks) { return syscall3(SYSCALL_SLEEP_TICKS, ticks, 0, 0); }
 long u_power_control(uint64_t command)
 { return syscall3(SYSCALL_POWER_CONTROL, command, 0, 0); }
+long u_kernel_crash(void)
+{ return syscall3(SYSCALL_KERNEL_CRASH, 0, 0, 0); }
 long u_kldload(const char *path)
 { return syscall3(SYSCALL_KLDLOAD, (uintptr_t)path, 0, 0); }
 long u_kldunload(const char *name)

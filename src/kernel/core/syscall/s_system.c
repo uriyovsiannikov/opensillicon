@@ -3,6 +3,7 @@
 #include "arch/x86_64/acpi.h"
 #include "kernel/block.h"
 #include "kernel/heap.h"
+#include "kernel/log.h"
 #include "kernel/module.h"
 #include "kernel/process.h"
 #include "kernel/vfs.h"
@@ -33,6 +34,9 @@ syscall_system_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
+	case SYSCALL_KERNEL_CRASH:
+		klog("kernel crash requested by shell\n");
+		kernel_halt();
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;
