@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../../../../../.." && pwd)
 cc=${CC:-gcc}
-source="$root/src/user/thirdparty/htop"
+source="$root/src/tools/pkg/repo/_src/htop/upstream"
 out="$root/src/build/htop"
 curses="$root/src/build/nano/ncurses"
 libos="$root/src/build/libos"
