@@ -321,6 +321,41 @@ endef
 $(eval $(call X11_CLIENT_PACKAGE,xeyes,1.3.1,X11 eyes that follow the pointer))
 $(eval $(call X11_CLIENT_PACKAGE,xclock,1.2.0,Analog and digital clock for X11))
 
+FETCH_DIR := src/tools/pkg/repo/_src/fetch
+FETCH_STAGE := $(BUILD_DIR)/fetch/stage
+src/tools/pkg/repo/_pkges/fetch-1.0.0.spkg: $(BUILD_DIR)/coreutils/fetch.elf \
+		$(FETCH_DIR)/README.md $(BUILD_DIR)/pkg/pkg-build
+	rm -rf $(FETCH_STAGE)
+	install -D -m 755 $(BUILD_DIR)/coreutils/fetch.elf $(FETCH_STAGE)/usr/bin/fetch
+	install -D -m 644 $(FETCH_DIR)/README.md $(FETCH_STAGE)/usr/share/doc/fetch/README.md
+	$(BUILD_DIR)/pkg/pkg-build fetch 1.0.0 $(FETCH_STAGE) $@ 'OpenSillicon system information command'
+
+NANO_DIR := src/tools/pkg/repo/_src/nano
+NANO_STAGE := $(BUILD_DIR)/nano/stage
+NANO_NCURSES_COPYING := $(BUILD_DIR)/nano/deps/ncurses-6.5/COPYING
+src/tools/pkg/repo/_pkges/nano-9.3.spkg: $(BUILD_DIR)/nano/nano \
+		$(NANO_DIR)/README.md $(NANO_DIR)/GPL-3.0.txt $(NANO_NCURSES_COPYING) \
+		$(BUILD_DIR)/pkg/pkg-build
+	rm -rf $(NANO_STAGE)
+	install -D -m 755 $(BUILD_DIR)/nano/nano $(NANO_STAGE)/usr/bin/nano
+	install -D -m 644 $(NANO_DIR)/GPL-3.0.txt $(NANO_STAGE)/usr/share/licenses/nano/GPL-3.0.txt
+	install -D -m 644 $(NANO_NCURSES_COPYING) $(NANO_STAGE)/usr/share/licenses/nano/ncurses-COPYING
+	install -D -m 644 $(NANO_DIR)/README.md $(NANO_STAGE)/usr/share/doc/nano/README.md
+	$(BUILD_DIR)/pkg/pkg-build nano 9.3 $(NANO_STAGE) $@ 'GNU nano text editor for OpenSillicon'
+
+HTOP_DIR := src/tools/pkg/repo/_src/htop
+HTOP_STAGE := $(BUILD_DIR)/htop/stage
+HTOP_NCURSES_COPYING := $(BUILD_DIR)/nano/deps/ncurses-6.5/COPYING
+src/tools/pkg/repo/_pkges/htop-3.5.3.spkg: $(BUILD_DIR)/htop/htop \
+		$(HTOP_DIR)/README.md src/user/thirdparty/htop/COPYING \
+		$(HTOP_NCURSES_COPYING) $(BUILD_DIR)/pkg/pkg-build
+	rm -rf $(HTOP_STAGE)
+	install -D -m 755 $(BUILD_DIR)/htop/htop $(HTOP_STAGE)/usr/bin/htop
+	install -D -m 644 src/user/thirdparty/htop/COPYING $(HTOP_STAGE)/usr/share/licenses/htop/COPYING
+	install -D -m 644 $(HTOP_NCURSES_COPYING) $(HTOP_STAGE)/usr/share/licenses/htop/ncurses-COPYING
+	install -D -m 644 $(HTOP_DIR)/README.md $(HTOP_STAGE)/usr/share/doc/htop/README.md
+	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
+
 QUAKE_DIR := src/tools/pkg/repo/_src/quake
 QUAKE_BUILD := $(BUILD_DIR)/quake
 QUAKE_STAGE := $(QUAKE_BUILD)/stage

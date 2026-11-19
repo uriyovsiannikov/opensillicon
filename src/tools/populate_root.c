@@ -340,7 +340,7 @@ main(int argc, char **argv)
 	}
 	if (coreutils_start != 0) {
 		static const char *names[] = {"ls", "cat", "echo", "pwd",
-		    "true", "false", "clear", "uname", "fetch", "head", "tail",
+		    "true", "false", "clear", "uname", "head", "tail",
 		    "wc", "seq", "mkdir", "rm", "touch", "stat", "basename",
 		    "dirname", "kill", "sleep", "which", "ps",
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",

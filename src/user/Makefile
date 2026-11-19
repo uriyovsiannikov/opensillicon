@@ -159,8 +159,6 @@ SERVICE_CONFIGS ?= $(wildcard src/user/init/*.conf)
 ROOT_PAYLOAD = $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		src/limine/BOOTX64.EFI $(BUILD_DIR)/init.elf $(BUILD_DIR)/shell.elf \
 		$(MODULE_OBJECTS) \
-		$(BUILD_DIR)/nano/nano \
-		$(BUILD_DIR)/htop/htop \
 		$(SERVICE_CONFIGS) $(PKG_CA_CERT) $(BUILD_DIR)/coreutils/svctl.elf $(BUILD_DIR)/scinstall/scinstall.elf \
 		src/user/thirdparty/mbedtls/opensillicon/ca-certificates.crt \
 		$(COREUTILS_ELFS)
@@ -175,7 +173,6 @@ $(sort $(ROOT_IMAGE) $(LIVE_ROOT_IMAGE)): $(ROOT_PAYLOAD) $(BUILD_DIR)/populate_
 		--size-from $(foreach file,$(ROOT_PAYLOAD),'$(file)'); \
 	$(BUILD_DIR)/populate_root "$$image_tmp" $(BUILD_DIR)/init.elf \
 		$(BUILD_DIR)/shell.elf \
-		--nano $(BUILD_DIR)/nano/nano --htop $(BUILD_DIR)/htop/htop \
 		$(if $(PKG_CA_CERT),--pkg-ca '$(PKG_CA_CERT)') \
 		--boot-files src/limine/BOOTX64.EFI $(BUILD_DIR)/kernel-boot.elf $(BUILD_DIR)/initramfs.cpio \
 		$(foreach module,$(MODULE_OBJECTS),--module $(module)) \

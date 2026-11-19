@@ -1,8 +1,8 @@
 # GNU nano on OpenSillicon
 
-`make nano-build` compiles the sources in `user/nano/src` with the native
-libos runtime. `make build/root.img` and `make run-gui` install the resulting
-static ELF as `/bin/nano`. Run `nano /tmp/example.txt`; Ctrl-O writes the file,
+The `nano` package compiles the sources in `user/nano/src` with the native
+libos runtime and installs the resulting static ELF as `/usr/bin/nano`. Install
+it with `pkg add nano`. Run `nano /tmp/example.txt`; Ctrl-O writes the file,
 Enter confirms its name, and Ctrl-X exits.
 
 The port uses ncurses 6.5, bundled as its original source archive under `deps/`.
