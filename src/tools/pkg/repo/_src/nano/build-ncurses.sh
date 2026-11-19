@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../../../../../.." && pwd)
+. "$root/src/tools/builders/build_helpers.sh"
+cc=${CC:-gcc}
+port="$root/src/tools/pkg/repo/_src/nano"
+out="$root/src/build/nano"
+src="$out/deps/ncurses-6.5"
+mkdir -p "$out/deps" "$out/ncurses"
+exec 9>"$out/.build.lock"
+flock 9
+archive="$port/upstream/deps/ncurses-6.5.tar.gz"
+printf '%s  %s\n' 136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6 "$archive" | sha256sum -c -
+if [ ! -f "$src/configure" ]; then
+	tar -xzf "$archive" -C "$out/deps"
+fi
+# ncurses uses this clock for input deadlines. OpenSillicon provides CLOCK_MONOTONIC.
+clock_header="$src/ncurses/curses.priv.h"
+if grep -q 'GetClockTime(t) clock_gettime(CLOCK_REALTIME, t)' "$clock_header"; then
+	sed -i 's/GetClockTime(t) clock_gettime(CLOCK_REALTIME, t)/GetClockTime(t) clock_gettime(CLOCK_MONOTONIC, t)/' "$clock_header"
+fi
+build_triplet=$(sh "$src/config.guess")
+cflags='-O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
+cppflags="-nostdinc -I$root/src/user/libos/include -isystem $($cc -print-file-name=include)"
+cd "$out/ncurses"
+if [ ! -f Makefile ]; then
+	CPPFLAGS="$cppflags" CFLAGS="$cflags" \
+	LDFLAGS="-nostdlib -static -no-pie -Wl,-T,$root/src/user/c_linker.ld $root/src/build/libos/crt0.o" \
+	LIBS="$root/src/build/libos/liblibos.a -lgcc" \
+	build_component "LIB ncurses configure" "$src/configure" --build="$build_triplet" --host=x86_64-elf --prefix=/usr \
+		--without-progs --without-tests --without-manpages --without-cxx \
+		--without-cxx-binding --without-ada --without-debug --without-shared \
+		--disable-widec --disable-database --with-fallbacks=xterm,vt100,linux
+fi
+# Header generators run on the build host; the library itself uses libos.
+build_component "LIB ncurses headers" make -C include
+build_component "LIB ncurses" make -C ncurses -j"${NANO_JOBS:-4}" \
+	BUILD_CPPFLAGS="-DHAVE_CONFIG_H -DUSE_BUILD_CC -I. -I../include -I$src/ncurses -I$src/include" \
+	BUILD_LDFLAGS= BUILD_LIBS=
