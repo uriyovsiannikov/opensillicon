@@ -1093,14 +1093,12 @@ tcp_core_step(struct tcp_connection_table *table,
 		if (connection->state == TCP_STATE_CLOSED)
 			return true;
 		if (connection->state == TCP_STATE_TIME_WAIT) {
-			if ((event->segment->flags & TCP_FLAG_RST) != 0) {
-				uint16_t window = receive_window(connection);
-				if (event->segment->sequence == connection->rcv_nxt)
-					close_connection(connection, result, true);
-				else if (sequence_in_window(event->segment->sequence,
-				    connection->rcv_nxt, window))
-					result->actions |= TCP_ACTION_SEND_ACK;
-			} else if ((event->segment->flags & TCP_FLAG_FIN) != 0 &&
+			/* A reset must not shorten TIME-WAIT: an old duplicate can
+			 * provoke a reset and expose a new incarnation of this tuple to
+			 * stale segments. */
+			if ((event->segment->flags & TCP_FLAG_RST) != 0)
+				break;
+			if ((event->segment->flags & TCP_FLAG_FIN) != 0 &&
 			    event->segment->sequence +
 			    (uint32_t)event->segment->payload_length + 1U ==
 			    connection->rcv_nxt) {
