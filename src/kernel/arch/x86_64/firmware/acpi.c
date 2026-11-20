@@ -769,9 +769,23 @@ AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 *value, UINT32 width)
 	pointer = AcpiOsMapMemory(address, width / 8);
 	if (pointer == NULL)
 		return AE_BAD_PARAMETER;
-	*value = 0;
-	for (UINT32 i = 0; i < width / 8; i++)
-		*value |= (uint64_t)pointer[i] << (i * 8);
+	switch (width) {
+	case 8:
+		*value = *(volatile uint8_t *)pointer;
+		break;
+	case 16:
+		*value = *(volatile uint16_t *)pointer;
+		break;
+	case 32:
+		*value = *(volatile uint32_t *)pointer;
+		break;
+	case 64:
+		*value = *(volatile uint64_t *)pointer;
+		break;
+	default:
+		AcpiOsUnmapMemory((void *)pointer, width / 8);
+		return AE_BAD_PARAMETER;
+	}
 	AcpiOsUnmapMemory((void *)pointer, width / 8);
 	return AE_OK;
 }
@@ -786,8 +800,23 @@ AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width)
 	pointer = AcpiOsMapMemory(address, width / 8);
 	if (pointer == NULL)
 		return AE_BAD_PARAMETER;
-	for (UINT32 i = 0; i < width / 8; i++)
-		pointer[i] = (uint8_t)(value >> (i * 8));
+	switch (width) {
+	case 8:
+		*(volatile uint8_t *)pointer = (uint8_t)value;
+		break;
+	case 16:
+		*(volatile uint16_t *)pointer = (uint16_t)value;
+		break;
+	case 32:
+		*(volatile uint32_t *)pointer = (uint32_t)value;
+		break;
+	case 64:
+		*(volatile uint64_t *)pointer = value;
+		break;
+	default:
+		AcpiOsUnmapMemory((void *)pointer, width / 8);
+		return AE_BAD_PARAMETER;
+	}
 	AcpiOsUnmapMemory((void *)pointer, width / 8);
 	return AE_OK;
 }
