@@ -11,10 +11,14 @@ poll(struct pollfd *fds, nfds_t count, int timeout)
 	int ready;
 	int ready_count = 0;
 
-	if (count != 0 && fds == 0)
+	if (count != 0 && fds == 0) {
+		errno = EFAULT;
 		return -1;
-	if (timeout < -1)
+	}
+	if (timeout < -1) {
+		errno = EINVAL;
 		return -1;
+	}
 	FD_ZERO(&read_set);
 	FD_ZERO(&write_set);
 	FD_ZERO(&except_set);
@@ -36,9 +40,11 @@ poll(struct pollfd *fds, nfds_t count, int timeout)
 		if (fd > max_fd)
 			max_fd = fd;
 	}
-	if (ready_count != 0)
-		return ready_count;
-	if (timeout >= 0) {
+	if (ready_count != 0) {
+		value.tv_sec = 0;
+		value.tv_usec = 0;
+		value_pointer = &value;
+	} else if (timeout >= 0) {
 		value.tv_sec = timeout / 1000;
 		value.tv_usec = (timeout % 1000) * 1000;
 		value_pointer = &value;
