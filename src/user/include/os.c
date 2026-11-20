@@ -84,7 +84,9 @@ long u_exec_path_argv(const char *path, size_t argc,
 	const char *const argv[])
 { return syscall3(SYSCALL_EXEC_PATH_ARGV, (uintptr_t)path, argc, (uintptr_t)argv); }
 long u_waitpid(uint64_t pid, uint8_t *status)
-{ return syscall3(SYSCALL_WAITPID, pid, (uintptr_t)status, 0); }
+{ return u_waitpid_options(pid, status, 0); }
+long u_waitpid_options(uint64_t pid, uint8_t *status, uint64_t options)
+{ return syscall3(SYSCALL_WAITPID, pid, (uintptr_t)status, options); }
 long u_sleep_ticks(uint64_t ticks) { return syscall3(SYSCALL_SLEEP_TICKS, ticks, 0, 0); }
 long u_power_control(uint64_t command)
 { return syscall3(SYSCALL_POWER_CONTROL, command, 0, 0); }

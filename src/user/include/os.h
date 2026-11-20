@@ -28,6 +28,7 @@
 #define U_EXEC_ARG_BYTES_MAX 2048U
 #define U_TIMER_HZ 100U
 #define U_PROCESS_SNAPSHOT_MAX 128U
+#define U_WAIT_NOHANG 1U
 #define U_TIOCGWINSZ 0x5413U
 #define U_TIOCSRAW 0x4f530001U
 #define U_TIOCCANON 0x4f530002U
@@ -138,6 +139,7 @@ long u_exec_path(const char *path);
 long u_exec_path_argv(const char *path, size_t argc,
 	const char *const argv[]);
 long u_waitpid(uint64_t pid, uint8_t *status);
+long u_waitpid_options(uint64_t pid, uint8_t *status, uint64_t options);
 long u_sleep_ticks(uint64_t ticks);
 long u_power_control(uint64_t command);
 long u_kernel_crash(void);

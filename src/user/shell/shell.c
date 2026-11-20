@@ -76,6 +76,8 @@ static char command_history[HISTORY_CAPACITY][LINE_CAPACITY];
 static size_t history_count;
 static size_t history_next;
 static size_t history_position;
+static uint64_t background_children[U_PROCESS_SNAPSHOT_MAX];
+static size_t background_child_count;
 static int cursor_visible = 1;
 static int xterm_cursor;
 
@@ -128,6 +130,25 @@ print_history(void)
 		u_puts("  ");
 		u_puts(command_history[history_slot(i)]);
 		u_puts("\n");
+	}
+}
+
+static void
+reap_background_children(void)
+{
+	size_t index = 0;
+
+	while (index < background_child_count) {
+		long result = u_waitpid_options(background_children[index], NULL,
+		    U_WAIT_NOHANG);
+
+		if (result == 0 || result == -4) {
+			index++;
+			continue;
+		}
+		background_children[index] =
+		    background_children[--background_child_count];
+		background_children[background_child_count] = 0;
 	}
 }
 
@@ -318,6 +339,13 @@ command_external(size_t argc, const char *const argv[], int background,
 		print_error("tty mode", "canonical");
 		return;
 	}
+	if (background) {
+		reap_background_children();
+		if (background_child_count == U_PROCESS_SNAPSHOT_MAX) {
+			u_puts("sh: too many unreaped background commands\n");
+			goto resume_editor;
+		}
+	}
 	child = u_fork();
 	if (child < 0) {
 		print_error("fork", command);
@@ -339,6 +367,8 @@ command_external(size_t argc, const char *const argv[], int background,
 		u_put_u64(status);
 		u_puts("\n");
 		}
+	} else {
+		background_children[background_child_count++] = (uint64_t)child;
 	}
 resume_editor:
 	if (interactive && u_ioctl(0, U_TIOCSRAW, 0) < 0) {
@@ -612,6 +642,7 @@ read_command_line(char *line)
 	history_position = history_count;
 	for (;;) {
 		char character;
+		reap_background_children();
 		long amount = u_read(0, &character, 1);
 		if (amount == -11) {
 			cursor_visible = !cursor_visible;
