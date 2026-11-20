@@ -553,7 +553,7 @@ valid_configuration(const uint8_t *data, unsigned int length)
 		case 4: minimum = 9; break; /* Interface */
 		case 5: minimum = 7; break; /* Endpoint */
 		case 11: minimum = 8; break; /* Interface association */
-		case 0x21: minimum = 6; break; /* HID or other class descriptor */
+		case 0x21: minimum = 9; break; /* HID descriptor fields used by USBX */
 		}
 		if (data[offset] < minimum)
 			return false;
