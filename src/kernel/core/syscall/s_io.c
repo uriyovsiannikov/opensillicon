@@ -785,6 +785,15 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			    current_fd_table(), frame->rdi);
 			int result;
 
+			/* Validate before a read can consume socket, terminal, or device
+			 * data. Restoring a file offset cannot undo those side effects. */
+			if (object != NULL &&
+			    !vmm_validate_user_write(vmm_active_address_space(),
+			    frame->rsi, (size_t)frame->rdx)) {
+				syscall_error(frame, ERRNO_EFAULT);
+				break;
+			}
+
 			if (pipe_is_read_endpoint(object)) {
 				result = pipe_read_to(object, (size_t)frame->rdx,
 				    pipe_copy_user, (void *)(uintptr_t)frame->rsi, &amount);
