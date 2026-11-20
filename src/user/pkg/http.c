@@ -91,7 +91,7 @@ static ssize_t receive(int fd, struct pkg_tls *tls, void *p, size_t size, long l
 static int parse_repository(const char *repo, char host[128], char port[6], int *tls)
 {
 	int secure = strncmp(repo, "https://", 8) == 0;
-	if (!secure && strncmp(repo, "http://", 7)) return 0;
+	if (!secure) return 0;
 	*tls = secure;
 	strcpy(port, secure ? "443" : "80");
 	const char *start = repo + (secure ? 8 : 7);
