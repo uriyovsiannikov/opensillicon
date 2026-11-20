@@ -430,14 +430,13 @@ kernel_module_load(const char *name, const void *object, size_t image_size)
 		if (read32(section + 4) != SHT_NOBITS) {
 			uint64_t file_offset = read64(section + 24);
 			const uint8_t *source = image + file_offset;
-			uint8_t *destination = (uint8_t *)(uintptr_t)
-			    (vmm_hhdm_offset() + module->physical_pages[cursor / PAGE_SIZE]) +
-			    (cursor & (PAGE_SIZE - 1U));
 			for (size_t b = 0; b < size; b++) {
-				if ((cursor + b) / PAGE_SIZE != cursor / PAGE_SIZE)
-					destination = (uint8_t *)(uintptr_t)(vmm_hhdm_offset() +
-					    module->physical_pages[(cursor + b) / PAGE_SIZE]);
-				destination[b % PAGE_SIZE] = source[b];
+				uint64_t section_offset = cursor + b;
+				uint8_t *destination = (uint8_t *)(uintptr_t)(
+				    vmm_hhdm_offset() +
+				    module->physical_pages[section_offset / PAGE_SIZE] +
+				    section_offset % PAGE_SIZE);
+				*destination = source[b];
 			}
 		}
 		if (sections[i].size > module->page_count * PAGE_SIZE - cursor)
