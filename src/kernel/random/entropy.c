@@ -277,7 +277,6 @@ read_source(enum kernel_entropy_source source, uint8_t *output,
 			volatile uint8_t *wipe = limine_candidate;
 			for (size_t i = 0; i < sizeof(limine_candidate); i++)
 				wipe[i] = 0;
-			sources[source].status = KERNEL_ENTROPY_EXHAUSTED;
 		}
 		return KERNEL_ENTROPY_OK;
 	}
@@ -395,7 +394,11 @@ kernel_entropy_get_candidate(enum kernel_entropy_source source,
 	for (size_t i = 0; i < sizeof(temporary); i++)
 		wipe[i] = 0;
 	flags = entropy_guard_enter();
-	if (result == KERNEL_ENTROPY_SOURCE_TEMPORARY_FAILURE)
+	if (result == KERNEL_ENTROPY_OK &&
+	    source == KERNEL_ENTROPY_SOURCE_LIMINE &&
+	    limine_offset == limine_length)
+		sources[source].status = KERNEL_ENTROPY_EXHAUSTED;
+	else if (result == KERNEL_ENTROPY_SOURCE_TEMPORARY_FAILURE)
 		sources[source].status = KERNEL_ENTROPY_TEMPORARILY_FAILED;
 	else if (result == KERNEL_ENTROPY_SOURCE_PERMANENT_FAILURE)
 		sources[source].status = KERNEL_ENTROPY_PERMANENTLY_DISABLED;
