@@ -35,8 +35,16 @@ syscall_system_bsp(struct interrupt_frame *frame)
 
 	switch (number) {
 	case SYSCALL_KERNEL_CRASH:
-		klog("kernel crash requested by shell\n");
-		kernel_halt();
+		{
+			struct os_credentials credentials;
+			if (!process_current_credentials(&credentials) ||
+			    credentials.effective_uid != 0) {
+				syscall_error(frame, 1U);
+				break;
+			}
+			klog("kernel crash requested by shell\n");
+			kernel_halt();
+		}
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;
