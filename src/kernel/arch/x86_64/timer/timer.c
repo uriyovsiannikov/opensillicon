@@ -183,10 +183,14 @@ timer_monotonic_ns(void)
 {
 	uint64_t frequency = __atomic_load_n(&tsc_frequency_hz, __ATOMIC_ACQUIRE);
 	uint64_t cycles;
+	uint64_t tick_count;
 	uint32_t low, high;
 
-	if (frequency == 0)
-		return timer_jiffies() * UINT64_C(10000000);
+	if (frequency == 0) {
+		tick_count = timer_ticks();
+		return tick_count > UINT64_MAX / UINT64_C(10000000) ? UINT64_MAX :
+		    tick_count * UINT64_C(10000000);
+	}
 	__asm__ volatile ("lfence; rdtsc" : "=a" (low), "=d" (high) : : "memory");
 	cycles = ((uint64_t)high << 32) | low;
 	return (cycles / frequency) * UINT64_C(1000000000) +
