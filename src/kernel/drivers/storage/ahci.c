@@ -461,7 +461,10 @@ ahci_discover(const struct pci_device_info *controller)
 		    ((uint64_t)identify[100] | (uint64_t)identify[101] << 16 |
 		    (uint64_t)identify[102] << 32 | (uint64_t)identify[103] << 48) :
 		    ((uint32_t)identify[60] | (uint32_t)identify[61] << 16);
-		if (state->sector_count == 0 || !state->lba48) {
+		/* READ/WRITE DMA EXT carries a 48-bit LBA; do not publish a
+		 * capacity that block I/O could address only after truncation. */
+		if (state->sector_count == 0 ||
+		    state->sector_count > (UINT64_C(1) << 48) || !state->lba48) {
 			if (!release_command_dma(state, port, dma_physical))
 				return disk_count - before;
 			continue;
