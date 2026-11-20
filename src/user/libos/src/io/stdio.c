@@ -56,14 +56,18 @@ static int scan_number(const char**p,int limit){int n=0;while(**p>='0'&&**p<='9'
 int fscanf(FILE*f,const char*fmt,...){va_list ap;int assigned=0;if(!f||!fmt){errno=EINVAL;return EOF;}va_start(ap,fmt);while(*fmt){if(scan_space((unsigned char)*fmt)){while(scan_space((unsigned char)*fmt))fmt++;int c;do{c=getc(f);}while(c!=EOF&&scan_space(c));if(c!=EOF)ungetc(c,f);continue;}if(*fmt!='%'){int c=getc(f);if(c==EOF||c!=(unsigned char)*fmt++){if(c!=EOF)ungetc(c,f);break;}continue;}fmt++;if(*fmt=='%'){int c=getc(f);fmt++;if(c!='%'){if(c!=EOF)ungetc(c,f);break;}continue;}int width=LIBOS_INT_MAX;if(*fmt>='0'&&*fmt<='9'){width=scan_number(&fmt,LIBOS_INT_MAX);if(width==0)break;}if(*fmt=='d'){char number[32];size_t n=0;int c;char*end;long value;char*dst=va_arg(ap,char*);fmt++;c=getc(f);if(c=='+'||c=='-'){number[n++]=(char)c;c=getc(f);}while(c>='0'&&c<='9'&&n<sizeof(number)-1&&n<(size_t)width){number[n++]=(char)c;c=getc(f);}if(c!=EOF)ungetc(c,f);if(n==0||(n==1&&(number[0]=='+'||number[0]=='-'))){if(assigned==0)assigned=EOF;break;}number[n]=0;value=strtol(number,&end,10);if(*end)break;* (int*)dst=(int)value;assigned++;continue;}if(*fmt=='s'||*fmt=='['){int scanset=*fmt=='[';int negate=0,matched=0,c;size_t n=0;char*dst=va_arg(ap,char*);char terminator=0;fmt++;if(scanset){if(*fmt=='^'){negate=1;fmt++;}if(*fmt==']'){terminator=']';fmt++;}while(*fmt&&*fmt!=']'){if(terminator==0)terminator=*fmt;fmt++;}if(*fmt==']')fmt++;if(terminator==0)break;}while(n<(size_t)width){c=getc(f);if(c==EOF)break;if(scanset){matched=(c==(unsigned char)terminator);if(negate)matched=!matched;}else matched=!scan_space(c);if(!matched){ungetc(c,f);break;}dst[n++]=(char)c;}if(n==0){if(assigned==0&&(c==EOF))assigned=EOF;break;}dst[n]=0;assigned++;continue;}break;}va_end(ap);return assigned;}
 
 static int
-string_scan_match(unsigned char byte, const char *set, int negate)
+string_scan_match(unsigned char byte, const char *set, const char *end, int negate)
 {
 	int found = 0;
-	while (*set) {
-		if (set[1] == '-' && set[2] && byte >= (unsigned char)set[0] &&
+	while (set < end) {
+		if (end - set >= 3 && set[1] == '-' && byte >= (unsigned char)set[0] &&
 		    byte <= (unsigned char)set[2]) {
 			found = 1;
 			break;
+		}
+		if (end - set >= 3 && set[1] == '-') {
+			set += 3;
+			continue;
 		}
 		if (byte == (unsigned char)*set) {
 			found = 1;
@@ -121,18 +125,20 @@ vsscanf(const char *input, const char *format, va_list arguments)
 			char *destination = suppress ? NULL : va_arg(arguments, char *);
 			int negate = 0, matched = 1;
 			const char *set = format;
+			const char *set_end = format;
 			if (conversion == '[') {
 				if (*format == '^') { negate = 1; set = ++format; }
 				if (*format == ']') format++;
 				while (*format && *format != ']') format++;
 				if (!*format) break;
+				set_end = format;
 				format++;
 			}
 			int limit = conversion == 'c' && width == LIBOS_INT_MAX ? 1 : width;
 			int count = 0;
 			while (*cursor && count < limit) {
 				if (conversion == 's' && scan_space((unsigned char)*cursor)) break;
-				if (conversion == '[' && !string_scan_match((unsigned char)*cursor, set, negate)) break;
+				if (conversion == '[' && !string_scan_match((unsigned char)*cursor, set, set_end, negate)) break;
 				if (destination) destination[count] = *cursor;
 				cursor++; count++;
 			}
