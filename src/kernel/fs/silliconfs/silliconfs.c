@@ -1598,7 +1598,12 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 			uint8_t *record = block + offset;
 			uint16_t length = get_le16(record + 4);
 			uint8_t n = record[6];
-			if (length < SFS_DIR_HEADER || length > SILLICONFS_BLOCK_SIZE-offset)
+			if (length < SFS_DIR_HEADER ||
+			    length > SILLICONFS_BLOCK_SIZE - offset ||
+			    length % 4 != 0 ||
+			    (n == 0 && get_le32(record) != 0) ||
+			    (n != 0 && length <
+			    ((SFS_DIR_HEADER + n + 3U) & ~3U)))
 				return -SFS_EIO;
 			if (n == name_length && get_le32(record) != 0 &&
 			    memcmp(record + SFS_DIR_HEADER, name, name_length) == 0) {
