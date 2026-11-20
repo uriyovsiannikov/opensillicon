@@ -11,7 +11,7 @@ cc=${CC:-gcc}
     -c src/user/libos/src/io/stdio.c -o "$check_dir/stdio.o"
 # Keep native FILE objects and entry points separate from the host libc.
 nm -g --defined-only "$check_dir/stdio.o" | awk '{print $3, "audit_" $3}' > "$check_dir/symbols"
-printf "errno audit_errno\n" >> "$check_dir/symbols"
+printf "errno audit_errno\nread audit_read\nwrite audit_write\n" >> "$check_dir/symbols"
 objcopy --redefine-syms="$check_dir/symbols" "$check_dir/stdio.o"
 "$cc" -std=c11 -Wall -Wextra -Werror -Wl,--gc-sections \
     src/tools/checks/libos_stdio.c "$check_dir/stdio.o" -o "$check_dir/check"

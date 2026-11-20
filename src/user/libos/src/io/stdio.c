@@ -34,13 +34,13 @@ static int parse_mode(const char *mode, int create)
 FILE *fopen(const char*p,const char*m){int flags=parse_mode(m,1);if(flags<0){errno=EINVAL;return 0;}int fd=open(p,flags,0666);if(fd<0)return 0;FILE*f=malloc(sizeof(*f));if(!f){close(fd);return 0;}f->fd=fd;f->owned=1;f->has_pushback=f->eof=f->error=0;return f;}
 FILE *fdopen(int fd,const char*m){int flags=parse_mode(m,0);if(flags<0){errno=EINVAL;return 0;}int current=fcntl(fd,F_GETFL);if(current<0)return 0;if(((flags&O_ACCMODE)==O_RDONLY&&(current&O_ACCMODE)==O_WRONLY)||((flags&O_ACCMODE)==O_WRONLY&&(current&O_ACCMODE)==O_RDONLY)||((flags&O_ACCMODE)==O_RDWR&&(current&O_ACCMODE)!=O_RDWR)){errno=EBADF;return 0;}FILE*f=malloc(sizeof(*f));if(!f)return 0;f->fd=fd;f->owned=1;f->has_pushback=f->eof=f->error=0;return f;}
 int fileno(FILE*f){if(!f){errno=EINVAL;return -1;}return f->fd;}
-int fseek(FILE*f,long offset,int whence){if(!f){errno=EINVAL;return -1;}if(lseek(f->fd,offset,whence)<0)return -1;f->has_pushback=0;return 0;}
+int fseek(FILE*f,long offset,int whence){if(!f){errno=EINVAL;return -1;}if(lseek(f->fd,offset,whence)<0)return -1;f->has_pushback=0;f->eof=0;return 0;}
 long ftell(FILE*f){if(!f){errno=EINVAL;return -1;}return (long)lseek(f->fd,0,SEEK_CUR);}
-void rewind(FILE*f){if(f)(void)fseek(f,0,SEEK_SET);}
+void rewind(FILE*f){if(f){(void)fseek(f,0,SEEK_SET);f->error=0;}}
 int fclose(FILE*f){int r;if(!f){errno=EINVAL;return -1;}r=close(f->fd);if(f->owned)free(f);return r;}
-int getc(FILE*f){unsigned char c;ssize_t r;if(!f){errno=EINVAL;return EOF;}if(f->has_pushback){f->has_pushback=0;return f->pushback;}r=read(f->fd,&c,1);if(r==1)return (int)c;if(r==0)f->eof=1;else f->error=1;return EOF;}
+int getc(FILE*f){unsigned char c;ssize_t r;if(!f){errno=EINVAL;return EOF;}if(f->has_pushback){f->has_pushback=0;return f->pushback;}do{r=read(f->fd,&c,1);}while(r<0&&errno==EINTR);if(r==1)return (int)c;if(r==0)f->eof=1;else f->error=1;return EOF;}
 int fgetc(FILE*f){return getc(f);}
-int fputc(int byte,FILE*f){unsigned char value=(unsigned char)byte;if(!f){errno=EINVAL;return EOF;}return write(f->fd,&value,1)==1?value:EOF;}
+int fputc(int byte,FILE*f){unsigned char value=(unsigned char)byte;if(!f){errno=EINVAL;return EOF;}ssize_t r;do{r=write(f->fd,&value,1);}while(r<0&&errno==EINTR);if(r==1)return value;f->error=1;return EOF;}
 int putc(int byte,FILE*f){return fputc(byte,f);}
 int ferror(FILE*f){return f==0?1:f->error;}
 int feof(FILE*f){return f==0?0:f->eof;}
@@ -48,9 +48,33 @@ void clearerr(FILE*f){if(f){f->eof=0;f->error=0;}}
 FILE *popen(const char*command,const char*mode){(void)command;(void)mode;errno=ENOSYS;return NULL;}
 int pclose(FILE*f){(void)f;errno=ENOSYS;return -1;}
 char *mktemp(char*template){(void)template;errno=ENOSYS;return NULL;}
-int ungetc(int c,FILE*f){if(c==EOF||!f||f->has_pushback)return EOF;f->pushback=(unsigned char)c;f->has_pushback=1;return f->pushback;}
+int ungetc(int c,FILE*f){if(c==EOF||!f||f->has_pushback)return EOF;f->pushback=(unsigned char)c;f->has_pushback=1;f->eof=0;return f->pushback;}
 char *fgets(char*s,int n,FILE*f){if(!s||!f||n<=0){errno=EINVAL;return 0;}if(n==1){s[0]=0;return s;}int used=0;while(used<n-1){int c=getc(f);if(c==EOF)break;s[used++]=(char)c;if(c=='\n')break;}if(!used)return 0;s[used]=0;return s;}
-size_t fread(void*p,size_t z,size_t n,FILE*f){if(!f||(z&&n>(size_t)-1/z))return 0;size_t want=z*n,done=0;if(done<want&&f->has_pushback){((unsigned char*)p)[done++]=(unsigned char)getc(f);}while(done<want){ssize_t r=read(f->fd,(char*)p+done,want-done);if(r<=0)break;done+=(size_t)r;}return z?done/z:0;}
+size_t
+fread(void *buffer, size_t size, size_t count, FILE *stream)
+{
+	if (stream == NULL) { errno = EINVAL; return 0; }
+	if (size && count > (size_t)-1 / size) {
+		errno = EOVERFLOW;
+		stream->error = 1;
+		return 0;
+	}
+	size_t wanted = size * count, done = 0;
+	if (wanted && stream->has_pushback)
+		((unsigned char *)buffer)[done++] = (unsigned char)getc(stream);
+	while (done < wanted) {
+		ssize_t result = read(stream->fd, (char *)buffer + done, wanted - done);
+		if (result < 0 && errno == EINTR) continue;
+		if (result <= 0) {
+			if (result == 0) stream->eof = 1;
+			else stream->error = 1;
+			break;
+		}
+		done += (size_t)result;
+	}
+	return size ? done / size : 0;
+}
+
 static int scan_space(int c){return c==' '||(c>='\t'&&c<='\r');}
 static int scan_number(const char**p,int limit){int n=0;while(**p>='0'&&**p<='9'){int d=*(*p)++-'0';if(n>(limit-d)/10)return limit;n=n*10+d;}return n;}
 int fscanf(FILE*f,const char*fmt,...){va_list ap;int assigned=0;if(!f||!fmt){errno=EINVAL;return EOF;}va_start(ap,fmt);while(*fmt){if(scan_space((unsigned char)*fmt)){while(scan_space((unsigned char)*fmt))fmt++;int c;do{c=getc(f);}while(c!=EOF&&scan_space(c));if(c!=EOF)ungetc(c,f);continue;}if(*fmt!='%'){int c=getc(f);if(c==EOF||c!=(unsigned char)*fmt++){if(c!=EOF)ungetc(c,f);break;}continue;}fmt++;if(*fmt=='%'){int c=getc(f);fmt++;if(c!='%'){if(c!=EOF)ungetc(c,f);break;}continue;}int width=LIBOS_INT_MAX;if(*fmt>='0'&&*fmt<='9'){width=scan_number(&fmt,LIBOS_INT_MAX);if(width==0)break;}if(*fmt=='d'){char number[32];size_t n=0;int c;char*end;long value;char*dst=va_arg(ap,char*);fmt++;c=getc(f);if(c=='+'||c=='-'){number[n++]=(char)c;c=getc(f);}while(c>='0'&&c<='9'&&n<sizeof(number)-1&&n<(size_t)width){number[n++]=(char)c;c=getc(f);}if(c!=EOF)ungetc(c,f);if(n==0||(n==1&&(number[0]=='+'||number[0]=='-'))){if(assigned==0)assigned=EOF;break;}number[n]=0;value=strtol(number,&end,10);if(*end)break;* (int*)dst=(int)value;assigned++;continue;}if(*fmt=='s'||*fmt=='['){int scanset=*fmt=='[';int negate=0,matched=0,c;size_t n=0;char*dst=va_arg(ap,char*);char terminator=0;fmt++;if(scanset){if(*fmt=='^'){negate=1;fmt++;}if(*fmt==']'){terminator=']';fmt++;}while(*fmt&&*fmt!=']'){if(terminator==0)terminator=*fmt;fmt++;}if(*fmt==']')fmt++;if(terminator==0)break;}while(n<(size_t)width){c=getc(f);if(c==EOF)break;if(scanset){matched=(c==(unsigned char)terminator);if(negate)matched=!matched;}else matched=!scan_space(c);if(!matched){ungetc(c,f);break;}dst[n++]=(char)c;}if(n==0){if(assigned==0&&(c==EOF))assigned=EOF;break;}dst[n]=0;assigned++;continue;}break;}va_end(ap);return assigned;}
@@ -214,7 +238,28 @@ sscanf(const char *input, const char *format, ...)
 	va_end(arguments);
 	return result;
 }
-size_t fwrite(const void*p,size_t z,size_t n,FILE*f){if(!f||(z&&n>(size_t)-1/z))return 0;size_t want=z*n,done=0;while(done<want){ssize_t r=write(f->fd,(const char*)p+done,want-done);if(r<=0)break;done+=(size_t)r;}return z?done/z:0;}
+size_t
+fwrite(const void *buffer, size_t size, size_t count, FILE *stream)
+{
+	if (stream == NULL) { errno = EINVAL; return 0; }
+	if (size && count > (size_t)-1 / size) {
+		errno = EOVERFLOW;
+		stream->error = 1;
+		return 0;
+	}
+	size_t wanted = size * count, done = 0;
+	while (done < wanted) {
+		ssize_t result = write(stream->fd, (const char *)buffer + done, wanted - done);
+		if (result < 0 && errno == EINTR) continue;
+		if (result <= 0) {
+			stream->error = 1;
+			break;
+		}
+		done += (size_t)result;
+	}
+	return size ? done / size : 0;
+}
+
 int fputs(const char*s,FILE*f){size_t n=strlen(s);return fwrite(s,1,n,f)==n?0:-1;}
 int puts(const char*s){return fputs(s,stdout)<0||fputs("\n",stdout)<0?-1:0;}
 void perror(const char*s){if(s&&*s)fprintf(stderr,"%s: %s\n",s,strerror(errno));else fprintf(stderr,"%s\n",strerror(errno));}
