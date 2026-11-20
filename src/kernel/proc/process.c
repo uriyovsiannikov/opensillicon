@@ -1600,9 +1600,9 @@ process_kill(uint64_t pid, unsigned int signo)
 					    &process->credentials;
 					bool permitted = sender.effective_uid == 0 ||
 					    sender.real_uid == target->real_uid ||
-					    sender.real_uid == target->effective_uid ||
+					    sender.real_uid == target->saved_uid ||
 					    sender.effective_uid == target->real_uid ||
-					    sender.effective_uid == target->effective_uid;
+					    sender.effective_uid == target->saved_uid;
 					if (!permitted)
 						return PROCESS_ERROR_EPERM;
 					break;
