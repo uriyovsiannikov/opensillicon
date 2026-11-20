@@ -680,7 +680,10 @@ AcpiOsRemoveInterruptHandler(UINT32 number, ACPI_OSD_HANDLER handler)
 ACPI_THREAD_ID
 AcpiOsGetThreadId(void)
 {
-	return 1;
+	const struct smp_cpu *cpu = smp_current_cpu();
+
+	/* ACPICA uses this value to distinguish mutex owners across CPUs. */
+	return cpu == NULL ? 1 : (ACPI_THREAD_ID)cpu->logical_id + 1;
 }
 
 ACPI_STATUS
