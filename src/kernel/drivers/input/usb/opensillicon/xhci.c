@@ -898,7 +898,10 @@ static UINT
 destroy_interrupt_endpoint(struct xhci *xhci, unsigned int index, UX_ENDPOINT *endpoint)
 {
 	struct xhci_port *port = &xhci->ports[index];
-	struct xhci_endpoint *ring = &port->endpoints[endpoint_id(endpoint) - 2];
+	unsigned int id = endpoint_id(endpoint);
+	if (id < 2 || id > 31)
+		return UX_SUCCESS;
+	struct xhci_endpoint *ring = &port->endpoints[id - 2];
 	if (endpoint->ux_endpoint_ed != ring || ring->id == 0)
 		return UX_SUCCESS;
 	endpoint->ux_endpoint_ed = NULL;
