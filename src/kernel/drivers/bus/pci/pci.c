@@ -394,7 +394,7 @@ pci_config_write_unlocked(uint16_t segment, uint8_t bus, uint8_t device,
 	    !config_valid(device, function, offset, width))
 		return false;
 	if (width == 16) {
-		if (region != NULL && segment != 0) {
+		if (region != NULL) {
 			uint64_t address;
 			volatile uint16_t *register_pointer;
 
@@ -417,7 +417,7 @@ pci_config_write_unlocked(uint16_t segment, uint8_t bus, uint8_t device,
 		}
 		return true;
 	}
-	if (region != NULL && segment != 0) {
+	if (region != NULL) {
 		uint64_t address;
 		volatile uint32_t *register_pointer;
 
@@ -435,7 +435,7 @@ pci_config_write_unlocked(uint16_t segment, uint8_t bus, uint8_t device,
 	mask = width == 32 ? UINT32_MAX :
 	    ((1U << width) - 1) << ((offset & 3U) * 8);
 	dword = (dword & ~mask) | ((value << ((offset & 3U) * 8)) & mask);
-	if (region != NULL && segment != 0) {
+	if (region != NULL) {
 		uint64_t address = vmm_vmalloc_start() + ECAM_VIRTUAL_OFFSET +
 		    ((uint64_t)device << 15) + ((uint64_t)function << 12) + aligned;
 		*(volatile uint32_t *)(uintptr_t)address = dword;
