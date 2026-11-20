@@ -455,8 +455,12 @@ process_select_deadline_clear(void)
 void
 process_capture_user_fs_base(uint64_t base)
 {
-	if (current_process != NULL)
-		current_process->user_fs_base = base;
+	if (current_process != NULL) {
+		/* Never restore an out-of-range value through WRMSR. User mode may
+		 * have changed FSBASE directly if FSGSBASE was enabled on entry. */
+		current_process->user_fs_base = base == 0 ||
+		    (base >= PROCESS_USER_BASE && base < PROCESS_USER_END) ? base : 0;
+	}
 }
 
 void

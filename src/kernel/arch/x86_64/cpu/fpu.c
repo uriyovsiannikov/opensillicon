@@ -12,6 +12,7 @@
 #define CR0_NE (1ULL << 5)
 #define CR4_OSFXSR (1ULL << 9)
 #define CR4_OSXMMEXCPT (1ULL << 10)
+#define CR4_FSGSBASE (1ULL << 16)
 
 static _Alignas(16) uint8_t initial_state[ARCH_FPU_STATE_SIZE];
 static _Alignas(16) uint8_t kernel_state[ARCH_FPU_STATE_SIZE];
@@ -51,7 +52,7 @@ configure_local_fpu(void)
 	cr0 = (cr0 | CR0_MP | CR0_NE) & ~(CR0_EM | CR0_TS);
 	__asm__ volatile ("mov %0, %%cr0" : : "r" (cr0) : "memory");
 	__asm__ volatile ("mov %%cr4, %0" : "=r" (cr4));
-	cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
+	cr4 = (cr4 | CR4_OSFXSR | CR4_OSXMMEXCPT) & ~CR4_FSGSBASE;
 	__asm__ volatile ("mov %0, %%cr4" : : "r" (cr4) : "memory");
 	__asm__ volatile ("fninit; ldmxcsr %0;"
 	    "pxor %%xmm0, %%xmm0; pxor %%xmm1, %%xmm1;"
