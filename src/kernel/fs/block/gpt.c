@@ -220,7 +220,7 @@ gpt_rescan(struct block_device *disk)
 	for (size_t i = 0; i < block_device_count(); i++)
 		if (block_device_at(i)->parent == disk)
 			old++;
-	if ((size_t)count >= BLOCK_DEVICE_MAX - block_device_count() + old)
+	if ((size_t)count > BLOCK_DEVICE_MAX - block_device_count() + old)
 		error = -ENOSPC;
 	struct block_device *parts[GPT_ENTRY_MAX] = {0};
 	for (int i = 0; !error && i < count; i++) {
