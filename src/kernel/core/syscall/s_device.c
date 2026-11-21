@@ -1,6 +1,9 @@
 #include "syscall_internal.h"
 
 #include "abi/disk.h"
+#include "abi/audio.h"
+#include "kernel/hda_audio.h"
+#include "kernel/fd.h"
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/ioctl.h"
@@ -199,6 +202,32 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, 9);
 				break;
 			}
+            if (frame->rsi == OS_AUDIO_GETINFO || frame->rsi == OS_AUDIO_SETVOLUME ||
+                frame->rsi == OS_AUDIO_DRAIN || frame->rsi == OS_AUDIO_RESET) {
+                if (!hda_audio_is_object(object)) { syscall_error(frame, ENOTTY); break; }
+                struct os_audio_info info={0};uint32_t volume=0;
+                void *payload=NULL;
+                if(frame->rsi==OS_AUDIO_GETINFO) {
+                    if(!vmm_validate_user_write(vmm_active_address_space(),frame->rdx,sizeof(info))) {
+                        syscall_error(frame, EFAULT); break;
+                    }
+                    payload=&info;
+                } else if(frame->rsi==OS_AUDIO_SETVOLUME) {
+                    if(!vmm_copy_from_user(vmm_active_address_space(),&volume,frame->rdx,sizeof(volume))) {
+                        syscall_error(frame, EFAULT); break;
+                    }
+                    payload=&volume;
+                }
+                int result=object->operations->ioctl(object->context,frame->rsi,payload);
+                if(result==-EAGAIN && frame->rsi==OS_AUDIO_DRAIN && !fd_object_nonblocking(object))
+                    return process_block_on_channel(frame,fd_readiness_wait_channel());
+                if(result) {syscall_error(frame,errno_from_kernel(result));break;}
+                if(frame->rsi==OS_AUDIO_GETINFO &&
+                    !vmm_copy_to_user(vmm_active_address_space(),frame->rdx,&info,sizeof(info))) {
+                    syscall_error(frame,EFAULT);break;
+                }
+                frame->rax=0;break;
+            }
 			if (frame->rsi == OS_DIOCGSECTORSIZE ||
 			    frame->rsi == OS_DIOCGMEDIASIZE ||
 			    frame->rsi == OS_DIOCGFLUSH ||

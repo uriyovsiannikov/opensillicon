@@ -19,6 +19,13 @@ $(BUILD_DIR)/service.o: src/user/init/service.c src/user/init/service.h \
 $(BUILD_DIR)/doas.o: src/user/doas/doas.c | $(BUILD_DIR)
 	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/coreutils/wavplay.o: src/user/coreutils/wavplay.c src/include/abi/audio.h
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/coreutils/wavplay.elf: $(BUILD_DIR)/coreutils/wavplay.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+	$(CC) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(BUILD_DIR)/coreutils/wavplay.o $(LIBOS_ARCHIVE) -lgcc -o $@
+
 $(BUILD_DIR)/coreutils/doas.elf: $(BUILD_DIR)/doas.o $(LIBOS_BUILD_DIR)/crt0.o \
 		$(LIBOS_ARCHIVE) src/user/c_linker.ld
 	mkdir -p $(@D)

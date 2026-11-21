@@ -1170,7 +1170,7 @@ vfs_open_as(const char *path, uint32_t flags, uint32_t mode,
 		}
 	}
 	if ((flags & VFS_O_ACCMODE) != VFS_O_RDONLY &&
-	    node->operations->write == NULL) {
+	    node->operations->write == NULL && node->operations->open_device == NULL) {
 		error = -VFS_EROFS;
 		goto fail;
 	}
@@ -1185,6 +1185,16 @@ vfs_open_as(const char *path, uint32_t flags, uint32_t mode,
 		if (error != 0)
 			goto fail;
 	}
+    if (node->operations->open_device != NULL) {
+        struct fd_object *device = NULL;
+        error = node->operations->open_device(node, flags, &device);
+        if (error != 0) goto fail;
+        if (device == NULL) { error = -VFS_ENOMEM; goto fail; }
+        device->status_flags = flags & (VFS_O_ACCMODE | VFS_O_NONBLOCK);
+        fd_object_put(file);
+        *result = device;
+        return 0;
+    }
 	*result = file;
 	return 0;
 fail:

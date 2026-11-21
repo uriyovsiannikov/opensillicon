@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "arch/x86_64/interrupts.h"
+#include "kernel/hda_audio.h"
 #include "arch/x86_64/lapic.h"
 #include "kernel/process.h"
 #include "kernel/smp.h"
@@ -60,6 +61,7 @@ timer_interrupt(struct interrupt_frame *frame)
 	if (current != UINT64_MAX)
 		current = __atomic_add_fetch(&ticks, 1, __ATOMIC_RELAXED);
 	lapic_eoi();
+	hda_audio_tick();
 	timer_callbacks_run();
 	process_timer_wakeup(current);
 	return process_timer_preempt(frame);

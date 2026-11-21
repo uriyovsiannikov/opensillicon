@@ -42,7 +42,7 @@ USER_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -m64 -mno-red-zone -mcmodel=small \
 	-Wall -Wextra -Werror -Isrc/include -Isrc/user
 
-COREUTILS := ls cat echo pwd true false clear uname head tail wc seq mkdir rm touch stat basename dirname kill sleep which ps ping poweroff reboot host ifconfig kldstat kldload kldunload pkg sysupgrade pciconf netconf usbconf cpuconf blkconf newfs_silliconfs gpart installboot mount umount sync doas
+COREUTILS := ls cat echo pwd true false clear uname head tail wc seq mkdir rm touch stat basename dirname kill sleep which ps ping poweroff reboot host ifconfig kldstat kldload kldunload pkg sysupgrade pciconf audioconf wavplay netconf usbconf cpuconf blkconf newfs_silliconfs gpart installboot mount umount sync doas
 COREUTILS_ELFS := $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,$(COREUTILS)))
 
 ACPICA_ROOT := src/kernel/arch/x86_64/firmware/acpica/source

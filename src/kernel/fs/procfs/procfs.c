@@ -13,6 +13,7 @@
 #include "kernel/smp.h"
 #include "kernel/usb_host.h"
 #include "kernel/driver_api.h"
+#include "kernel/hda_probe.h"
 #include "arch/x86_64/pci.h"
 
 #define PROCFS_EINVAL 22
@@ -34,6 +35,8 @@ enum procfs_entry {
 	PROCFS_DISKS,
 	PROCFS_CMDLINE,
 	PROCFS_NETPCI,
+	PROCFS_AUDIOPCI,
+	PROCFS_HDACODECS,
 	PROCFS_NETIF,
 	PROCFS_DAPI
 };
@@ -48,7 +51,7 @@ struct procfs_node {
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
 	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode, netpci_inode,
-	    netif_inode, dapi_inode;
+	    netif_inode, dapi_inode, audiopci_inode, hdacodecs_inode, hdatest_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
@@ -157,14 +160,11 @@ append_config_id(struct procfs_node *node, const struct pci_device_info *device,
 }
 
 static bool
-procfs_netpci_entry(const struct pci_device_info *device, void *context)
+procfs_device_properties(const struct pci_device_info *device, struct procfs_node *node,
+    const char *description)
 {
-	struct procfs_node *node = context;
-	if (device->class_code != 0x02)
-		return true;
 	if (!procfs_pci_identity(device, node) ||
-	    !append_text(node, device->subclass == 0 ? " Ethernet\n" :
-	    " Network controller\n") ||
+	    !append_text(node, description) ||
 	    !append_text(node, "  revision=") ||
 	    !append_config_id(node, device, 0x08, 8) ||
 	    !append_text(node, " command=") ||
@@ -197,6 +197,79 @@ procfs_netpci_entry(const struct pci_device_info *device, void *context)
 		i += bar.slots - 1;
 	}
 	return true;
+}
+
+static bool
+procfs_netpci_entry(const struct pci_device_info *device, void *context)
+{
+    if (device->class_code != 0x02) return true;
+    return procfs_device_properties(device, context,
+        device->subclass == 0 ? " Ethernet\n" : " Network controller\n");
+}
+
+static bool
+procfs_audiopci_entry(const struct pci_device_info *device, void *context)
+{
+    struct procfs_node *node = context;
+    if (device->class_code != 0x04) return true;
+    const char *type = device->subclass == 0x03 ? " High Definition Audio\n" :
+        device->subclass == 0x01 ? " Audio controller (AC97/legacy)\n" :
+        device->subclass == 0x00 ? " Multimedia video function\n" :
+        " Multimedia function\n";
+    if (!procfs_device_properties(device, node, type) ||
+        !append_text(node, "  status=") || !append_config_id(node, device, 0x06, 16) ||
+        !append_text(node, " header=") || !append_hex(node, device->header_type, 2) ||
+        !append_text(node, "\n  capabilities:")) return false;
+    uint32_t status, next;
+    if (pci_config_read(device->segment, device->bus, device->device,
+        device->function, 0x06, 16, &status) && (status & 0x10) &&
+        (device->header_type & 0x7fU) == 0 &&
+        pci_config_read(device->segment, device->bus, device->device,
+            device->function, 0x34, 8, &next)) {
+        uint64_t seen = 0;
+        for (unsigned int count = 0; next != 0 && count < 48; ++count) {
+            if (next < 0x40 || next > 0xfc || (next & 3) ||
+                (seen & (UINT64_C(1) << (next / 4)))) {
+                if (!append_text(node, " invalid-chain")) return false;
+                break;
+            }
+            seen |= UINT64_C(1) << (next / 4);
+            uint32_t cap;
+            if (!pci_config_read(device->segment, device->bus, device->device,
+                device->function, (uint16_t)next, 16, &cap)) break;
+            const char *name = (cap & 0xff) == 1 ? "PM" :
+                (cap & 0xff) == 5 ? "MSI" : (cap & 0xff) == 0x11 ? "MSI-X" :
+                (cap & 0xff) == 0x10 ? "PCIe" : "id";
+            if (!append_text(node, " ") || !append_text(node, name) ||
+                !append_text(node, "=") || !append_hex(node, cap & 0xff, 2) ||
+                !append_text(node, "@") || !append_hex(node, next, 2)) return false;
+            next = (cap >> 8) & 0xff;
+        }
+    }
+    if (!append_text(node, "\n  PCI config (offset: 32-bit words):\n")) return false;
+    for (unsigned int offset = 0; offset < 256; offset += 32) {
+        if (!append_text(node, "  ") || !append_hex(node, offset, 2) || !append_text(node, ":")) return false;
+        for (unsigned int i = 0; i < 32; i += 4)
+            if (!append_text(node, " ") || !append_config_id(node, device, offset+i, 32)) return false;
+        if (!append_text(node, "\n")) return false;
+    }
+    return append_text(node, "\n");
+}
+
+static int
+procfs_make_audiopci(uint64_t inode, struct procfs_node **result)
+{
+    struct procfs_node *node = procfs_allocate("audiopci", PROCFS_AUDIOPCI, VNODE_REGULAR, inode);
+    if (!node) return -PROCFS_ENOMEM;
+    if (!append_text(node, "Audio PCI diagnostic v1 (read-only)\n") ||
+        !pci_enumerate(procfs_audiopci_entry, node)) {
+        vnode_put(&node->vnode); return -PROCFS_EINVAL;
+    }
+    if (node->content_length == strlen("Audio PCI diagnostic v1 (read-only)\n"))
+        (void)append_text(node, "No PCI multimedia functions found. For USB audio also run usbconf.\n");
+    node->vnode.size = node->content_length;
+    *result = node;
+    return 0;
 }
 
 static int
@@ -518,6 +591,28 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 			*result = &modules->vnode;
 		return error;
 	}
+    bool tone_test = name_length == 7 && memcmp(name, "hdatest", 7) == 0;
+    if (tone_test || (name_length == 9 && memcmp(name, "hdacodecs", 9) == 0)) {
+        struct os_credentials credentials;
+        if (!process_current_credentials(&credentials) || credentials.effective_uid != 0)
+            return -1;
+        struct procfs_node *entry = procfs_allocate(tone_test ? "hdatest" : "hdacodecs", PROCFS_HDACODECS,
+            VNODE_REGULAR, tone_test ? node->hdatest_inode : node->hdacodecs_inode);
+        if (!entry) return -PROCFS_ENOMEM;
+        entry->vnode.mode = 0400;
+        error = (tone_test ? hda_tone_snapshot : hda_probe_snapshot)(entry->content,
+            sizeof(entry->content), &entry->content_length);
+        if (error) { vnode_put(&entry->vnode); return error; }
+        entry->vnode.size = entry->content_length;
+        *result = &entry->vnode;
+        return 0;
+    }
+    if (name_length == 8 && memcmp(name, "audiopci", 8) == 0) {
+        struct procfs_node *entry;
+        error = procfs_make_audiopci(node->audiopci_inode, &entry);
+        if (error == 0) *result = &entry->vnode;
+        return error;
+    }
 	bool network_pci = name_length == 6 && memcmp(name, "netpci", 6) == 0;
 	if (network_pci || (name_length == 3 && memcmp(name, "pci", 3) == 0)) {
 		struct procfs_node *entry;
@@ -615,7 +710,7 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 {
 	static const char *const names[] = {"self", "uptime", "meminfo",
 	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline", "netpci",
-	    "netif", "dapi"};
+	    "netif", "dapi", "audiopci", "hdacodecs", "hdatest"};
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
@@ -637,8 +732,8 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 				  : index == 8	  ? node->cmdline_inode
 				  : index == 9       ? node->netpci_inode
 				  : index == 10      ? node->netif_inode
-							  : node->dapi_inode;
-	entry->mode = 0444U;
+							  : index == 11 ? node->dapi_inode : index == 12 ? node->audiopci_inode : index == 13 ? node->hdacodecs_inode : node->hdatest_inode;
+	entry->mode = index >= 13 ? 0400U : 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
 	return 1;
@@ -671,12 +766,15 @@ procfs_mount(const char *path)
 	root->netpci_inode = vfs_allocate_inode();
 	root->netif_inode = vfs_allocate_inode();
 	root->dapi_inode = vfs_allocate_inode();
+	root->audiopci_inode = vfs_allocate_inode();
+	root->hdacodecs_inode = vfs_allocate_inode();
+	root->hdatest_inode = vfs_allocate_inode();
 	if (root->self_inode == 0 || root->uptime_inode == 0 ||
 	    root->meminfo_inode == 0 || root->cpuinfo_inode == 0 ||
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
 	    root->usb_inode == 0 || root->disks_inode == 0 ||
 	    root->cmdline_inode == 0 || root->netpci_inode == 0 ||
-	    root->netif_inode == 0 || root->dapi_inode == 0) {
+	    root->netif_inode == 0 || root->dapi_inode == 0 || root->audiopci_inode == 0 || root->hdacodecs_inode == 0 || root->hdatest_inode == 0) {
 		vnode_put(&root->vnode);
 		return -PROCFS_ENOMEM;
 	}

@@ -11,6 +11,7 @@
 #include "kernel/log.h"
 #include "kernel/random.h"
 #include "kernel/tty.h"
+#include "kernel/hda_audio.h"
 
 #define DEVFS_EINVAL 22
 #define DEVFS_ENOENT 2
@@ -26,7 +27,8 @@ enum devfs_device {
 	DEVFS_ZERO,
 	DEVFS_RANDOM,
 	DEVFS_URANDOM,
-	DEVFS_DISK
+	DEVFS_DISK,
+	DEVFS_AUDIO
 };
 
 struct devfs_node {
@@ -53,6 +55,11 @@ static const struct vnode_operations devfs_operations = {
 	.write = devfs_write,
 	.readdir = devfs_readdir,
 	.destroy = devfs_destroy
+};
+
+static const struct vnode_operations devfs_audio_operations = {
+    .open_device = hda_audio_open,
+    .destroy = devfs_destroy,
 };
 
 static const struct vnode_operations devfs_disk_operations = {
@@ -193,6 +200,11 @@ devfs_allocate(const char *name, enum devfs_device device)
 		.references = 1,
 		.private_data = node
 	};
+    if (device == DEVFS_AUDIO) {
+        node->vnode.operations = &devfs_audio_operations;
+        node->vnode.mode = 0660;
+        node->vnode.gid = 1000;
+    }
 	return node;
 }
 
@@ -277,6 +289,7 @@ devfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 		return 0;
 	case DEVFS_DISK:
 		return devfs_disk_io(node, offset, buffer, length, read_length, false);
+	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
 		return -DEVFS_EINVAL;
 	}
@@ -311,6 +324,7 @@ devfs_write(struct vnode *vnode, uint64_t offset, const void *buffer,
 		return -DEVFS_EINVAL;
 	case DEVFS_DISK:
 		return devfs_disk_io(node, offset, (void *)buffer, length, write_length, true);
+	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
 		return -DEVFS_EINVAL;
 	}
@@ -405,7 +419,8 @@ devfs_create_root(void)
 		{ "null", DEVFS_NULL },
 		{ "zero", DEVFS_ZERO },
 		{ "random", DEVFS_RANDOM },
-		{ "urandom", DEVFS_URANDOM }
+		{ "urandom", DEVFS_URANDOM },
+		{ "audio", DEVFS_AUDIO }
 	};
 	struct devfs_node *root;
 	struct devfs_node **tail;

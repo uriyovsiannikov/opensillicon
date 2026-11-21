@@ -1,3 +1,4 @@
+#include "kernel/hda_audio.h"
 #include "syscall_internal.h"
 
 #include "arch/x86_64/user.h"
@@ -225,6 +226,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 	(void)network_service_request(NETWORK_SERVICE_POLL_RX);
 	(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
 	usb_host_poll();
+				hda_audio_poll();
 	process_syscall_retry_begin();
 	frame->rflags &= ~1ULL;
 	process_channel_wait_begin();

@@ -2,6 +2,7 @@
 
 #include "abi/select.h"
 #include "kernel/pipe.h"
+#include "kernel/hda_audio.h"
 #include "kernel/process.h"
 #include "kernel/pty.h"
 #include "kernel/smp.h"
@@ -343,7 +344,7 @@ syscall_writev(struct interrupt_frame *frame)
 				    &amount, credentials.effective_uid);
 				if (result == -(int)ERRNO_EAGAIN &&
 				    (unix_socket_is_object(object) || pty_is_object(object) ||
-				    tcp_socket_is_object(object))) {
+				    tcp_socket_is_object(object) || hda_audio_is_object(object))) {
 					if (written != 0)
 						goto partial;
 					if (fd_object_nonblocking(object)) {
@@ -440,7 +441,7 @@ syscall_readv(struct interrupt_frame *frame)
 				    &amount);
 				if (result == -(int)ERRNO_EAGAIN &&
 				    (unix_socket_is_object(object) || pty_is_object(object) ||
-				    tcp_socket_is_object(object))) {
+				    tcp_socket_is_object(object) || hda_audio_is_object(object))) {
 					if (received != 0)
 						goto partial;
 					if (fd_object_nonblocking(object)) {
@@ -646,14 +647,14 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			    (size_t)frame->rdx, &amount, credentials.effective_uid);
 			if (result == -(int)ERRNO_EAGAIN &&
 			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object)) &&
+			    tcp_socket_is_object(object) || hda_audio_is_object(object)) &&
 			    fd_object_nonblocking(object)) {
 				syscall_error(frame, ERRNO_EAGAIN);
 				break;
 			}
 			if (result == -(int)ERRNO_EAGAIN &&
 			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object)))
+			    tcp_socket_is_object(object) || hda_audio_is_object(object)))
 				return process_block_on_channel(frame,
 				    unix_socket_is_object(object) ?
 				    unix_socket_wait_channel(object, false) :
@@ -816,14 +817,14 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			    (size_t)frame->rdx, &amount);
 			if (result == -(int)ERRNO_EAGAIN &&
 			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object)) &&
+			    tcp_socket_is_object(object) || hda_audio_is_object(object)) &&
 			    fd_object_nonblocking(object)) {
 				syscall_error(frame, ERRNO_EAGAIN);
 				break;
 			}
 			if (result == -(int)ERRNO_EAGAIN &&
 			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object)))
+			    tcp_socket_is_object(object) || hda_audio_is_object(object)))
 				return process_block_on_channel(frame,
 				    unix_socket_is_object(object) ?
 				    unix_socket_wait_channel(object, true) :

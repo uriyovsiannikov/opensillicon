@@ -344,7 +344,7 @@ main(int argc, char **argv)
 		    "wc", "seq", "mkdir", "rm", "touch", "stat", "basename",
 		    "dirname", "kill", "sleep", "which", "ps",
 		    "ping", "poweroff", "reboot", "host", "ifconfig", "kldstat",
-		    "kldload", "kldunload", "pkg", "sysupgrade", "pciconf", "netconf",
+		    "kldload", "kldunload", "pkg", "sysupgrade", "pciconf", "audioconf", "wavplay", "netconf",
 		    "usbconf", "cpuconf", "blkconf", "newfs_silliconfs", "gpart",
 		    "installboot", "mount", "umount", "sync", "doas"};
 		int index;
@@ -377,7 +377,9 @@ main(int argc, char **argv)
 		static const char pkg_conf[] = "https://packages.chipset.bond\n";
 		static const char doas_conf[] =
 		    "permit nopass 1000 as root cmd /bin/pkg\n"
-		    "permit nopass 1000 as root cmd /bin/sysupgrade\n";
+		    "permit nopass 1000 as root cmd /bin/sysupgrade\n"
+		    "permit nopass 1000 as root cmd /bin/audioconf args --codec\n"
+		    "permit nopass 1000 as root cmd /bin/audioconf args --tone\n";
 		static const char resolv_conf[] = "nameserver 10.15.3.3\n";
 		if (add_data("/etc/passwd", passwd, sizeof(passwd) - 1, 0644) != 0 ||
 		    add_data("/etc/group", group, sizeof(group) - 1, 0644) != 0 ||

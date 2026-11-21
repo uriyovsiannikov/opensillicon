@@ -48,6 +48,8 @@ struct vfs_dirent {
 };
 
 struct vnode_operations {
+	/* Optional per-open device session; called after permission checks. */
+	int (*open_device)(struct vnode *, uint32_t flags, struct fd_object **);
 	int (*can_unmount)(struct vnode *root);
 	int (*sync)(struct vnode *node);
 	/* Device nodes opt into byte-offset seeking explicitly. */
