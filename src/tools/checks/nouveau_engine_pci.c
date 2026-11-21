@@ -12,6 +12,8 @@
 #include "arch/x86_64/pci_resource.h"
 static uint32_t regs[0x800000/4],saved[0x800000/4];
 static unsigned maps,calls,addresses,fail_map,fail_address;
+static unsigned external_maps;
+#define ENGINE_MAPS 15U
 static uint64_t clock_ns;
 static bool stalled,taken,caps,restored,busy;
 static char log_text[4096];
@@ -34,6 +36,7 @@ static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.aperture_size=
 static void fixture(void)
 {
 	assert(!maps);calls=addresses=fail_map=fail_address=0;
+	external_maps=0;
 	assert(!allocations);alloc_calls=fail_alloc=0;uploaded=vr_restored=bound=unbound=false;
 	assert(!dma_live);core_running=core_stopped=fail_dma_alloc=fail_dma_acquire=false;dma_available=true;
 	stalled=taken=caps=restored=busy=false;clock_ns=0;
@@ -60,9 +63,10 @@ static bool map(const struct pci_device_lease *c,const struct pci_bar_resource *
 	if(write) {
 		assert(off!=0x610010||size==4);
 		assert(!(off<=0x610490&&off+size>0x610490) || (off==0x610490&&size==4));
-		assert(size==4||size==12||(off==0x700000&&size==0x100000));
+		assert(size==4||size==12||(off==0x700000&&size==0x100000)||
+		    (off==0x610090&&size==0x24)||(off==0x6301c4&&size==0x3804));
 	}
-	if(calls==fail_map)return false;
+	if(calls==fail_map || maps+external_maps>=PCI_MMIO_LEASE_SLOTS)return false;
 	lease->generation=calls;lease->address=(uintptr_t)((uint8_t *)regs+off);maps++;
 	return true;
 }
@@ -171,7 +175,7 @@ _Noreturn void kernel_halt(void)
 {
 	if(expect_stop_failure) {
 		assert(strstr(log_text,"CORECHANNEL stop/restore failed"));
-		assert(dma_live&&dma_owner==DMA_OWNER_DEVICE&&allocations==2&&maps==30);
+		assert(dma_live&&dma_owner==DMA_OWNER_DEVICE&&allocations==2&&maps==ENGINE_MAPS+4);
 		assert(bound&&!unbound&&!vr_restored&&regs[0x610010/4]==0x40009);
 		_Exit(73);
 	}
@@ -181,7 +185,7 @@ int main(void)
 {
 	fixture();nouveau_engine_probe_log(&claim,&bar);
 	assert(taken&&caps&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
-unsigned total=calls;assert(total==26);
+unsigned total=calls;assert(total==ENGINE_MAPS);
 	for(unsigned kind=0;kind<2;kind++)for(unsigned i=1;i<=total;i++) {
 		fixture();if(kind)fail_address=i;else fail_map=i;
 		nouveau_engine_probe_log(&claim,&bar);
@@ -222,7 +226,7 @@ unsigned total=calls;assert(total==26);
 	struct nouveau_display_snapshot snapshot={.bar3_instance=0x40000000};
 	snapshot.heads[0].arm.timing_valid=true;
 	struct nouveau_upload_probe_layout layout={&snapshot,UINT64_C(0x100000000),0,8294400,0};
-	for(unsigned test=0;test<17;test++) {
+	for(unsigned test=0;test<19;test++) {
 		fixture();regs[0x1714/4]=0x40000000;regs[0x1700/4]=0x200;
 		for(unsigned i=0;i<65536/4;i++)regs[0x700000/4+i]=0xa55a0000^i;
 		if(test==9)regs[0x1704/4]=0x80000000; /* BAR VM changed since snapshot */
@@ -231,24 +235,28 @@ unsigned total=calls;assert(total==26);
 		memcpy(saved,regs,sizeof(regs));
 		if(test==1)fail_alloc=1;
 		if(test==2)fail_alloc=2;
-		if(test==3)fail_map=27;
-		if(test==4)fail_map=28;
-		if(test==5)fail_address=27;
-		if(test==6)fail_address=28;
+		if(test==3)fail_map=ENGINE_MAPS+1;
+		if(test==4)fail_map=ENGINE_MAPS+2;
+		if(test==5)fail_address=ENGINE_MAPS+1;
+		if(test==6)fail_address=ENGINE_MAPS+2;
 		if(test==7)snapshot.heads[1].arm.timing_valid=true;
 		if(test==8)layout.scanout_sample=0x1000000;
 		if(test==10)fail_dma_alloc=true;
 		if(test==11)dma_available=false;
-		if(test==12)fail_map=29;
-		if(test==13)fail_map=30;
-		if(test==14)fail_address=29;
-		if(test==15)fail_address=30;
+		if(test==12)fail_map=ENGINE_MAPS+3;
+		if(test==13)fail_map=ENGINE_MAPS+4;
+		if(test==14)fail_address=ENGINE_MAPS+3;
+		if(test==15)fail_address=ENGINE_MAPS+4;
 		if(test==16)fail_dma_acquire=true;
+		if(test==17)external_maps=12; /* old 30-lease GPU path would exhaust 32 */
+		if(test==18)external_maps=14; /* force late PUT map failure even now */
 		nouveau_engine_probe_upload_log(&claim,&bar,&layout);
 		assert(taken&&caps&&restored&&!maps&&!allocations&&!memcmp(saved,regs,sizeof(regs)));
 		assert(uploaded==(test==0||test>=10)&&vr_restored==(test==0||test>=10));
 		assert(bound==(test==0||test>=10)&&unbound==(test==0||test>=10));
-		assert(core_running==(test==0)&&core_stopped==(test==0)&&!dma_live);
+		assert(core_running==(test==0||test==17)&&core_stopped==(test==0||test==17)&&!dma_live);
+		if(test==17)assert(calls==ENGINE_MAPS+4&&external_maps==12);
+		if(test==18)assert(strstr(log_text,"CORECHANNEL PUT MMIO unavailable")&&external_maps==14);
 		snapshot.heads[1].arm.timing_valid=false;layout.scanout_sample=0;
 	}
 	pid_t child=fork();assert(child>=0);

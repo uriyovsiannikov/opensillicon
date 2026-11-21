@@ -833,7 +833,8 @@ Instance всё это время остаётся pinned; прежний unbind
 возврат firmware выполняются лишь после завершения channel probe.
 
 Новые writable leases ограничены descriptor span 12 bytes и PUT DWORD;
-вместе с handoff и PRAMIN используются 30 из 32 registry slots. Ошибка
+вместе с handoff и PRAMIN используются 19 из 32 registry slots после
+объединения соседних bank mappings (см. ниже). Ошибка
 stop/restore удерживает DMA, upload, instance и mappings до halt/reset.
 Недоступный DMA или ошибка allocation/map не запускает канал и оставляет
 возможность обычного instance rollback. В журнале `CORECHANNEL start status`
@@ -857,4 +858,27 @@ reg/observed/expected из отвергающего чтения (без пов�
 подменяющего данные). Отдельно выводится HOST DMA identity unavailable.
 Тест покрывает все классы допуска, точные firmware/instance mismatch
 значения и отсутствие alloc/map/write на отклонённом пути. До аппаратного
-результата точная причина отказа core-канала остаётся неизвестной.
+результата точная причина отказа core-канала оставалась неизвестной.
+
+Следующий аппаратный журнал дошёл до `CORECHANNEL PUT MMIO unavailable`.
+В коде обнаружено исчерпание глобального registry: прежние 26 handoff
+leases + 2 PRAMIN + 2 channel = 30, а BOOT/strap mappings в `pci.c` и DDC
+lease в `ddc_pci.c` удерживаются до возврата вложенного display probe.
+Таким образом последний PUT запрашивал минимум 33-й слот при лимите 32,
+даже без прочих драйверов. Изолированный host-тест прежде не моделировал
+внешние активные leases и не мог поймать этот случай.
+
+Handoff mappings сокращены с 26 до 15: BAR contexts одним readonly span,
+IRQ masks/ack одним span и восемь SOR capability mirrors одним bank span.
+Exact write allow-list в transport не расширен: промежутки внутри span
+не доступны для записи через callbacks. Instance/core leases остаются
+отдельными DWORD, channel descriptors и PUT отображаются отдельно.
+Полный вложенный цикл теперь требует 19 слотов (22 с вызывающими BOOT/
+strap/DDC). Глобальный лимит и чужие leases не изменяются.
+
+Host-regression моделирует занятые другими пользователями слоты: при 12
+внешних leases start/stop/rollback проходит в общем лимите 32; при 14
+внешних leases воспроизводится поздний отказ PUT с полным освобождением
+собственных ресурсов и сохранением внешних. Все map/address fault indices
+обновлены под компактную таблицу. Аппаратный start/stop после исправления
+бюджета ещё требуется подтвердить.

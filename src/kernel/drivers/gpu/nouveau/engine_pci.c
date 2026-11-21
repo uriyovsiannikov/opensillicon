@@ -11,13 +11,14 @@ struct region { uint32_t base,size; bool writable; };
  * PUT/PLL/PRAMIN mappings are writable here (upload owns separate PRAMIN). */
 static const struct region regions[]={
 	{0x22448,4,false},{0x612004,4,false},{0x610010,4,true},
-	{0x1704,4,false},{0x1714,4,false},
+	{0x1704,0x14,false},
 	{0x610490,4,true},{0x6104a0,0xf4,false},{0x616000,0x2000,false},{0x61c000,0x4000,false},
-	{0x610090,4,true},{0x6100a0,4,true},{0x6100ac,4,true},{0x6100b0,4,true},
+	{0x610090,0x24,true},
 	{0x6194e8,4,true},
 	{0x6101b4,12,true},{0x6109b4,12,true},{0x6111b4,12,true},{0x6119b4,12,true},
-	{0x6301c4,4,true},{0x6309c4,4,true},{0x6311c4,4,true},{0x6319c4,4,true},
-	{0x6321c4,4,true},{0x6329c4,4,true},{0x6331c4,4,true},{0x6339c4,4,true}
+	/* One strided SOR mirror bank instead of eight separate leases.
+	 * write32 still permits only the eight exact capability registers. */
+	{0x6301c4,0x3804,true}
 };
 #define REGIONS (sizeof(regions)/sizeof(regions[0]))
 struct native_engine {
