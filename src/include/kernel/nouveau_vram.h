@@ -5,7 +5,8 @@
 struct nouveau_pramin_io {
 	void *context;
 	bool (*read32)(void *context, uint32_t reg, uint32_t *value);
-	/* The only permitted write is the PRAMIN window register 0x1700. */
+	/* read() writes only window register 0x1700. write() additionally
+	 * requires an explicitly writable PRAMIN aperture 0x700000..0x7fffff. */
 	bool (*write32)(void *context, uint32_t reg, uint32_t value);
 };
 enum nouveau_vram_status {
@@ -17,6 +18,11 @@ enum nouveau_vram_status {
  * No GPU memory writes. Restores the exact saved register with read-back. */
 enum nouveau_vram_status nouveau_vram_read(const struct nouveau_pramin_io *io,
 	uint64_t vram_size, uint64_t address, uint32_t *destination, size_t length);
+/* Low-level write, no backup or read-back of VRAM contents. Caller must
+ * already own the range; use upload transaction for rollback/verification.
+ * Window register restoration is still mandatory on every exit. */
+enum nouveau_vram_status nouveau_vram_write(const struct nouveau_pramin_io *io,
+	uint64_t vram_size, uint64_t address, const uint32_t *source, size_t length);
 void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar, const struct nouveau_display_snapshot *snapshot,
 	uint64_t vram_size);

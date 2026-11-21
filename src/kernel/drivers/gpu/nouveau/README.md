@@ -500,3 +500,17 @@ Host-тест проверяет весь 64-КиБ образ, каждый wor
 потерянные/искажённые записи, ошибки read-back/rollback, retry/quarantine,
 потерю ownership, aliasing backup и pin/unpin. Транспорт до native hardware
 пока не подключён, загрузочная проба по-прежнему не пишет VRAM.
+
+`nouveau_vram_write` добавляет low-level PRAMIN write по алгоритму
+`nv50_instobj_wr32_slow`. Общая read/write передача ограничена 64 КиБ,
+проверяет выравнивание/40-битные границы и восстанавливает 0x1700 с read-back
+после любой попытки смены окна, включая failed writes с side effect.
+Write требует отдельного writable aperture; имеющийся диагностический
+native transport по-прежнему read-only и aperture writes отклоняет.
+
+Low-level write не сохраняет VRAM и не проверяет содержимое: этим занимается
+upload transaction. Host-тест объединяет транзакцию и PRAMIN, проверяет
+полный 64-КиБ write/read, каждый write failure, rollback исходных данных и
+восстановление окна. Native adapter обязан считать PRAMIN_RESTORE_FAILED
+фатальной ошибкой транспорта, а не понижать её до обычного отказа чтения.
+Новый write API из boot probe не вызывается.

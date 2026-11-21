@@ -25,11 +25,11 @@
  * nvkm/subdev/instmem/nv50.c nv50_instobj_rd32_slow. */
 #include "kernel/nouveau_vram.h"
 
-enum nouveau_vram_status nouveau_vram_read(const struct nouveau_pramin_io *io,
-	uint64_t size,uint64_t address,uint32_t *destination,size_t length)
+static enum nouveau_vram_status transfer(const struct nouveau_pramin_io *io,
+	uint64_t size,uint64_t address,uint32_t *destination,const uint32_t *source,size_t length)
 {
-	if(!io || !io->read32 || !io->write32 || !destination || !length ||
-	    length>NOUVEAU_INSTANCE_SIZE || ((uintptr_t)destination&3) || (length&3) || (address&3) ||
+	if(!io || !io->read32 || !io->write32 || (!destination && !source) || !length ||
+	    length>NOUVEAU_INSTANCE_SIZE || ((uintptr_t)destination&3) || ((uintptr_t)source&3) || (length&3) || (address&3) ||
 	    size>(UINT64_C(1)<<40) || address>=size || length>size-address)
 		return NOUVEAU_VRAM_INVALID;
 	uint32_t saved,current,check;
@@ -48,7 +48,10 @@ enum nouveau_vram_status nouveau_vram_read(const struct nouveau_pramin_io *io,
 			    !io->read32(io->context,0x1700,&check) || check!=window) goto out;
 			current=window;
 		}
-		if(!io->read32(io->context,0x700000+(physical&0xfffff),&destination[i])) goto out;
+		uint32_t reg=0x700000+(physical&0xfffff);
+		if(source) {
+			if(!io->write32(io->context,reg,source[i])) goto out;
+		} else if(!io->read32(io->context,reg,&destination[i])) goto out;
 	}
 	status=NOUVEAU_VRAM_OK;
 out:
@@ -59,6 +62,18 @@ out:
 		if(!written || !read || check!=saved) return NOUVEAU_VRAM_RESTORE_FAILED;
 	}
 	return status;
+}
+
+
+enum nouveau_vram_status nouveau_vram_read(const struct nouveau_pramin_io *io,
+	uint64_t size,uint64_t address,uint32_t *destination,size_t length)
+{
+	return transfer(io,size,address,destination,NULL,length);
+}
+enum nouveau_vram_status nouveau_vram_write(const struct nouveau_pramin_io *io,
+	uint64_t size,uint64_t address,const uint32_t *source,size_t length)
+{
+	return transfer(io,size,address,NULL,source,length);
 }
 
 
