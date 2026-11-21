@@ -71,7 +71,9 @@ bool nouveau_ramht_lookup(const uint32_t *image,unsigned channel,uint32_t handle
 		uint32_t context=image[slot*2+1];
 		if((context&1) && (context>>27)==channel && image[slot*2]==handle) {
 			uint32_t addr=(context&0x07fffffe)>>9;
-			if((addr&15) || addr<0x1000 || addr>NOUVEAU_NOTIFIER_OFFSET-24) return false;
+			/* Firmware may place objects in our staging notifier area. Only
+			 * insertion reserves that area; lookup spans the whole instance. */
+			if((addr&15) || addr<0x1000 || addr>NOUVEAU_INSTANCE_SIZE-24) return false;
 			*offset=addr;return true;
 		}
 	}

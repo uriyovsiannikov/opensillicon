@@ -23,6 +23,7 @@ static bool write_model(void *context,uint32_t reg,uint32_t value)
 static uint32_t aperture[0x100000/4],control;
 static unsigned maps,map_calls,address_calls,fail_map,fail_address,allocations;
 static bool fail_alloc;
+static unsigned decoded_contexts;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.base=0xa3000000,.aperture_size=0x1000000};
 static bool map_common(const struct pci_device_lease *c,const struct pci_bar_resource *b,
@@ -57,13 +58,13 @@ void *kheap_alloc(size_t size)
 }
 bool kheap_free(void *p)
 {assert(allocations==1&&control==0x200);allocations--;free(p);return true;}
-void klog(const char *s){(void)s;}
+void klog(const char *s){if(!strcmp(s," VRAM start=0x"))decoded_contexts++;}
 void klog_u64(uint64_t value){(void)value;}
 _Noreturn void kernel_halt(void){abort();}
 static void reset(void)
 {
 	assert(!maps&&!allocations);control=0x200;
-	map_calls=address_calls=fail_map=fail_address=0;fail_alloc=false;
+	map_calls=address_calls=fail_map=fail_address=decoded_contexts=0;fail_alloc=false;
 }
 int main(void)
 {
@@ -106,9 +107,15 @@ int main(void)
 	struct nouveau_display_snapshot s={.instance=0x10009,.head_count=1};
 	s.base[0].dma[0]=0xf0000001; /* Lookup must be bounded even with opaque firmware data. */
 	for(unsigned i=0;i<sizeof(aperture)/4;i++)aperture[i]=0xdeadbeef;
+	/* Handle f0000001 folds to 31; base channel 1 XORs 32 -> slot 63.
+	 * Firmware object above f000 must be readable despite staging reservation. */
+	aperture[63*2]=0xf0000001;aperture[63*2+1]=(1U<<27)|(0xf020U<<9)|1;
+	const uint32_t object[]={0x49,0x1000,0x100f,0,0,0};
+	memcpy(aperture+0xf020/4,object,sizeof(object));
+	uint32_t *copy=malloc(sizeof(aperture));assert(copy);memcpy(copy,aperture,sizeof(aperture));
 	reset();nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));
 	assert(control==0x200&&!maps&&!allocations&&map_calls==2);
-	for(unsigned i=0;i<sizeof(aperture)/4;i++)assert(aperture[i]==0xdeadbeef);
+	assert(decoded_contexts==1&&!memcmp(aperture,copy,sizeof(aperture)));free(copy);
 	for(unsigned i=1;i<=2;i++){
 		reset();fail_map=i;nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));assert(control==0x200&&!maps&&!allocations);
 		reset();fail_address=i;nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));assert(control==0x200&&!maps&&!allocations);

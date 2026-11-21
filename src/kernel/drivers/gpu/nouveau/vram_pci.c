@@ -23,7 +23,7 @@ static void hex(uint64_t value,unsigned digits)
 	for(unsigned i=0;i<digits;i++) buffer[i]=chars[(value>>((digits-i-1)*4))&15];
 	buffer[digits]=0;klog(buffer);
 }
-static void context_log(const uint32_t *image,unsigned channel,uint32_t handle)
+static void context_log(const uint32_t *image,unsigned channel,uint32_t handle,uint64_t size)
 {
 	if(!handle) return;
 	uint32_t offset;
@@ -34,7 +34,8 @@ static void context_log(const uint32_t *image,unsigned channel,uint32_t handle)
 	const uint32_t *obj=image+offset/4;
 	klog(" object=0x");hex(offset,4);klog(" flags=0x");hex(obj[0],8);
 	/* Only known pitch VRAM objects. Other formats are diagnostic data. */
-	if((obj[0]==9 || obj[0]==0x49) && !obj[3] && !obj[4] && !obj[5] && obj[1]<=obj[2]) {
+	if((obj[0]==9 || obj[0]==0x49) && !obj[3] && !obj[4] && !obj[5] && obj[1]<=obj[2] &&
+	    (((uint64_t)obj[2]<<8)|255)<size) {
 		klog(" VRAM start=0x");hex((uint64_t)obj[1]<<8,10);
 		klog(" limit=0x");hex(((uint64_t)obj[2]<<8)|255,10);
 	} else klog(" unsupported DMA object");
@@ -72,8 +73,8 @@ void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
 	klog(" bytes=65536; PRAMIN restored; header=");
 	for(unsigned i=0;i<4;i++) {hex(image[i],8);klog(i==3?"\n":" ");}
 	for(unsigned i=0;i<s->head_count && i<NOUVEAU_DISPLAY_HEADS;i++) {
-		context_log(image,0,s->heads[i].arm.dma);
-		for(unsigned j=0;j<2;j++) context_log(image,i+1,s->base[i].dma[j]);
+		context_log(image,0,s->heads[i].arm.dma,size);
+		for(unsigned j=0;j<2;j++) context_log(image,i+1,s->base[i].dma[j],size);
 	}
 out:
 	if(!image) klog("nouveau: FWINST mapping/allocation unavailable\n");
