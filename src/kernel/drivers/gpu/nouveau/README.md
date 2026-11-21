@@ -681,6 +681,12 @@ instance и channel controls отображаются read-only. PRAMIN/VRAM/PLL
 подтвердить восстановление останавливает ядро с сохранёнными mappings.
 
 Журнал: `HANDOFF take=...`, `HANDOFF capabilities=...`, `HANDOFF restored`.
+При BUSY дополнительно печатаются точные reg/value/mask/pending из чтения,
+которое отклонило захват, и control index для channel blocker. Значения
+сохраняются в engine до rollback, повторный MMIO snapshot их не подменяет.
+На GTX 1050 Ti первый аппаратный цикл отклонён с `channels/firmware busy`
+до создания snapshot/изменения регистров; конкретный blocker этим ранним
+журналом не установлен. Проверку idle нельзя ослаблять без его определения.
 Busy означает отсутствие захвата. Этот цикл ещё не разрешает загрузку
 произвольной VRAM: нужны отдельный контракт владения диапазоном и исключение
 firmware/scanout областей. Нативные upload/bind/channel start остаются

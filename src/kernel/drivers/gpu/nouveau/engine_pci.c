@@ -77,6 +77,26 @@ static const char *status_name(enum nouveau_engine_status status)
 	}
 	return "unknown";
 }
+static void hex32(uint32_t value)
+{
+	static const char digits[]="0123456789abcdef";char text[9];
+	for(unsigned i=0;i<8;i++)text[i]=digits[(value>>((7-i)*4))&15];
+	text[8]=0;klog(text);
+}
+static void blocker_log(const struct nouveau_engine *engine)
+{
+	if(!engine->blocked_mask) return;
+	klog("nouveau: HANDOFF blocked reg=0x");hex32(engine->blocked_reg);
+	klog(" value=0x");hex32(engine->blocked_value);
+	klog(" mask=0x");hex32(engine->blocked_mask);
+	klog(" pending=0x");hex32(engine->blocked_value&engine->blocked_mask);
+	klog("\n");
+	if(engine->blocked_reg>=0x610490 && engine->blocked_reg<=0x610590) {
+		klog("nouveau: HANDOFF blocked channel=0x");
+		/* Fixed-width hexadecimal keeps the transport independent of formatting. */
+		hex32((engine->blocked_reg-0x610490)/16);klog(" (control index)\n");
+	}
+}
 void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct pci_bar_resource *bar)
 {
 	struct native_engine m={0};struct nouveau_engine engine={0};
@@ -95,9 +115,11 @@ void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct 
 	}
 	enum nouveau_engine_status status=nouveau_engine_take(&engine,&io);
 	klog("nouveau: HANDOFF take=");klog(status_name(status));klog("\n");
+	if(status==NOUVEAU_ENGINE_BUSY) blocker_log(&engine);
 	if(status==NOUVEAU_ENGINE_OK) {
 		status=nouveau_engine_capabilities(&engine);
 		klog("nouveau: HANDOFF capabilities=");klog(status_name(status));klog("\n");
+		if(status==NOUVEAU_ENGINE_BUSY) blocker_log(&engine);
 	}
 	if(engine.snapshot_valid) {
 		if(nouveau_engine_restore(&engine)!=NOUVEAU_ENGINE_OK) {

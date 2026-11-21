@@ -104,6 +104,7 @@ int main(void)
 	struct model m;setup(&m);
 	m.firmware=1;m.supervisor=0;
 	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+	assert(m.engine.blocked_reg==0x6194e8&&m.engine.blocked_value==1&&m.engine.blocked_mask==3);
 	assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_OK);
 	setup(&m);
 	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
@@ -131,6 +132,11 @@ int main(void)
 	for(unsigned id=0;id<17;id++) {
 		setup(&m);m.controls[id]=1;
 		assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+		assert(m.engine.blocked_reg==0x610490+id*16&&m.engine.blocked_value==1&&
+		    m.engine.blocked_mask==0x801e0003);
+		m.controls[id]=0;
+		assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK&&!m.engine.blocked_mask);
+		recovered(&m);
 	}
 	for(unsigned mode=0;mode<3;mode++) {
 		setup(&m);m.stuck=true;m.stalled=mode==1;m.backward=mode==2;

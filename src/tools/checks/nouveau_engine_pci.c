@@ -9,12 +9,14 @@ static uint32_t regs[0x800000/4],saved[0x800000/4];
 static unsigned maps,calls,addresses,fail_map,fail_address;
 static uint64_t clock_ns;
 static bool stalled,taken,caps,restored,busy;
+static char log_text[4096];
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.aperture_size=0x1000000};
 static void fixture(void)
 {
 	assert(!maps);calls=addresses=fail_map=fail_address=0;
 	stalled=taken=caps=restored=busy=false;clock_ns=0;
+	log_text[0]=0;
 	memset(regs,0,sizeof(regs));
 	regs[0x22448/4]=4;regs[0x612004/4]=0x30f;regs[0x610010/4]=1;
 	regs[0x610090/4]=0x12;regs[0x6100a0/4]=0x34;regs[0x6100b0/4]=0x56;
@@ -58,6 +60,7 @@ bool pci_mmio_release(struct pci_mmio_lease *l)
 uint64_t timer_monotonic_ns(void){if(!stalled)clock_ns+=1000;return clock_ns;}
 void klog(const char *s)
 {
+	assert(strlen(log_text)+strlen(s)<sizeof(log_text));strcat(log_text,s);
 	if(!strcmp(s,"ok")) {
 		if(!taken) {taken=true;assert(!regs[0x610090/4]&&!regs[0x6100a0/4]&&!regs[0x6100b0/4]);}
 		else {
@@ -86,12 +89,18 @@ int main(void)
 		fixture();regs[(0x610490+i*16)/4]=3;memcpy(saved,regs,sizeof(regs));
 		nouveau_engine_probe_log(&claim,&bar);
 		assert(busy&&!taken&&!maps&&!memcmp(saved,regs,sizeof(regs)));
+		char expected[160];
+		snprintf(expected,sizeof(expected),"HANDOFF blocked reg=0x%08x value=0x00000003 mask=0x801e0003 pending=0x00000003",0x610490+i*16);
+		assert(strstr(log_text,expected));
+		snprintf(expected,sizeof(expected),"HANDOFF blocked channel=0x%08x",i);
+		assert(strstr(log_text,expected));
 	}
 	fixture();stalled=true;nouveau_engine_probe_log(&claim,&bar);
 	assert(!calls&&!taken&&!maps);
 	fixture();regs[0x6194e8/4]=1;memcpy(saved,regs,sizeof(regs));
 	nouveau_engine_probe_log(&claim,&bar);
 	assert(busy&&!taken&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
+	assert(strstr(log_text,"HANDOFF blocked reg=0x006194e8 value=0x00000001 mask=0x00000003 pending=0x00000001"));
 	fixture();regs[0x616104/4]=UINT32_MAX;memcpy(saved,regs,sizeof(regs));
 	nouveau_engine_probe_log(&claim,&bar);
 	assert(taken&&!caps&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));

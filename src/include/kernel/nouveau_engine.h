@@ -28,6 +28,9 @@ struct nouveau_engine {
 	struct nouveau_engine_cap caps[20];
 	uint8_t cap_count;
 	bool caps_ready,caps_touched;
+	/* Exact rejecting read for BUSY, captured before any rollback/re-read.
+	 * Channel controls use mask 0x801e0003; firmware uses 0x3. */
+	uint32_t blocked_reg,blocked_value,blocked_mask;
 };
 /* Caller holds exclusive PCI/engine ownership for the entire lifetime.
  * Requires all 17 GP102 channel controls inactive; never steals an active

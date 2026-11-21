@@ -30,12 +30,15 @@ static bool read32(const struct nouveau_engine_io *io,uint32_t reg,uint32_t *val
 {
 	return io->read32(io->context,reg,value) && *value!=UINT32_MAX;
 }
-static enum nouveau_engine_status idle(const struct nouveau_engine_io *io)
+static enum nouveau_engine_status idle(struct nouveau_engine *e,const struct nouveau_engine_io *io)
 {
 	for(unsigned i=0;i<17;i++) {
 		uint32_t value;
 		if(!read32(io,0x610490+i*16,&value)) return NOUVEAU_ENGINE_IO_FAILED;
-		if(value&0x801e0003) return NOUVEAU_ENGINE_BUSY;
+		if(value&0x801e0003) {
+			e->blocked_reg=0x610490+i*16;e->blocked_value=value;e->blocked_mask=0x801e0003;
+			return NOUVEAU_ENGINE_BUSY;
+		}
 	}
 	return NOUVEAU_ENGINE_OK;
 }
@@ -59,11 +62,12 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 {
 	if(!e || e->state!=NOUVEAU_ENGINE_EMPTY || e->snapshot_valid || !io ||
 	    !io->read32 || !io->write32 || !io->time_us || !io->delay_us) return NOUVEAU_ENGINE_INVALID;
+	e->blocked_reg=e->blocked_value=e->blocked_mask=0;
 	uint32_t instance,firmware,interrupts[3],supervisor;uint64_t time;
 	if(!io->time_us(io->context,&time) || !read32(io,0x610010,&instance) ||
 	    !read32(io,0x6194e8,&firmware) || !read32(io,0x6100ac,&supervisor)) return NOUVEAU_ENGINE_IO_FAILED;
 	for(unsigned i=0;i<3;i++) if(!read32(io,masks[i],&interrupts[i])) return NOUVEAU_ENGINE_IO_FAILED;
-	enum nouveau_engine_status status=idle(io);
+	enum nouveau_engine_status status=idle(e,io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	*e=(struct nouveau_engine){.state=NOUVEAU_ENGINE_QUARANTINED,.io=io,
 	    .saved_instance=instance,.saved_firmware=firmware,.snapshot_valid=true};
@@ -77,13 +81,17 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 		if(status!=NOUVEAU_ENGINE_OK) return status;
 	} else if(firmware&3) {
 		/* Avoid assuming ownership from inconsistent request/ack state. */
+		e->blocked_reg=0x6194e8;e->blocked_value=firmware;e->blocked_mask=3;
 		return NOUVEAU_ENGINE_BUSY;
 	}
 	/* Ack alone is insufficient if firmware ignored the request-bit write. */
 	uint32_t released;
 	if(!read32(io,0x6194e8,&released)) return NOUVEAU_ENGINE_IO_FAILED;
-	if(released&3) return NOUVEAU_ENGINE_BUSY;
-	status=idle(io);
+	if(released&3) {
+		e->blocked_reg=0x6194e8;e->blocked_value=released;e->blocked_mask=3;
+		return NOUVEAU_ENGINE_BUSY;
+	}
+	status=idle(e,io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	e->interrupts_touched=true;
 	for(unsigned i=0;i<3;i++) {
@@ -97,7 +105,7 @@ enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *e)
 {
 	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid ||
 	    e->caps_ready || e->caps_touched) return NOUVEAU_ENGINE_INVALID;
-	enum nouveau_engine_status status=idle(e->io);
+	enum nouveau_engine_status status=idle(e,e->io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	uint32_t count,mask;
 	if(!read32(e->io,0x22448,&count) || !read32(e->io,0x612004,&mask)) return NOUVEAU_ENGINE_IO_FAILED;
@@ -132,7 +140,7 @@ enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *e,struct n
 	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid || !e->caps_ready || e->instance ||
 	    !u || u->state!=NOUVEAU_UPLOAD_VERIFIED || u->length!=65536 ||
 	    (u->address&65535) || u->address>=(UINT64_C(1)<<40)) return NOUVEAU_ENGINE_INVALID;
-	enum nouveau_engine_status status=idle(e->io);
+	enum nouveau_engine_status status=idle(e,e->io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	if(!nouveau_upload_pin(u)) return NOUVEAU_ENGINE_INVALID;
 	e->instance=u;e->instance_touched=true;e->state=NOUVEAU_ENGINE_QUARANTINED;
@@ -146,7 +154,7 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 	if(!e || e->state==NOUVEAU_ENGINE_EMPTY || !e->snapshot_valid || !e->io)
 		return NOUVEAU_ENGINE_INVALID;
 	e->state=NOUVEAU_ENGINE_QUARANTINED;
-	enum nouveau_engine_status status=idle(e->io);
+	enum nouveau_engine_status status=idle(e,e->io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	uint32_t value;
 	if(e->instance_touched) {
