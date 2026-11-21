@@ -7,9 +7,10 @@
 
 struct region { uint32_t base,size; bool writable; };
 /* Only core control permits reasserting an already disabled stop request;
- * no instance/descriptors/PUT/PLL/PRAMIN mappings are writable here. */
+ * instance permits only guarded pinned bind/unbind writes. No descriptors,
+ * PUT/PLL/PRAMIN mappings are writable here (upload owns separate PRAMIN). */
 static const struct region regions[]={
-	{0x22448,4,false},{0x612004,4,false},{0x610010,4,false},
+	{0x22448,4,false},{0x612004,4,false},{0x610010,4,true},
 	{0x1704,4,false},{0x1714,4,false},
 	{0x610490,4,true},{0x6104a0,0xf4,false},{0x616000,0x2000,false},{0x61c000,0x4000,false},
 	{0x610090,4,true},{0x6100a0,4,true},{0x6100ac,4,true},{0x6100b0,4,true},
@@ -22,6 +23,7 @@ static const struct region regions[]={
 struct native_engine {
 	struct pci_mmio_lease leases[REGIONS];
 	volatile uint32_t *addresses[REGIONS];
+	struct nouveau_engine *engine;
 };
 static volatile uint32_t *locate(struct native_engine *m,uint32_t reg,bool write)
 {
@@ -46,6 +48,18 @@ static bool capability_register(uint32_t reg)
 }
 static bool write32(void *ctx,uint32_t reg,uint32_t value)
 {
+	struct native_engine *m=ctx;
+	if(reg==0x610010) {
+		struct nouveau_engine *e=m->engine;
+		/* Bind/unbind only: immutable verified upload is pinned before both
+		 * instance writes, including rollback after a failed readback. */
+		if(!e || !e->snapshot_valid || e->state!=NOUVEAU_ENGINE_QUARANTINED ||
+		    !e->instance || e->instance->state!=NOUVEAU_UPLOAD_PINNED ||
+		    (value!=e->saved_instance && value!=((uint32_t)(e->instance->address>>8)|9))) return false;
+		volatile uint32_t *p=locate(m,reg,true);
+		if(!p)return false;
+		*p=value;return true;
+	}
 	/* Restrict writes even inside larger leases used by strided mirrors. */
 	if(reg!=0x610490 && reg!=0x610090 && reg!=0x6100a0 && reg!=0x6100ac && reg!=0x6100b0 &&
 	    reg!=0x6194e8 && !capability_register(reg)) return false;
@@ -103,6 +117,7 @@ void nouveau_engine_probe_upload_log(const struct pci_device_lease *claim,const 
 	const struct nouveau_upload_probe_layout *layout)
 {
 	struct native_engine m={0};struct nouveau_engine engine={0};
+	m.engine=&engine;
 	struct nouveau_engine_io io={&m,read32,write32,time_us,delay_us};
 	/* Verify the clock advances before touching any hardware state. */
 	if(!delay_us(&m,1)) {klog("nouveau: HANDOFF clock unavailable\n");return;}
@@ -149,7 +164,7 @@ void nouveau_engine_probe_upload_log(const struct pci_device_lease *claim,const 
 			/* Keep every mapping and the transaction alive until reset. */
 			klog("nouveau: HANDOFF rollback failed; GPU quarantined\n");kernel_halt();
 		}
-		klog("nouveau: HANDOFF restored; no instance bind/channel start\n");
+		klog("nouveau: HANDOFF restored; no channel start\n");
 	}
 out:
 	for(unsigned i=REGIONS;i>0;i--)

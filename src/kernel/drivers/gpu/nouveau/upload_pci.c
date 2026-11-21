@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-2-Clause
- * Reversible GP107 instance upload. Does not bind instance or start channels. */
+ * Reversible GP107 instance upload/bind. Does not start channels. */
 #include "kernel/nouveau_engine.h"
 #include "kernel/nouveau_memory.h"
 #include "kernel/heap.h"
@@ -15,8 +15,9 @@ struct upload_mapping {
 static bool owns(void *context,uint64_t address,uint64_t size)
 {
 	struct upload_mapping *m=context;struct nouveau_engine *e=m->engine;
-	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid ||
-	    !e->io || !e->io->read32 || !e->caps_ready || e->instance || e->instance_touched ||
+	if(!e || !e->snapshot_valid || !e->io || !e->io->read32 || !e->caps_ready ||
+	    !((e->state==NOUVEAU_ENGINE_QUIESCENT && !e->instance && !e->instance_touched) ||
+	    (e->state==NOUVEAU_ENGINE_QUARANTINED && e->instance && e->instance->address==m->base)) ||
 	    address!=m->base || size!=NOUVEAU_INSTANCE_SIZE) return false;
 	uint32_t value;
 	if(!e->io->read32(e->io->context,0x1704,&value) || value ||
@@ -112,8 +113,20 @@ void nouveau_instance_upload_probe_log(const struct pci_device_lease *claim,
 	status=nouveau_upload_image(&upload,image);
 	if(status==NOUVEAU_UPLOAD_OK) {
 		klog("nouveau: UPLOAD instance/RAMHT verified bytes=65536 (not bound)\n");
-		if(nouveau_upload_restore(&upload)!=NOUVEAU_UPLOAD_OK)
+		enum nouveau_engine_status bound=nouveau_engine_bind(engine,&upload);
+		if(bound==NOUVEAU_ENGINE_OK) {
+			klog("nouveau: BIND instance readback verified (channels stopped)\n");
+		} else {
+			klog("nouveau: BIND rejected/failed; restoring original instance\n");
+		}
+		if(engine->instance) {
+			/* May have reached hardware even if bind reported failure. */
+			if(nouveau_engine_unbind(engine)!=NOUVEAU_ENGINE_OK)
+				fatal("nouveau: BIND unbind/VRAM restore failed; firmware held\n");
+			klog("nouveau: BIND original instance restored and verified\n");
+		} else if(nouveau_upload_restore(&upload)!=NOUVEAU_UPLOAD_OK) {
 			fatal("nouveau: UPLOAD VRAM restore failed; firmware held\n");
+		}
 		klog("nouveau: UPLOAD original VRAM restored and verified\n");
 	} else if(status==NOUVEAU_UPLOAD_RESTORE_FAILED) {
 		fatal("nouveau: UPLOAD rollback failed; firmware held\n");

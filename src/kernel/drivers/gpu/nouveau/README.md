@@ -777,3 +777,31 @@ backup загрузка не начинается; при сбое upload при
 и heap отказы, неподдержанный scanout и изменение BAR context после snapshot.
 Транспортные отказы каждого слова и lost writes покрываются существующим
 `nouveau_upload` тестом. Аппаратные upload/readback/restore ещё не подтверждены.
+
+## Временная привязка instance
+
+На GTX 1050 Ti подтверждены аппаратные `UPLOAD instance/RAMHT verified`,
+`original VRAM restored and verified`, `PRAMIN window restored` и возврат
+handoff. Следующий probe расширяет этот цикл временной привязкой instance.
+После upload/readback выполняется `nouveau_engine_bind`: проверка idle,
+pin upload, запись 0x610010 и точный readback. Native transport теперь
+выделяет writable lease ровно на этот DWORD и разрешает запись только
+при QUARANTINED engine с PINNED upload, только нового или сохранённого
+instance значения. Descriptor/PUT/channel start/PLL пути не включены.
+
+`nouveau_engine_unbind` отделён от полного engine restore: проверить idle,
+вернуть старую instance/readback, unpin, restore/readback исходной VRAM.
+Firmware, IRQ и capabilities при этом ещё удерживаются драйвером.
+Это позволяет восстановить окно PRAMIN и освободить upload storage до
+передачи управления firmware. Затем выполняется полный engine restore.
+При неудаче bind запись могла попасть в железо: upload остаётся pinned,
+требуется тот же unbind, а не преждевременный free. Ошибка unbind/VRAM
+restore останавливает native probe с ресурсами и firmware под удержанием.
+
+Ожидаемые строки: `BIND instance readback verified (channels stopped)` и
+`BIND original instance restored and verified`, затем прежние UPLOAD restore
+и HANDOFF restored. Host-модель проверяет instance=0x00040009 в момент bind,
+старый instance=1 и VRAM после unbind, отсутствие активных каналов и утечек.
+Отдельные тесты unbind покрывают каждый отказ register read/write, карантин,
+запрет finish до восстановления и успешный повтор. Эта привязка пока не
+проверена на карте; channels/UPDATE и изменение режима остаются отключены.

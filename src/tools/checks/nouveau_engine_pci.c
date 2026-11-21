@@ -12,13 +12,13 @@ static uint64_t clock_ns;
 static bool stalled,taken,caps,restored,busy;
 static char log_text[4096];
 static unsigned allocations,alloc_calls,fail_alloc;
-static bool uploaded,vr_restored;
+static bool uploaded,vr_restored,bound,unbound;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.aperture_size=0x1000000};
 static void fixture(void)
 {
 	assert(!maps);calls=addresses=fail_map=fail_address=0;
-	assert(!allocations);alloc_calls=fail_alloc=0;uploaded=vr_restored=false;
+	assert(!allocations);alloc_calls=fail_alloc=0;uploaded=vr_restored=bound=unbound=false;
 	stalled=taken=caps=restored=busy=false;clock_ns=0;
 	log_text[0]=0;
 	memset(regs,0,sizeof(regs));
@@ -38,10 +38,10 @@ static bool map(const struct pci_device_lease *c,const struct pci_bar_resource *
 	uint64_t off,size_t size,struct pci_mmio_lease *lease,bool write)
 {
 	assert(c==&claim&&b==&bar&&off+size<=sizeof(regs));calls++;
-	/* No lease can expose VRAM/PRAMIN, a channel control, or instance as
-	 * writable. Mirrors use exact DWORD or 12-byte leases. */
+	/* Instance lease must be exactly one DWORD. Channel descriptors/PUT
+	 * remain inaccessible; only the disabled core control may be written. */
 	if(write) {
-		assert(off!=0x610010);
+		assert(off!=0x610010||size==4);
 		assert(!(off<=0x610490&&off+size>0x610490) || (off==0x610490&&size==4));
 		assert(size==4||size==12||(off==0x700000&&size==0x100000));
 	}
@@ -92,6 +92,16 @@ void klog(const char *s)
 	}
 	if(strstr(s,"UPLOAD original VRAM restored")) {
 		vr_restored=true;
+		assert(!memcmp(regs+0x700000/4,saved+0x700000/4,65536));
+	}
+	if(strstr(s,"BIND instance readback verified")) {
+		bound=true;
+		assert(uploaded&&regs[0x610010/4]==0x40009&&allocations==2);
+		for(unsigned i=0;i<17;i++)assert(!(regs[(0x610490+i*16)/4]&0x801e0003));
+	}
+	if(strstr(s,"BIND original instance restored")) {
+		unbound=true;
+		assert(bound&&regs[0x610010/4]==1);
 		assert(!memcmp(regs+0x700000/4,saved+0x700000/4,65536));
 	}
 	if(strstr(s,"channels/firmware busy"))busy=true;
@@ -158,7 +168,8 @@ unsigned total=calls;assert(total==26);
 		nouveau_engine_probe_upload_log(&claim,&bar,&layout);
 		assert(taken&&caps&&restored&&!maps&&!allocations&&!memcmp(saved,regs,sizeof(regs)));
 		assert(uploaded==(test==0)&&vr_restored==(test==0));
+		assert(bound==(test==0)&&unbound==(test==0));
 		snapshot.heads[1].arm.timing_valid=false;layout.scanout_sample=0;
 	}
-	puts("NOUVEAU_ENGINE_PCI_PASS: native take/capabilities/restore, busy/timeout guards, 64KiB instance upload/readback/rollback, PRAMIN restore, heap/map failures, unsupported scanout; no instance bind/channel start");
+	puts("NOUVEAU_ENGINE_PCI_PASS: native take/capabilities, 64KiB upload, pinned instance bind/readback/unbind, VRAM/PRAMIN rollback, heap/map failures, unsupported scanout; no channel start");
 }

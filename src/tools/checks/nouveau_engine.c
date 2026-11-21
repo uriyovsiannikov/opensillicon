@@ -176,6 +176,24 @@ int main(void)
 	recovered(&m);assert(nouveau_upload_finish(&m.upload));
 	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
 	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
+	unsigned unbind_reads=m.reads,unbind_writes=m.writes;
+	assert(nouveau_engine_unbind(&m.engine)==NOUVEAU_ENGINE_OK);
+	unbind_reads=m.reads-unbind_reads;unbind_writes=m.writes-unbind_writes;
+	recovered(&m);assert(nouveau_upload_finish(&m.upload));
+	for(unsigned type=0;type<2;type++)for(unsigned i=1;i<=(type?unbind_writes:unbind_reads);i++) {
+		setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+		assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
+		if(type)m.fail_write=m.writes+i;else m.fail_read=m.reads+i;
+		assert(nouveau_engine_unbind(&m.engine)==NOUVEAU_ENGINE_IO_FAILED);
+		assert(m.engine.state==NOUVEAU_ENGINE_QUARANTINED&&!(m.firmware&3));
+		assert(m.engine.instance==&m.upload&&!nouveau_upload_finish(&m.upload));
+		m.fail_read=m.fail_write=0;
+		assert(nouveau_engine_unbind(&m.engine)==NOUVEAU_ENGINE_OK);
+		assert(m.engine.state==NOUVEAU_ENGINE_QUIESCENT&&m.upload.state==NOUVEAU_UPLOAD_RESTORED);
+		recovered(&m);assert(nouveau_upload_finish(&m.upload));
+	}
+	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
 	m.controls[8]=3;assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_BUSY);
 	assert(m.upload.state==NOUVEAU_UPLOAD_PINNED);m.controls[8]=0;
 	m.fail_memory=true;

@@ -74,8 +74,9 @@ struct nouveau_upload_probe_layout {
 };
 void nouveau_engine_probe_upload_log(const struct pci_device_lease *,const struct pci_bar_resource *,
 	const struct nouveau_upload_probe_layout *);
-/* Reversible PRAMIN test only while an unbound engine is quiescent. Returns
- * only after verified VRAM/window restore; irrecoverable cleanup halts. */
+/* Start with a quiescent unbound engine; transiently bind pinned upload,
+ * unbind/readback, then restore VRAM/window before returning firmware.
+ * Irrecoverable cleanup halts. Never starts channels or submits methods. */
 void nouveau_instance_upload_probe_log(const struct pci_device_lease *,const struct pci_bar_resource *,
 	struct nouveau_engine *,const struct nouveau_upload_probe_layout *);
 #endif
