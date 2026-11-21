@@ -71,6 +71,8 @@ struct nouveau_upload_probe_layout {
 	const struct nouveau_display_snapshot *snapshot;
 	uint64_t vram,scanout_sample,scanout_size;
 	unsigned head;
+	/* Experimental core start/stop is opt-in; native boot leaves this false. */
+	bool test_core_channel;
 };
 void nouveau_engine_probe_upload_log(const struct pci_device_lease *,const struct pci_bar_resource *,
 	const struct nouveau_upload_probe_layout *);

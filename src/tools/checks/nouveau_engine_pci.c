@@ -225,8 +225,9 @@ unsigned total=calls;assert(total==ENGINE_MAPS);
 	assert(taken&&!caps&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
 	struct nouveau_display_snapshot snapshot={.bar3_instance=0x40000000};
 	snapshot.heads[0].arm.timing_valid=true;
-	struct nouveau_upload_probe_layout layout={&snapshot,UINT64_C(0x100000000),0,8294400,0};
-	for(unsigned test=0;test<19;test++) {
+	struct nouveau_upload_probe_layout layout={.snapshot=&snapshot,.vram=UINT64_C(0x100000000),
+	    .scanout_size=8294400,.test_core_channel=true};
+	for(unsigned test=0;test<20;test++) {
 		fixture();regs[0x1714/4]=0x40000000;regs[0x1700/4]=0x200;
 		for(unsigned i=0;i<65536/4;i++)regs[0x700000/4+i]=0xa55a0000^i;
 		if(test==9)regs[0x1704/4]=0x80000000; /* BAR VM changed since snapshot */
@@ -250,6 +251,7 @@ unsigned total=calls;assert(total==ENGINE_MAPS);
 		if(test==16)fail_dma_acquire=true;
 		if(test==17)external_maps=12; /* old 30-lease GPU path would exhaust 32 */
 		if(test==18)external_maps=14; /* force late PUT map failure even now */
+		if(test==19)layout.test_core_channel=false;
 		nouveau_engine_probe_upload_log(&claim,&bar,&layout);
 		assert(taken&&caps&&restored&&!maps&&!allocations&&!memcmp(saved,regs,sizeof(regs)));
 		assert(uploaded==(test==0||test>=10)&&vr_restored==(test==0||test>=10));
@@ -257,7 +259,9 @@ unsigned total=calls;assert(total==ENGINE_MAPS);
 		assert(core_running==(test==0||test==17)&&core_stopped==(test==0||test==17)&&!dma_live);
 		if(test==17)assert(calls==ENGINE_MAPS+4&&external_maps==12);
 		if(test==18)assert(strstr(log_text,"CORECHANNEL PUT MMIO unavailable")&&external_maps==14);
+		if(test==19)assert(strstr(log_text,"CORECHANNEL disabled (experimental start/stop)"));
 		snapshot.heads[1].arm.timing_valid=false;layout.scanout_sample=0;
+		layout.test_core_channel=true;
 	}
 	pid_t child=fork();assert(child>=0);
 	if(!child) {

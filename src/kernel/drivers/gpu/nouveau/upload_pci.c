@@ -117,7 +117,8 @@ void nouveau_instance_upload_probe_log(const struct pci_device_lease *claim,
 		enum nouveau_engine_status bound=nouveau_engine_bind(engine,&upload);
 		if(bound==NOUVEAU_ENGINE_OK) {
 			klog("nouveau: BIND instance readback verified (channels stopped)\n");
-			nouveau_core_channel_probe_log(claim,bar,engine);
+			if(layout->test_core_channel)nouveau_core_channel_probe_log(claim,bar,engine);
+			else klog("nouveau: CORECHANNEL disabled (experimental start/stop)\n");
 		} else {
 			klog("nouveau: BIND rejected/failed; restoring original instance\n");
 		}
