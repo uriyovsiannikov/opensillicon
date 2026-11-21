@@ -478,3 +478,25 @@ Doorbell write и read-back проверяются: ошибка делает и
 Тесты проверяют 33-DWORD block / PUT=132, границы prepared span, duplicate/
 backward/misaligned PUT, отказ write/read, read-back mismatch и последующую
 остановку. Этот API может исполнять методы GPU и в boot probe не вызывается.
+
+## Транзакция загрузки instance
+
+`upload.c` сохраняет исходный диапазон (до 64 КиБ), записывает CPU-образ и
+сверяет все DWORD чтением обратно. Любой отказ/несовпадение вызывает полное
+восстановление backup и повторную сверку. При failed write, который уже
+дошёл до hardware, rollback всё равно выполняется. Отказ восстановления
+или потеря владения оставляет quarantine: range handle и backup сохраняются,
+finish запрещён. Восстановление повторяемо после восстановления транспорта.
+
+IO включает обязательную owns-проверку настоящего владения VRAM/engine;
+software pool недостаточен. После save ответственность за allocation
+переходит транзакции: caller не должен отдельно освобождать handle.
+Backup, pool и IO должны жить до finish, CPU image не должен пересекаться
+с backup. Pin делается до hardware binding; restore/finish при pin запрещены.
+Unpin допустим только после аппаратной отвязки и остановки всех потребителей.
+Сама транзакция не записывает display instance register и не запускает канал.
+
+Host-тест проверяет весь 64-КиБ образ, каждый word failure на малой транзакции,
+потерянные/искажённые записи, ошибки read-back/rollback, retry/quarantine,
+потерю ownership, aliasing backup и pin/unpin. Транспорт до native hardware
+пока не подключён, загрузочная проба по-прежнему не пишет VRAM.
