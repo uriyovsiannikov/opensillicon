@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t stopping;
@@ -298,7 +299,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	if (bind(listener, (struct sockaddr *)&address, sizeof(address)) < 0 ||
-	    listen(listener, 16) < 0) {
+	    listen(listener, 128) < 0) {
 		perror("pkg-server: listen");
 		close(listener);
 		return 1;
@@ -308,7 +309,10 @@ int main(int argc, char **argv)
 	printf("pkg-server: %s://%s:%u repo=%s\n", cert ? "https" : "http", bind_address,
 	       (unsigned)ntohs(address.sin_port), repo);
 	fflush(stdout);
+	unsigned workers = 0;
 	while (!stopping) {
+		while (waitpid(-1, NULL, WNOHANG) > 0)
+			if (workers) --workers;
 		int client = accept(listener, NULL, NULL);
 		if (client < 0) {
 			if (errno == EINTR)
@@ -316,24 +320,41 @@ int main(int argc, char **argv)
 			perror("pkg-server: accept");
 			break;
 		}
+		/* Isolate slow TLS peers, while bounding memory and process usage. */
+		while (waitpid(-1, NULL, WNOHANG) > 0)
+			if (workers) --workers;
+		if (workers >= 32) {
+			close(client);
+			continue;
+		}
+		pid_t worker = fork();
+		if (worker != 0) {
+			close(client);
+			if (worker > 0) ++workers;
+			else perror("pkg-server: fork");
+			continue;
+		}
+		close(listener);
+		alarm(300); /* Bound the lifetime of a connection, including reads. */
 		if (cert) {
 			struct timespec now;
 			if (clock_gettime(CLOCK_MONOTONIC, &now) < 0) {
 				close(client);
-				continue;
+				_exit(1);
 			}
 			long long deadline = (long long)now.tv_sec * 1000 +
 			    now.tv_nsec / 1000000 + 30000;
 			client_tls = pkg_tls_accept(client, cert, key, deadline);
 			if (client_tls == NULL) {
 				close(client);
-				continue;
+				_exit(1);
 			}
 		}
 		handle_client(client);
 		pkg_tls_free(client_tls);
 		client_tls = NULL;
 		close(client);
+		_exit(0);
 	}
 	close(listener);
 	return 0;
