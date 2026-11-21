@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  * Reversible GP107 instance upload/bind. Does not start channels. */
 #include "kernel/nouveau_engine.h"
+#include "kernel/nouveau_channel.h"
 #include "kernel/nouveau_memory.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
@@ -116,6 +117,7 @@ void nouveau_instance_upload_probe_log(const struct pci_device_lease *claim,
 		enum nouveau_engine_status bound=nouveau_engine_bind(engine,&upload);
 		if(bound==NOUVEAU_ENGINE_OK) {
 			klog("nouveau: BIND instance readback verified (channels stopped)\n");
+			nouveau_core_channel_probe_log(claim,bar,engine);
 		} else {
 			klog("nouveau: BIND rejected/failed; restoring original instance\n");
 		}

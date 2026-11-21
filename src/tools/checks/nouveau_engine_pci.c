@@ -3,8 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include "kernel/nouveau_engine.h"
 #include "kernel/nouveau_memory.h"
+#include "kernel/dma.h"
 #include "arch/x86_64/pci_resource.h"
 static uint32_t regs[0x800000/4],saved[0x800000/4];
 static unsigned maps,calls,addresses,fail_map,fail_address;
@@ -13,12 +16,18 @@ static bool stalled,taken,caps,restored,busy;
 static char log_text[4096];
 static unsigned allocations,alloc_calls,fail_alloc;
 static bool uploaded,vr_restored,bound,unbound;
+static bool dma_live,core_running,core_stopped,fail_dma_alloc,dma_available=true,fail_dma_acquire;
+static enum dma_owner dma_owner;
+static uint32_t push_words[1024];
+static const struct dma_buffer dma_handle={.generation=100,.slot=0};
+static bool expect_stop_failure;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.aperture_size=0x1000000};
 static void fixture(void)
 {
 	assert(!maps);calls=addresses=fail_map=fail_address=0;
 	assert(!allocations);alloc_calls=fail_alloc=0;uploaded=vr_restored=bound=unbound=false;
+	assert(!dma_live);core_running=core_stopped=fail_dma_alloc=fail_dma_acquire=false;dma_available=true;
 	stalled=taken=caps=restored=busy=false;clock_ns=0;
 	log_text[0]=0;
 	memset(regs,0,sizeof(regs));
@@ -69,6 +78,40 @@ void *kheap_alloc(size_t size)
 	void *p=malloc(size);assert(p);allocations++;return p;
 }
 bool kheap_free(void *p){assert(p&&allocations);allocations--;free(p);return true;}
+bool dma_identity_addressing_available(void){return dma_available;}
+bool dma_alloc(size_t size,size_t align,unsigned bits,struct dma_buffer *b)
+{
+	assert(!dma_live&&size==4096&&align==4096&&bits==40);
+	if(fail_dma_alloc)return false;
+	dma_live=true;dma_owner=DMA_OWNER_CPU;*b=dma_handle;
+	memset(push_words,0xa5,sizeof(push_words));return true;
+}
+bool dma_buffer_query(struct dma_buffer b,struct dma_buffer_info *info)
+{
+	assert(dma_live&&b.generation==100);
+	*info=(struct dma_buffer_info){.owner=dma_owner,.cpu_virtual_address=push_words,
+	    .requested_size=4096,.allocated_size=4096,.device_address=0x340000};return true;
+}
+bool dma_device_acquire(struct dma_buffer b,uint64_t *address)
+{
+	assert(dma_live&&b.generation==100&&dma_owner==DMA_OWNER_CPU&&regs[0x610010/4]==0x40009);
+	for(unsigned i=0;i<1024;i++)assert(!push_words[i]);
+	if(fail_dma_acquire)return false;
+	dma_owner=DMA_OWNER_DEVICE;*address=0x340000;return true;
+}
+bool dma_device_complete(struct dma_buffer b)
+{
+	assert(dma_live&&b.generation==100&&dma_owner==DMA_OWNER_DEVICE);
+	assert(!(regs[0x610490/4]&0x801e0003)&&regs[0x610010/4]==0x40009);
+	assert(regs[0x640000/4]==saved[0x640000/4]);
+	for(unsigned i=0;i<3;i++)assert(regs[0x611494/4+i]==saved[0x611494/4+i]);
+	dma_owner=DMA_OWNER_CPU;return true;
+}
+bool dma_free(struct dma_buffer b)
+{
+	assert(dma_live&&b.generation==100&&dma_owner==DMA_OWNER_CPU);
+	assert(!(regs[0x610490/4]&0x801e0003));dma_live=false;return true;
+}
 void klog(const char *s)
 {
 	assert(strlen(log_text)+strlen(s)<sizeof(log_text));strcat(log_text,s);
@@ -104,9 +147,28 @@ void klog(const char *s)
 		assert(bound&&regs[0x610010/4]==1);
 		assert(!memcmp(regs+0x700000/4,saved+0x700000/4,65536));
 	}
+	if(strstr(s,"CORECHANNEL running empty")) {
+		core_running=true;
+		assert(bound&&dma_live&&dma_owner==DMA_OWNER_DEVICE&&regs[0x640000/4]==0);
+		assert(regs[0x611494/4]==0x3403&&regs[0x611498/4]==0x10000&&regs[0x61149c/4]==1);
+		assert((regs[0x610490/4]&0x01000013)==0x01000013);
+		if(expect_stop_failure)regs[0x610490/4]|=0x20000;
+	}
+	if(strstr(s,"CORECHANNEL stopped")) {
+		core_stopped=true;assert(dma_owner==DMA_OWNER_CPU&&!unbound);
+	}
 	if(strstr(s,"channels/firmware busy"))busy=true;
 }
-_Noreturn void kernel_halt(void){abort();}
+_Noreturn void kernel_halt(void)
+{
+	if(expect_stop_failure) {
+		assert(strstr(log_text,"CORECHANNEL stop/restore failed"));
+		assert(dma_live&&dma_owner==DMA_OWNER_DEVICE&&allocations==2&&maps==30);
+		assert(bound&&!unbound&&!vr_restored&&regs[0x610010/4]==0x40009);
+		_Exit(73);
+	}
+	abort();
+}
 int main(void)
 {
 	fixture();nouveau_engine_probe_log(&claim,&bar);
@@ -152,10 +214,12 @@ unsigned total=calls;assert(total==26);
 	struct nouveau_display_snapshot snapshot={.bar3_instance=0x40000000};
 	snapshot.heads[0].arm.timing_valid=true;
 	struct nouveau_upload_probe_layout layout={&snapshot,UINT64_C(0x100000000),0,8294400,0};
-	for(unsigned test=0;test<10;test++) {
+	for(unsigned test=0;test<17;test++) {
 		fixture();regs[0x1714/4]=0x40000000;regs[0x1700/4]=0x200;
 		for(unsigned i=0;i<65536/4;i++)regs[0x700000/4+i]=0xa55a0000^i;
 		if(test==9)regs[0x1704/4]=0x80000000; /* BAR VM changed since snapshot */
+		regs[0x640000/4]=0x88;
+		regs[0x611494/4]=0x1003;regs[0x611498/4]=0x8000;regs[0x61149c/4]=2;
 		memcpy(saved,regs,sizeof(regs));
 		if(test==1)fail_alloc=1;
 		if(test==2)fail_alloc=2;
@@ -165,11 +229,28 @@ unsigned total=calls;assert(total==26);
 		if(test==6)fail_address=28;
 		if(test==7)snapshot.heads[1].arm.timing_valid=true;
 		if(test==8)layout.scanout_sample=0x1000000;
+		if(test==10)fail_dma_alloc=true;
+		if(test==11)dma_available=false;
+		if(test==12)fail_map=29;
+		if(test==13)fail_map=30;
+		if(test==14)fail_address=29;
+		if(test==15)fail_address=30;
+		if(test==16)fail_dma_acquire=true;
 		nouveau_engine_probe_upload_log(&claim,&bar,&layout);
 		assert(taken&&caps&&restored&&!maps&&!allocations&&!memcmp(saved,regs,sizeof(regs)));
-		assert(uploaded==(test==0)&&vr_restored==(test==0));
-		assert(bound==(test==0)&&unbound==(test==0));
+		assert(uploaded==(test==0||test>=10)&&vr_restored==(test==0||test>=10));
+		assert(bound==(test==0||test>=10)&&unbound==(test==0||test>=10));
+		assert(core_running==(test==0)&&core_stopped==(test==0)&&!dma_live);
 		snapshot.heads[1].arm.timing_valid=false;layout.scanout_sample=0;
 	}
-	puts("NOUVEAU_ENGINE_PCI_PASS: native take/capabilities, 64KiB upload, pinned instance bind/readback/unbind, VRAM/PRAMIN rollback, heap/map failures, unsupported scanout; no channel start");
+	pid_t child=fork();assert(child>=0);
+	if(!child) {
+		fixture();expect_stop_failure=true;regs[0x1714/4]=0x40000000;
+		memcpy(saved,regs,sizeof(regs));
+		nouveau_engine_probe_upload_log(&claim,&bar,&layout);
+		_Exit(1);
+	}
+	int child_status;assert(waitpid(child,&child_status,0)==child);
+	assert(WIFEXITED(child_status)&&WEXITSTATUS(child_status)==73);
+	puts("NOUVEAU_ENGINE_PCI_PASS: native upload/bind, empty core start/stop, PUT=0, DMA ownership, descriptor restoration, VRAM/PRAMIN rollback, map/heap/DMA failures; no method submission");
 }

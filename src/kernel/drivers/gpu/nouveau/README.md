@@ -805,3 +805,45 @@ restore останавливает native probe с ресурсами и firmwar
 Отдельные тесты unbind покрывают каждый отказ register read/write, карантин,
 запрет finish до восстановления и успешный повтор. Эта привязка пока не
 проверена на карте; channels/UPDATE и изменение режима остаются отключены.
+
+## Пустой core-канал
+
+На GTX 1050 Ti аппаратно подтверждены временные bind/readback/unbind,
+восстановление original instance/VRAM/PRAMIN и возврат firmware.
+Следующий probe (`channel_pci.c`) между bind и unbind выделяет реальный
+HOST DMA push 4KiB, обнуляет его и передаёт GPU через dma_device_acquire.
+`prepared_bytes=0` теперь разрешён channel API для пустого start/stop;
+любой kick, включая PUT=0, в таком состоянии отклоняется. Native adapter
+вообще не вызывает kick и разрешает запись нового PUT только со значением 0.
+
+Перед acquire проверяются bound/PINNED instance, firmware request/ack=0
+и idle всех 17 каналов. Инициализация выполняет существующую GP102 sequence
+с Pascal descriptor 0x611494/498/49c, HOST=3, limit=0x10000, target=1,
+PUT=0 и core control=0x01000013. Готовность проверяется по снятию busy bit31,
+readback descriptor и нулевому PUT; никаких timing/surface/UPDATE методов
+в push-буфере нет. Начальный request bits snapshot не заменяет аппаратный
+статус; управляющие request биты могут отличаться от статуса активности.
+
+После старта (либо частично выполненного старта) выполняется GF119 stop с
+ограниченным ожиданием. Затем восстанавливаются saved descriptor/PUT с
+readback и известные control requests по mask 0x01000013. Status поля не
+восстанавливаются сырым снимком регистра. Только после подтверждённой
+остановки/восстановления выполняются dma_device_complete и dma_free.
+Instance всё это время остаётся pinned; прежний unbind/VRAM rollback и
+возврат firmware выполняются лишь после завершения channel probe.
+
+Новые writable leases ограничены descriptor span 12 bytes и PUT DWORD;
+вместе с handoff и PRAMIN используются 30 из 32 registry slots. Ошибка
+stop/restore удерживает DMA, upload, instance и mappings до halt/reset.
+Недоступный DMA или ошибка allocation/map не запускает канал и оставляет
+возможность обычного instance rollback. В журнале `CORECHANNEL start status`
+показывает enum (0=OK), control и PUT; затем ожидаются `running empty PUT=0`
+и `stopped; descriptors/PUT restored; DMA returned`, перед BIND/UPLOAD restore.
+
+Host-проверка моделирует нативный полный upload/bind/start/stop/unbind цикл,
+передачу/возврат DMA ownership, старый ненулевой PUT и descriptors, все новые
+map/address отказы, недоступный/невыделенный DMA и отказ acquire. Отдельный
+child тест с stuck activity подтверждает halt с device-owned DMA, pinned
+instance и неизменённым порядком rollback. Channel unit-тесты продолжают
+покрывать каждый read/write failure и timeout, а также запрет kick пустого
+буфера. Сам аппаратный start/stop пока не подтверждён, modeset не выполняется.
