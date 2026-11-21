@@ -62,4 +62,16 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *);
 /* Native reversible handoff/capability probe. Does not bind an instance,
  * upload VRAM, start a channel, submit commands or change display timing. */
 void nouveau_engine_probe_log(const struct pci_device_lease *,const struct pci_bar_resource *);
+struct nouveau_display_snapshot;
+struct nouveau_upload_probe_layout {
+	const struct nouveau_display_snapshot *snapshot;
+	uint64_t vram,scanout_sample,scanout_size;
+	unsigned head;
+};
+void nouveau_engine_probe_upload_log(const struct pci_device_lease *,const struct pci_bar_resource *,
+	const struct nouveau_upload_probe_layout *);
+/* Reversible PRAMIN test only while an unbound engine is quiescent. Returns
+ * only after verified VRAM/window restore; irrecoverable cleanup halts. */
+void nouveau_instance_upload_probe_log(const struct pci_device_lease *,const struct pci_bar_resource *,
+	struct nouveau_engine *,const struct nouveau_upload_probe_layout *);
 #endif

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-2-Clause
- * Native reversible GF119 handoff, before enabling any VRAM upload. */
+ * Native reversible GF119 handoff and optional unbound instance upload. */
 #include "kernel/nouveau_engine.h"
 #include "arch/x86_64/pci_resource.h"
 #include "kernel/log.h"
@@ -10,6 +10,7 @@ struct region { uint32_t base,size; bool writable; };
  * no instance/descriptors/PUT/PLL/PRAMIN mappings are writable here. */
 static const struct region regions[]={
 	{0x22448,4,false},{0x612004,4,false},{0x610010,4,false},
+	{0x1704,4,false},{0x1714,4,false},
 	{0x610490,4,true},{0x6104a0,0xf4,false},{0x616000,0x2000,false},{0x61c000,0x4000,false},
 	{0x610090,4,true},{0x6100a0,4,true},{0x6100ac,4,true},{0x6100b0,4,true},
 	{0x6194e8,4,true},
@@ -98,7 +99,8 @@ static void blocker_log(const struct nouveau_engine *engine)
 		hex32((engine->blocked_reg-0x610490)/16);klog(" (control index)\n");
 	}
 }
-void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct pci_bar_resource *bar)
+void nouveau_engine_probe_upload_log(const struct pci_device_lease *claim,const struct pci_bar_resource *bar,
+	const struct nouveau_upload_probe_layout *layout)
 {
 	struct native_engine m={0};struct nouveau_engine engine={0};
 	struct nouveau_engine_io io={&m,read32,write32,time_us,delay_us};
@@ -140,16 +142,22 @@ void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct 
 		klog("nouveau: HANDOFF capabilities=");klog(status_name(status));klog("\n");
 		if(status==NOUVEAU_ENGINE_BUSY) blocker_log(&engine);
 	}
+	if(status==NOUVEAU_ENGINE_OK && layout)
+		nouveau_instance_upload_probe_log(claim,bar,&engine,layout);
 	if(engine.snapshot_valid) {
 		if(nouveau_engine_restore(&engine)!=NOUVEAU_ENGINE_OK) {
 			/* Keep every mapping and the transaction alive until reset. */
 			klog("nouveau: HANDOFF rollback failed; GPU quarantined\n");kernel_halt();
 		}
-		klog("nouveau: HANDOFF restored; no VRAM upload/channel start\n");
+		klog("nouveau: HANDOFF restored; no instance bind/channel start\n");
 	}
 out:
 	for(unsigned i=REGIONS;i>0;i--)
 		if(m.leases[i-1].generation && !pci_mmio_release(&m.leases[i-1])) {
 			klog("nouveau: HANDOFF MMIO release failed\n");kernel_halt();
 		}
+}
+void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct pci_bar_resource *bar)
+{
+	nouveau_engine_probe_upload_log(claim,bar,NULL);
 }

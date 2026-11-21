@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdalign.h>
 #include "kernel/nouveau_display.h"
+#include "kernel/nouveau_engine.h"
 #include "kernel/dma.h"
 
 static alignas(4) uint32_t regs[0x800000/4];
@@ -20,8 +21,9 @@ static struct nouveau_dcb_output output;
 static struct os_framebuffer_info fb;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.base=0xa3000000,.aperture_size=0x1000000};
-void nouveau_engine_probe_log(const struct pci_device_lease *c,const struct pci_bar_resource *b)
-{ assert(c==&claim&&b==&bar&&!maps&&pll_planned); }
+void nouveau_engine_probe_upload_log(const struct pci_device_lease *c,const struct pci_bar_resource *b,
+	const struct nouveau_upload_probe_layout *layout)
+{ assert(c==&claim&&b==&bar&&!maps&&pll_planned&&layout&&layout->snapshot); }
 
 static void fixture(void)
 {

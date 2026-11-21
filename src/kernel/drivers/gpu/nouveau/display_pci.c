@@ -284,7 +284,11 @@ out:
 		klog("nouveau: DISP MMIO cleanup failed\n");kernel_halt();
 	}
 	/* End read-only capture before taking writable handoff leases. */
-	if(handoff_ready) nouveau_engine_probe_log(claim,bar);
+	if(handoff_ready) {
+		struct nouveau_upload_probe_layout layout={.snapshot=&s,.vram=vram,
+		    .scanout_sample=sample_candidate,.scanout_size=fb.size,.head=p.head};
+		nouveau_engine_probe_upload_log(claim,bar,&layout);
+	}
 }
 
 void nouveau_display_probe_log(const struct pci_device_lease *claim,

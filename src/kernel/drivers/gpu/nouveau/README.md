@@ -736,3 +736,44 @@ idle mask всех каналов, затем маскируются IRQ и ра
 В журнал добавлены saved firmware/supervisor, `core drain after firmware`
 и `core after drain`. Работоспособность нового порядка на GP107 ещё не
 подтверждена; успешные host-модели не означают аппаратного handoff.
+
+## Нативная проверочная загрузка instance в VRAM
+
+На GTX 1050 Ti аппаратно подтверждены `core drain after firmware=ok`,
+core control 0x48010088, `take=ok`, `capabilities=ok`, `restored`.
+Следующий нативный шаг (`upload_pci.c`) выполняется между capabilities и
+возвратом firmware: backup 64KiB, upload подготовленного/relocated instance
+с RAMHT и DMA objects, readback всех DWORD, restore исходных DWORD и
+повторный readback. 0x610010 не записывается, PUT/descriptors/channels/PLL
+не изменяются; notifier и RAMHT остаются непривязанными.
+
+Первый поддержанный профиль ограничен head0, одним firmware scanout с
+выборочным соответствием VRAM=0, boot span <=16MiB, старым instance=1,
+BAR1 context=0 и BAR3 context=0x40000000. Дополнительный head timing или
+supervisor mask отключает upload. Первые 64MiB и последние 16MiB VRAM
+исключены из локального pool; 64KiB scratch размещается после первых
+64MiB. Это временная диагностическая область с обязательным восстановлением,
+а не постоянный VRAM allocator или доказательство перевода boot BAR.
+Доступ сериализован текущим PCI claim; другие GPU-драйверы/каналы не должны
+использовать этот GPU. До backup, upload и restore подтверждаются quiescent
+engine, все 17 idle channels, сброшенные firmware request/ack, неизменные
+instance и физические BAR contexts. Сам scanout продолжает работать из
+исключённой начальной области. Sampling не превращается в контракт владения
+всей framebuffer памятью; hardware upload остаётся экспериментальным.
+
+PRAMIN 0x1700 и aperture отображаются отдельными writable leases только
+на время теста, после успешного handoff. Callback ограничивает адреса
+ровно выделенными 64KiB; window select имеет readback. Исходный window
+восстанавливается и проверяется перед unmap/возвратом firmware. При сбое
+backup загрузка не начинается; при сбое upload применяется существующий
+проверяемый rollback. Ошибка VRAM/window rollback останавливает ядро с
+сохранённым состоянием/leases, не отдавая firmware изменённую память.
+
+Ожидаемые строки: `UPLOAD instance/RAMHT verified bytes=65536 (not bound)`,
+`UPLOAD original VRAM restored and verified`, `UPLOAD PRAMIN window restored`,
+затем `HANDOFF restored; no instance bind/channel start`. Host-тест исполняет
+нативный адаптер над моделью PCI/MMIO: проверяет загруженные RAMHT/notifier,
+восстановление всех исходных регистров/VRAM/window, все новые map/address
+и heap отказы, неподдержанный scanout и изменение BAR context после snapshot.
+Транспортные отказы каждого слова и lost writes покрываются существующим
+`nouveau_upload` тестом. Аппаратные upload/readback/restore ещё не подтверждены.
