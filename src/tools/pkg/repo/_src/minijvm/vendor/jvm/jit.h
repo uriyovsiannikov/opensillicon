@@ -11,14 +11,22 @@ extern "C" {
 #include "jvm.h"
 #include "jvm_util.h"
 
-#if defined(OPEN_SILLICON) || __JVM_OS_IOS__ || __JVM_OS_CYGWIN__ || __JVM_ARCH_32__
+#if __JVM_OS_IOS__ || __JVM_OS_CYGWIN__ || __JVM_ARCH_32__
     #define JIT_ENABLE 0
 #else
     #define JIT_ENABLE 01
 #endif
 
+#ifdef OPEN_SILLICON
+/* World creation calls expensive chunk routines only hundreds of times.
+ * Compile before most of that first-world workload has already run. */
+#define JIT_COMPILE_EXEC_COUNT 64
+#else
 #define JIT_COMPILE_EXEC_COUNT 500
+#endif
 #define JIT_DEBUG 0
+extern int minijvm_jit_enabled;
+extern unsigned long minijvm_jit_compiled;
 
 enum {
     LOCAL_METHOD = 0,

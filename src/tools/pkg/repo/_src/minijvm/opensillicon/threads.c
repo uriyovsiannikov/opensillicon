@@ -1,15 +1,19 @@
 /* SPDX-License-Identifier: MIT */
 #include <errno.h>
+#include <cpuid.h>
+#include "threads.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include "tinycthread.h"
+#include "profile.h"
 
 enum { STACK_SIZE = 2 * 1024 * 1024, TLS_KEYS = 16, PAGE = 4096 };
 #define MAP_FAILED ((void *)-1)
 enum state { READY, WAITING, FINISHED };
 struct fiber {
+	struct jvm_profile_scope *profile;
 	struct fiber *next;
 	thrd_t id;
 	uint64_t *context;
@@ -86,13 +90,16 @@ static void wake(const void *event, int all)
 
 static void schedule(void)
 {
+	PROFILE_SCOPE(PROFILE_SCHED);
 	reap();
 	for (;;) {
-		uint64_t now = clock_ns(CLOCK_MONOTONIC), next_deadline = UINT64_MAX;
+		uint64_t now = 0, next_deadline = UINT64_MAX;
+		int clock_read = 0;
 		struct fiber *start = current->next ? current->next : fibers;
 		struct fiber *next = start;
 		do {
 			if (next->state == WAITING && next->deadline != UINT64_MAX) {
+				if (!clock_read) { now = clock_ns(CLOCK_MONOTONIC); clock_read = 1; }
 				if (next->deadline <= now) {
 					next->wait_on = NULL;
 					next->result = thrd_timeout;
@@ -107,6 +114,7 @@ static void schedule(void)
 					old->saved_errno = errno;
 					current = next;
 					errno = next->saved_errno;
+					old->profile = jvm_profile_switch(next->profile);
 					fiber_switch(&old->context, next->context);
 				}
 				return;
@@ -120,7 +128,7 @@ static void schedule(void)
 		}
 		uint64_t delay = next_deadline - now;
 		struct timespec sleep = {delay / 1000000000, delay % 1000000000};
-		nanosleep(&sleep, NULL);
+		{ PROFILE_SCOPE(PROFILE_WAIT); nanosleep(&sleep, NULL); }
 	}
 }
 
@@ -169,6 +177,42 @@ int thrd_create(thrd_t *id, thrd_start_t start, void *arg)
 thrd_t thrd_current(void) { return current->id; }
 int thrd_equal(thrd_t a, thrd_t b) { return a == b; }
 void thrd_yield(void) { if (fibers != current || current->next) schedule(); }
+
+/* Poll GC/suspension at the existing backedges, but switch fibers at a time
+ * quantum instead of every 256 loop branches. Calibrate passively against the
+ * OS clock; no assumed CPU MHz and no startup sleep. Deadlines and blocking
+ * waits still go through schedule() immediately. */
+static uint64_t yield_start_ticks, yield_start_ns, yield_quantum, yield_last;
+static int yield_clock_checked, yield_invariant;
+static uint64_t yield_ticks(void) {
+    unsigned lo,hi;
+    __asm__ volatile("lfence; rdtsc" : "=a"(lo),"=d"(hi) :: "memory");
+    return ((uint64_t)hi<<32)|lo;
+}
+void minijvm_cooperative_yield(void) {
+    if(!yield_clock_checked) {
+        unsigned a,b,c,d;
+        if(__get_cpuid_max(0x80000000,0)>=0x80000007) {
+            __cpuid(0x80000007,a,b,c,d);yield_invariant=!!(d&(1U<<8));
+        }
+        yield_clock_checked=1;
+        if(yield_invariant) {yield_start_ns=clock_ns(CLOCK_MONOTONIC);yield_start_ticks=yield_ticks();}
+    }
+    if(yield_invariant) {
+        uint64_t now=yield_ticks();
+        if(yield_quantum) {
+            if(now>=yield_last && now-yield_last<yield_quantum)return;
+        } else {
+            uint64_t ns=clock_ns(CLOCK_MONOTONIC);
+            if(ns>yield_start_ns && ns-yield_start_ns>=50000000 && now>yield_start_ticks) {
+                yield_quantum=(uint64_t)(((__uint128_t)(now-yield_start_ticks)*1000000)/(ns-yield_start_ns));
+                if(!yield_quantum)yield_invariant=0;
+            }
+        }
+    }
+    thrd_yield();
+    if(yield_invariant)yield_last=yield_ticks();
+}
 
 _Noreturn void thrd_exit(int result)
 {

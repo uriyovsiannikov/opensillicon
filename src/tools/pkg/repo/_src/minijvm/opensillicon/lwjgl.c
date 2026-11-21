@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "jvm_util.h"
+#include "profile.h"
 
 Display *awt_x_display(void);
 void lwjgl_input_close(void);
@@ -14,6 +15,9 @@ void lwjgl_input_close(void);
 static struct {
     OSMesaContext context;
     XImage *image;
+    unsigned char *previous;
+    Pixmap backing;
+    int previous_valid;
     GC gc;
     Window canvas;
     Window parent;
@@ -82,6 +86,12 @@ static int bind_image(Display *display, int width, int height)
     if (surface.image) {
         XDestroyImage(surface.image);
     }
+    free(surface.previous);
+    if (surface.backing) XFreePixmap(display, surface.backing);
+    surface.previous = malloc((size_t)image->bytes_per_line * image->height);
+    surface.backing = surface.previous ? XCreatePixmap(display, surface.canvas,
+        width, height, surface.depth) : None;
+    surface.previous_valid = 0;
     surface.image = image;
     return 1;
 }
@@ -95,6 +105,8 @@ static void destroy_surface(Display *display)
     if (surface.image) {
         XDestroyImage(surface.image);
     }
+    free(surface.previous);
+    if (surface.backing) XFreePixmap(display, surface.backing);
     if (surface.gc) {
         XFreeGC(display, surface.gc);
     }
@@ -124,6 +136,7 @@ static s32 create(Runtime *runtime, JClass *clazz)
     surface.depth = attributes.depth;
     surface.canvas = canvas;
     surface.gc = XCreateGC(display, canvas, 0, NULL);
+    if (surface.gc) XSetGraphicsExposures(display, surface.gc, False);
     surface.context = OSMesaCreateContextExt(OSMESA_BGRA, localvar_getInt(args, 3), 0, 0, NULL);
     int ok = surface.gc && surface.context &&
         bind_image(display, localvar_getInt(args, 1), localvar_getInt(args, 2));
@@ -134,6 +147,55 @@ static s32 create(Runtime *runtime, JClass *clazz)
     return RUNTIME_STATUS_NORMAL;
 }
 
+/* Keep an unclipped server-side copy. Every present repaints the window,
+ * including after exposure, but only changed pixels cross the socket. */
+static void present_image(Display *display)
+{
+    XImage *image = surface.image;
+    int left = 0, top = 0, right = image->width, bottom = image->height;
+    if (!surface.previous || !surface.backing) {
+        PROFILE_SCOPE(PROFILE_X11_SEND);
+        jvm_profile_x11_bytes((uint64_t)image->width*image->height*4);
+        XPutImage(display, surface.canvas, surface.gc, image, 0, 0, 0, 0,
+            image->width, image->height);
+        XFlush(display);
+        return;
+    }
+    if (surface.previous_valid) {
+        PROFILE_SCOPE(PROFILE_X11_SCAN);
+        left = image->width; right = 0; top = image->height; bottom = 0;
+        for (int y = 0; y < image->height; ++y) {
+            const uint32_t *row = (const uint32_t *)(image->data + (size_t)y * image->bytes_per_line);
+            const uint32_t *old = (const uint32_t *)(surface.previous + (size_t)y * image->bytes_per_line);
+            if (!memcmp(row, old, (size_t)image->width * 4)) continue;
+            int x = 0, end = image->width;
+            while (x < end && row[x] == old[x]) ++x;
+            while (end > x && row[end - 1] == old[end - 1]) --end;
+            if (x < left) left = x;
+            if (end > right) right = end;
+            if (y < top) top = y;
+            bottom = y + 1;
+        }
+    }
+    if (right > left && bottom > top) {
+        { PROFILE_SCOPE(PROFILE_X11_SEND);
+        jvm_profile_x11_bytes((uint64_t)(right-left)*(bottom-top)*4);
+        XPutImage(display, surface.backing, surface.gc, image, left, top, left, top,
+            right - left, bottom - top);
+        }
+        PROFILE_SCOPE(PROFILE_X11_SCAN);
+        for (int y = top; y < bottom; ++y)
+            memcpy(surface.previous + (size_t)y * image->bytes_per_line + left * 4,
+                image->data + (size_t)y * image->bytes_per_line + left * 4,
+                (size_t)(right - left) * 4);
+    }
+    surface.previous_valid = 1;
+    PROFILE_SCOPE(PROFILE_X11_COPY);
+    XCopyArea(display, surface.backing, surface.canvas, surface.gc, 0, 0,
+        image->width, image->height, 0, 0);
+    XFlush(display);
+}
+
 static s32 present(Runtime *runtime, JClass *clazz)
 {
     Display *display = awt_x_display();
@@ -142,10 +204,11 @@ static s32 present(Runtime *runtime, JClass *clazz)
         LocalVarItem *args = runtime->localvar;
         int width = localvar_getInt(args, 1);
         int height = localvar_getInt(args, 2);
-        glFinish();
-        XPutImage(display, surface.canvas, surface.gc, surface.image, 0, 0, 0, 0,
-            surface.image->width, surface.image->height);
-        XFlush(display);
+        { PROFILE_SCOPE(PROFILE_FINISH); glFinish(); }
+        { PROFILE_SCOPE(PROFILE_X11);
+        present_image(display);
+        }
+        jvm_profile_frame();
         if (width != surface.image->width || height != surface.image->height) {
             ok = bind_image(display, width, height);
         }
@@ -207,6 +270,7 @@ static GLfloat arg_float(Runtime *runtime, int slot)
 #define GL_VOID(name, ...) \
     static s32 call_##name(Runtime *runtime, JClass *clazz) \
     { \
+        PROFILE_SCOPE(PROFILE_GL); \
         name(__VA_ARGS__); \
         return RUNTIME_STATUS_NORMAL; \
     }
@@ -264,18 +328,21 @@ GL_VOID(glClientActiveTexture, ARG_INT(0))
 GL_VOID(glMultiTexCoord2f, ARG_INT(0), ARG_FLOAT(1), ARG_FLOAT(2))
 static s32 call_glGenLists(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     push_int(runtime->stack, glGenLists(ARG_INT(0)));
     return RUNTIME_STATUS_NORMAL;
 }
 
 static s32 call_glGetError(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     push_int(runtime->stack, glGetError());
     return RUNTIME_STATUS_NORMAL;
 }
 
 static s32 call_glGetString(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     const GLubyte *value = glGetString(ARG_INT(0));
     push_ref(runtime->stack, value ? jstring_create_cstr((const char *) value, runtime) : NULL);
     return RUNTIME_STATUS_NORMAL;
@@ -290,6 +357,7 @@ static s32 bad_buffer(Runtime *runtime)
 
 static s32 mult_matrix(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 0);
     glMultMatrixf((float *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -297,6 +365,7 @@ static s32 mult_matrix(Runtime *runtime, JClass *clazz)
 
 static s32 fog_vector(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 1);
     glFogfv(ARG_INT(0), (float *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -304,6 +373,7 @@ static s32 fog_vector(Runtime *runtime, JClass *clazz)
 
 static s32 light_vector(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 2);
     glLightfv(ARG_INT(0), ARG_INT(1), (float *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -311,6 +381,7 @@ static s32 light_vector(Runtime *runtime, JClass *clazz)
 
 static s32 light_model_vector(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 1);
     glLightModelfv(ARG_INT(0), (float *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -318,6 +389,7 @@ static s32 light_model_vector(Runtime *runtime, JClass *clazz)
 
 static s32 texgen_vector(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 2);
     glTexGenfv(ARG_INT(0), ARG_INT(1), (float *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -351,6 +423,7 @@ static int query_count(GLenum parameter)
 
 static s32 get_float(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int count = query_count(ARG_INT(0));
     if (!count) return bad_buffer(runtime);
     Instance *values = jarray_create_by_type_index(runtime, count, DATATYPE_FLOAT);
@@ -361,6 +434,7 @@ static s32 get_float(Runtime *runtime, JClass *clazz)
 
 static s32 get_integer(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int count = query_count(ARG_INT(0));
     if (!count) return bad_buffer(runtime);
     Instance *values = jarray_create_by_type_index(runtime, count, DATATYPE_INT);
@@ -371,6 +445,7 @@ static s32 get_integer(Runtime *runtime, JClass *clazz)
 
 static s32 gen_textures(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int count = ARG_INT(0);
     Instance *values = jarray_create_by_type_index(runtime, count, DATATYPE_INT);
     glGenTextures(count, (GLuint *) values->arr_body);
@@ -380,6 +455,7 @@ static s32 gen_textures(Runtime *runtime, JClass *clazz)
 
 static s32 delete_textures(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 0);
     glDeleteTextures(values->arr_length, (GLuint *) values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -387,6 +463,7 @@ static s32 delete_textures(Runtime *runtime, JClass *clazz)
 
 static s32 call_lists(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *values = localvar_getRefer(runtime->localvar, 0);
     glCallLists(values->arr_length, GL_UNSIGNED_INT, values->arr_body);
     return RUNTIME_STATUS_NORMAL;
@@ -428,6 +505,7 @@ static int pixel_bytes(int width, int height, int format, int type, int pack)
 
 static s32 get_pixel_bytes(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int bytes = pixel_bytes(ARG_INT(0), ARG_INT(1), ARG_INT(2), ARG_INT(3), ARG_INT(4));
     if (bytes < 0) return bad_buffer(runtime);
     push_int(runtime->stack, bytes);
@@ -446,6 +524,7 @@ static int valid_pixels(Instance *array, int offset, int bytes)
 
 static s32 tex_image(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *pixels = localvar_getRefer(runtime->localvar, 8);
     int offset = ARG_INT(9);
     int bytes = pixel_bytes(ARG_INT(3), ARG_INT(4), ARG_INT(6), ARG_INT(7), 0);
@@ -457,6 +536,7 @@ static s32 tex_image(Runtime *runtime, JClass *clazz)
 
 static s32 tex_sub_image(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *pixels = localvar_getRefer(runtime->localvar, 8);
     int offset = ARG_INT(9);
     int bytes = pixel_bytes(ARG_INT(4), ARG_INT(5), ARG_INT(6), ARG_INT(7), 0);
@@ -468,6 +548,7 @@ static s32 tex_sub_image(Runtime *runtime, JClass *clazz)
 
 static s32 read_pixels(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     Instance *pixels = localvar_getRefer(runtime->localvar, 6);
     int offset = ARG_INT(7);
     int bytes = pixel_bytes(ARG_INT(2), ARG_INT(3), ARG_INT(4), ARG_INT(5), 1);
@@ -480,6 +561,7 @@ static s32 read_pixels(Runtime *runtime, JClass *clazz)
 
 static s32 bind_pointer(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int kind = ARG_INT(0), size = ARG_INT(1), type = ARG_INT(2), stride = ARG_INT(3);
     Instance *buffer = localvar_getRefer(runtime->localvar, 4);
     int offset = ARG_INT(5), length = ARG_INT(6);
@@ -524,6 +606,7 @@ static int array_fits(int index, int first, int count)
 
 static s32 draw_arrays(Runtime *runtime, JClass *clazz)
 {
+    PROFILE_SCOPE(PROFILE_GL);
     int first = ARG_INT(1), count = ARG_INT(2);
     if (first >= 0 && count > 0) {
         if ((glIsEnabled(GL_VERTEX_ARRAY) && !array_fits(0, first, count)) ||

@@ -522,7 +522,14 @@ public class StringBuilder implements Appendable {
      */
 //    public native StringBuilder append(int i);
     public StringBuilder append(int i) {
-        return append(String.valueOf(i));
+        if (i == Integer.MIN_VALUE) return append("-2147483648");
+        int digits = Integer.stringSize(i < 0 ? -i : i) + (i < 0 ? 1 : 0);
+        int newcount = count + digits;
+        if (newcount < 0) throw new OutOfMemoryError();
+        if (newcount > value.length) expandCapacity(newcount);
+        Integer.getChars(i, newcount, value);
+        count = newcount;
+        return this;
     }
 
     /**
@@ -539,7 +546,14 @@ public class StringBuilder implements Appendable {
      * @see java.lang.StringBuilder#append(java.lang.String)
      */
     public StringBuilder append(long l) {
-        return append(String.valueOf(l));
+        if (l == Long.MIN_VALUE) return append("-9223372036854775808");
+        int digits = Long.stringSize(l < 0 ? -l : l) + (l < 0 ? 1 : 0);
+        int newcount = count + digits;
+        if (newcount < 0) throw new OutOfMemoryError();
+        if (newcount > value.length) expandCapacity(newcount);
+        Long.getChars(l, newcount, value);
+        count = newcount;
+        return this;
     }
 
     /**

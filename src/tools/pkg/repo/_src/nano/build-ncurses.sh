@@ -23,14 +23,21 @@ build_triplet=$(sh "$src/config.guess")
 cflags='-O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
 cppflags="-nostdinc -I$root/src/user/libos/include -isystem $($cc -print-file-name=include)"
 cd "$out/ncurses"
-if [ ! -f Makefile ]; then
+fallbacks=xterm,xterm-256color,screen,screen-256color,vt100,vt220,linux,dumb
+if [ ! -f Makefile ] || [ "$(cat .opensillicon-fallbacks 2>/dev/null || true)" != "$fallbacks" ]; then
 	CPPFLAGS="$cppflags" CFLAGS="$cflags" \
 	LDFLAGS="-nostdlib -static -no-pie -Wl,-T,$root/src/user/c_linker.ld $root/src/build/libos/crt0.o" \
 	LIBS="$root/src/build/libos/liblibos.a -lgcc" \
 	build_component "LIB ncurses configure" "$src/configure" --build="$build_triplet" --host=x86_64-elf --prefix=/usr \
 		--without-progs --without-tests --without-manpages --without-cxx \
 		--without-cxx-binding --without-ada --without-debug --without-shared \
-		--disable-widec --disable-database --with-fallbacks=xterm,vt100,linux
+		--disable-widec --disable-database --with-fallbacks="$fallbacks"
+	printf '%s\n' "$fallbacks" > .opensillicon-fallbacks
+fi
+# configure changes FALLBACK_LIST without making fallback.c depend on it.
+fallback_words=$(printf '%s' "$fallbacks" | tr ',' ' ')
+if ! grep -Fq "/* fallback entries for: $fallback_words */" ncurses/fallback.c 2>/dev/null; then
+    rm -f ncurses/fallback.c
 fi
 # Header generators run on the build host; the library itself uses libos.
 build_component "LIB ncurses headers" make -C include

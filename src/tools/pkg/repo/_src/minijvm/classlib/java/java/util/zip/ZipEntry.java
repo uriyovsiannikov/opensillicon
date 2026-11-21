@@ -15,6 +15,7 @@ public class ZipEntry {
 
     String name;
     byte[] contents;
+    long uncompressedSize = -1;
     String comment;
     boolean isDir;
     //使用指定名称创建新的 ZIP 条目。 
@@ -28,6 +29,7 @@ public class ZipEntry {
         this.name = e.name;
         this.contents = e.contents;
         this.isDir = e.isDir;
+        this.uncompressedSize = e.uncompressedSize;
     }
 
     void load(String zipFile) {
@@ -73,7 +75,7 @@ public class ZipEntry {
         if (contents != null) {
             return contents.length;
         }
-        return 0;
+        return uncompressedSize;
     }
     //返回条目的修改时间；如果未指定，则返回 -1。 
 

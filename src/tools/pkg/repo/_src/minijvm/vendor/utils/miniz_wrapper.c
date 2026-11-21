@@ -2,6 +2,23 @@
 #include "miniz_wrapper.h"
 
 
+/* Lookup one central-directory entry without materializing every filename. */
+s32 zip_entry_info(char const *jarpath, char const *filename, u64 *size, s32 *directory) {
+    mz_zip_archive archive = {0};
+    mz_zip_archive_file_stat stat = {0};
+    if (filename && filename[0] == '/') ++filename;
+    if (!filename || !mz_zip_reader_init_file(&archive, jarpath, 0)) return -1;
+    int index = mz_zip_reader_locate_file(&archive, filename, NULL, 0);
+    int result = -1;
+    if (index >= 0 && mz_zip_reader_file_stat(&archive, index, &stat)) {
+        *size = stat.m_uncomp_size;
+        *directory = mz_zip_reader_is_file_a_directory(&archive, index);
+        result = 0;
+    }
+    mz_zip_reader_end(&archive);
+    return result;
+}
+
 s32 zip_loadfile(char const *jarpath, char const *filename, ByteBuf *buf) {
     int file_index = 0;
     mz_zip_archive zipArchive = {0};

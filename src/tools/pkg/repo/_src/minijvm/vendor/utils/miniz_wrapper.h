@@ -9,6 +9,8 @@ extern "C" {
 #include "arraylist.h"
 #include "utf8_string.h"
 
+s32 zip_entry_info(char const *jarpath, char const *filename, u64 *size, s32 *directory);
+
 s32 zip_loadfile(char const *jarpath, char const *filename, ByteBuf *buf);
 
 s32 zip_savefile(char const *jarpath, char const *filename, ByteBuf *buf);

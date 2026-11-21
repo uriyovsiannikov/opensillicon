@@ -92,6 +92,17 @@ public class InnerRandomAccessFile extends InnerFile {
         return written;
     }
 
+    /** One native write for a big-endian DataOutput primitive. */
+    public void writeNumber(long value, int bytes) throws IOException {
+        if (filePointer == 0) throw new IOException("File is closed");
+        if (bytes != 2 && bytes != 4 && bytes != 8) throw new IllegalArgumentException();
+        if (writeNumber0(filePointer, value, bytes) != bytes)
+            throw new IOException("Cannot write " + path);
+        if (flush && flush0(filePointer) != 0) throw new IOException("Cannot flush " + path);
+    }
+
+    private static native int writeNumber0(long file, long value, int bytes);
+
     public long position() throws IOException {
         long position = position0(filePointer);
         if (position < 0) throw new IOException("Cannot get file position");

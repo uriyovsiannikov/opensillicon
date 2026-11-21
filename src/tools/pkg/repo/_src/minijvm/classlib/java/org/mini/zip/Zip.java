@@ -105,6 +105,15 @@ public class Zip {
 
     public native static byte[] compress0(byte[] data);
 
+    public static long[] entryInfo(String zipFile, String name) {
+        try {
+            return entryInfo0((zipFile + "\0").getBytes("utf-8"), (name + "\0").getBytes("utf-8"));
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    static native long[] entryInfo0(byte[] zipFile, byte[] name);
+
     static native byte[] getEntry0(byte[] zippath, byte[] path);
 
     static native int putEntry0(byte[] zippath, byte[] path, byte[] contents);

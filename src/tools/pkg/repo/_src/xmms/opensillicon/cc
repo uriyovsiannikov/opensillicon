@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+root=${OPEN_SILLICON_ROOT:?}
+for arg do case "$arg" in *.S)exec gcc -fno-pie -fno-pic -mno-red-zone "$@";; esac;done
+compile=false
+for arg do case "$arg" in -c|-E|-S)compile=true;; esac;done
+if "$compile";then
+ exec gcc -std=gnu99 -Wno-implicit-int -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -O2 -fgnu89-inline -fno-strict-aliasing -ffreestanding -fno-builtin -fno-pie -fno-pic -fno-stack-protector -mno-red-zone -nostdinc -I"$root/src/user/libos/include" -I"$root/src/include" -I"$root/src/tools/pkg/repo/_src/xmms/upstream" -DM_SQRT2=1.41421356237309504880 -include sys/select.h -DFILENAME_MAX=4096 -DOPEN_SILLICON -I"$root/src/tools/pkg/repo/_src/xmms/opensillicon/include" -idirafter /usr/include -isystem "$(gcc -print-file-name=include)" "$@"
+fi
+exec gcc -std=gnu99 -Wno-implicit-int -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -ffreestanding -fno-builtin -fno-pie -fno-pic -nostdinc -I"$root/src/user/libos/include" -I"$root/src/include" -I"$root/src/tools/pkg/repo/_src/xmms/upstream" -DM_SQRT2=1.41421356237309504880 -include sys/select.h -DFILENAME_MAX=4096 -DOPEN_SILLICON -I"$root/src/tools/pkg/repo/_src/xmms/opensillicon/include" -idirafter /usr/include -isystem "$(gcc -print-file-name=include)" -static -no-pie -nostdlib -Wl,-T,"$root/src/user/c_linker.ld" "$root/src/build/libos/crt0.o" "$@" -Wl,--start-group "$root/src/build/libos/liblibos.a" -lgcc -Wl,--end-group

@@ -96,9 +96,15 @@ public final class Byte extends Number implements Comparable<Byte> {
      * @return a <tt>Byte</tt> instance representing <tt>b</tt>.
      * @since  1.5
      */
+    private static class ValueCache {
+        static final Byte[] values = new Byte[256];
+        static {
+            for (int i = 0; i < values.length; i++) values[i] = new Byte((byte)(i - 128));
+        }
+    }
+
     public static Byte valueOf(byte b) {
-	
-	return new Byte(b);
+        return ValueCache.values[b + 128];
     }
 
     /**

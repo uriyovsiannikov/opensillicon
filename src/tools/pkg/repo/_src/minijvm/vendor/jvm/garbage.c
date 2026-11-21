@@ -1,3 +1,6 @@
+#ifdef OPEN_SILLICON
+#include "../../opensillicon/profile.h"
+#endif
 
 #include <errno.h>
 #include "jvm.h"
@@ -269,8 +272,14 @@ s32 _gc_thread_run(void *para) {
 
         s64 heap = gc_sum_heap(collector);
         if (cur_mil - collector->lastgc > jvm->garbage_collect_period_ms || heap >= jvm->max_heap_size * jvm->heap_overload_percent / 100) {
+#ifdef OPEN_SILLICON
+            { PROFILE_SCOPE(PROFILE_GC);
+#endif
             _garbage_collect(collector);
-            collector->lastgc = cur_mil;
+#ifdef OPEN_SILLICON
+            }
+#endif
+            collector->lastgc = currentTimeMillis();
         } else {
             threadSleep(1000);
         }

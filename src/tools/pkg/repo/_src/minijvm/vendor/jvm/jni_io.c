@@ -6,6 +6,9 @@
 #include <fcntl.h>
 #include <string.h>   // NULL and possibly memcpy, memset
 #include "jvm.h"
+#ifdef OPEN_SILLICON
+#include "../../opensillicon/profile.h"
+#endif
 #include "garbage.h"
 #include "jvm_util.h"
 #include "../utils/miniz_wrapper.h"
@@ -44,6 +47,9 @@ Utf8String *getTmpDir() {
 
 
 s32 org_mini_fs_InnerFile_openFile(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *name_arr = localvar_getRefer(runtime->localvar, 0);
     Instance *mode_arr = localvar_getRefer(runtime->localvar, 1);
     if (name_arr) {
@@ -61,6 +67,9 @@ s32 org_mini_fs_InnerFile_openFile(Runtime *runtime, JClass *clazz) {
 }
 
 static s32 open_random_file(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *path = localvar_getRefer(runtime->localvar, 0);
     int writable = localvar_getInt(runtime->localvar, 1);
     FILE *file = NULL;
@@ -76,12 +85,18 @@ static s32 open_random_file(Runtime *runtime, JClass *clazz) {
 }
 
 static s32 random_file_position(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     FILE *file = (void *) (intptr_t) localvar_getLong(runtime->localvar, 0);
     push_long(runtime->stack, file ? ftell(file) : -1);
     return RUNTIME_STATUS_NORMAL;
 }
 
 static s32 random_file_length(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     FILE *file = (void *) (intptr_t) localvar_getLong(runtime->localvar, 0);
     long position = file ? ftell(file) : -1;
     long length = -1;
@@ -94,6 +109,9 @@ static s32 random_file_length(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_closeFile(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, 0);
     FILE *fd = (FILE *) (intptr_t) l2d.l;
@@ -110,6 +128,9 @@ s32 org_mini_fs_InnerFile_closeFile(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_read0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, 0);
     FILE *fd = (FILE *) (intptr_t) l2d.l;
@@ -133,6 +154,9 @@ s32 org_mini_fs_InnerFile_read0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_write0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, 0);
     FILE *fd = (FILE *) (intptr_t) l2d.l;
@@ -156,7 +180,35 @@ s32 org_mini_fs_InnerFile_write0(Runtime *runtime, JClass *clazz) {
     return 0;
 }
 
+/* Avoid one VM transition and one descriptor write per byte of a region
+ * header. Keep each Java write visible immediately; no deferred write cache. */
+static s32 org_mini_fs_InnerRandomAccessFile_writeNumber0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
+    FILE *fd=(FILE *)(intptr_t)localvar_getLong(runtime->localvar,0);
+    u64 value=(u64)localvar_getLong(runtime->localvar,2);
+    s32 bytes=localvar_getInt(runtime->localvar,4);
+    unsigned char buffer[8];
+    s32 result=-1;
+    if(fd && (bytes==2 || bytes==4 || bytes==8)) {
+        for(s32 i=0;i<bytes;i++)buffer[i]=(unsigned char)(value >> ((bytes-i-1)*8));
+        size_t done=0;
+        while(done<(size_t)bytes) {
+            size_t n=fwrite(buffer+done,1,(size_t)bytes-done,fd);
+            if(!n)break;
+            done+=n;
+        }
+        if(done==(size_t)bytes)result=bytes;
+    }
+    push_int(runtime->stack,result);
+    return RUNTIME_STATUS_NORMAL;
+}
+
 s32 org_mini_fs_InnerFile_readbuf(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     s32 pos = 0;
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, pos);
@@ -182,6 +234,9 @@ s32 org_mini_fs_InnerFile_readbuf(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_writebuf(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     s32 pos = 0;
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, pos);
@@ -207,6 +262,9 @@ s32 org_mini_fs_InnerFile_writebuf(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_seek0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     s32 pos = 0;
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, pos);
@@ -228,6 +286,9 @@ s32 org_mini_fs_InnerFile_seek0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_available0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     s32 pos = 0;
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, pos);
@@ -250,6 +311,9 @@ s32 org_mini_fs_InnerFile_available0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_setLength0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     FILE *fd = (FILE *) (intptr_t) localvar_getLong(runtime->localvar, 0);
     s64 length = localvar_getLong(runtime->localvar, 2);
     int result = -1;
@@ -272,6 +336,9 @@ s32 org_mini_fs_InnerFile_setLength0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_flush0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Long2Double l2d;
     l2d.l = localvar_getLong(runtime->localvar, 0);
     FILE *fd = (FILE *) (intptr_t) l2d.l;
@@ -288,6 +355,9 @@ s32 org_mini_fs_InnerFile_flush0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_loadFS(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *name_arr = localvar_getRefer(runtime->localvar, 0);
     Instance *fd = localvar_getRefer(runtime->localvar, 1);
     s32 ret = -1;
@@ -335,6 +405,9 @@ s32 org_mini_fs_InnerFile_loadFS(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_listDir(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *name_arr = localvar_getRefer(runtime->localvar, 0);
     if (name_arr) {
         Utf8String *filepath = utf8_create_part_c(name_arr->arr_body, 0, name_arr->arr_length);
@@ -385,6 +458,9 @@ s32 org_mini_fs_InnerFile_listDir(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_getcwd(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *path_arr = localvar_getRefer(runtime->localvar, 0);
     if (path_arr) {
         __refer ret = getcwd(path_arr->arr_body, path_arr->arr_length);
@@ -400,6 +476,9 @@ s32 org_mini_fs_InnerFile_getcwd(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_chmod(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *path_arr = localvar_getRefer(runtime->localvar, 0);
     s32 mode = localvar_getInt(runtime->localvar, 1);
     if (path_arr) {
@@ -416,6 +495,9 @@ s32 org_mini_fs_InnerFile_chmod(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_rename0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *old_arr = localvar_getRefer(runtime->localvar, 0);
     Instance *new_arr = localvar_getRefer(runtime->localvar, 1);
     if (old_arr && new_arr) {
@@ -437,6 +519,9 @@ s32 org_mini_fs_InnerFile_rename0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_getTmpDir(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Utf8String *tdir = getTmpDir();
     if (tdir) {
         Instance *jstr = jstring_create(tdir, runtime);
@@ -453,6 +538,9 @@ s32 org_mini_fs_InnerFile_getTmpDir(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_mkdir0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *path_arr = localvar_getRefer(runtime->localvar, 0);
     s32 ret = -1;
     if (path_arr) {
@@ -473,6 +561,9 @@ s32 org_mini_fs_InnerFile_mkdir0(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_getOS(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
 #if __JVM_OS_VS__ || __JVM_OS_MINGW__ || __JVM_OS_CYGWIN__
     push_int(runtime->stack, 1);
 #else
@@ -486,6 +577,9 @@ s32 org_mini_fs_InnerFile_getOS(Runtime *runtime, JClass *clazz) {
 }
 
 s32 org_mini_fs_InnerFile_delete0(Runtime *runtime, JClass *clazz) {
+#ifdef OPEN_SILLICON
+    PROFILE_SCOPE(PROFILE_FILE);
+#endif
     Instance *path_arr = localvar_getRefer(runtime->localvar, 0);
     s32 ret = -1;
     if (path_arr) {
@@ -508,14 +602,27 @@ s32 org_mini_fs_InnerFile_delete0(Runtime *runtime, JClass *clazz) {
     return 0;
 }
 
+static s32 zip_entry_info0(Runtime *runtime, JClass *clazz) {
+    Instance *path = localvar_getRefer(runtime->localvar, 0);
+    Instance *name = localvar_getRefer(runtime->localvar, 1);
+    Instance *info = NULL;
+    u64 size; s32 directory;
+    if (path && name && !zip_entry_info(path->arr_body, name->arr_body, &size, &directory)) {
+        info = jarray_create_by_type_index(runtime, 2, DATATYPE_LONG);
+        if (info) { ((s64 *)info->arr_body)[0] = size; ((s64 *)info->arr_body)[1] = directory; }
+    }
+    push_ref(runtime->stack, info);
+    return RUNTIME_STATUS_NORMAL;
+}
+
 s32 org_mini_zip_ZipFile_getEntry0(Runtime *runtime, JClass *clazz) {
     Instance *zip_path_arr = localvar_getRefer(runtime->localvar, 0);
     Instance *name_arr = localvar_getRefer(runtime->localvar, 1);
     s32 ret = -1;
     if (zip_path_arr && name_arr) {
         ByteBuf *buf = bytebuf_create(0);
-        zip_loadfile(zip_path_arr->arr_body, name_arr->arr_body, buf);
-        if (buf->wp) {
+        int loaded = zip_loadfile(zip_path_arr->arr_body, name_arr->arr_body, buf);
+        if (!loaded) {
             Instance *arr = jarray_create_by_type_index(runtime, buf->wp, DATATYPE_BYTE);
             memmove(arr->arr_body, buf->buf, buf->wp);
             push_ref(runtime->stack, arr);
@@ -723,6 +830,7 @@ static java_native_method METHODS_IO_TABLE[] = {
         {"org/mini/fs/InnerFile",     "openFile",             "([B[B)J",                          org_mini_fs_InnerFile_openFile},
         {"org/mini/fs/InnerFile",     "closeFile",            "(J)I",                             org_mini_fs_InnerFile_closeFile},
         {"org/mini/fs/InnerFile",     "read0",                "(J)I",                             org_mini_fs_InnerFile_read0},
+        {"org/mini/fs/InnerRandomAccessFile", "writeNumber0", "(JJI)I", org_mini_fs_InnerRandomAccessFile_writeNumber0},
         {"org/mini/fs/InnerFile",     "write0",               "(JI)I",                            org_mini_fs_InnerFile_write0},
         {"org/mini/fs/InnerFile",     "readbuf",              "(J[BII)I",                         org_mini_fs_InnerFile_readbuf},
         {"org/mini/fs/InnerFile",     "writebuf",             "(J[BII)I",                         org_mini_fs_InnerFile_writebuf},
@@ -739,6 +847,7 @@ static java_native_method METHODS_IO_TABLE[] = {
         {"org/mini/fs/InnerFile",     "delete0",              "([B)I",                            org_mini_fs_InnerFile_delete0},
         {"org/mini/fs/InnerFile",     "rename0",              "([B[B)I",                          org_mini_fs_InnerFile_rename0},
         {"org/mini/fs/InnerFile",     "getTmpDir",            "()Ljava/lang/String;",             org_mini_fs_InnerFile_getTmpDir},
+        {"org/mini/zip/Zip", "entryInfo0", "([B[B)[J", zip_entry_info0},
         {"org/mini/zip/Zip",          "getEntry0",            "([B[B)[B",                         org_mini_zip_ZipFile_getEntry0},
         {"org/mini/zip/Zip",          "putEntry0",            "([B[B[B)I",                        org_mini_zip_ZipFile_putEntry0},
         {"org/mini/zip/Zip",          "fileCount0",           "([B)I",                            org_mini_zip_ZipFile_fileCount0},

@@ -900,9 +900,7 @@ public class RandomAccessFile implements DataOutput, DataInput {
      * @exception IOException if an I/O error occurs.
      */
     public final void writeShort(int v) throws IOException {
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
-        //written += 2;
+        iraf.writeNumber(v, 2);
     }
 
     /**
@@ -913,9 +911,7 @@ public class RandomAccessFile implements DataOutput, DataInput {
      * @exception IOException if an I/O error occurs.
      */
     public final void writeChar(int v) throws IOException {
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
-        //written += 2;
+        iraf.writeNumber(v, 2);
     }
 
     /**
@@ -926,11 +922,7 @@ public class RandomAccessFile implements DataOutput, DataInput {
      * @exception IOException if an I/O error occurs.
      */
     public final void writeInt(int v) throws IOException {
-        write((v >>> 24) & 0xFF);
-        write((v >>> 16) & 0xFF);
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
-        //written += 4;
+        iraf.writeNumber(v, 4);
     }
 
     /**
@@ -941,15 +933,7 @@ public class RandomAccessFile implements DataOutput, DataInput {
      * @exception IOException if an I/O error occurs.
      */
     public final void writeLong(long v) throws IOException {
-        write((int) (v >>> 56) & 0xFF);
-        write((int) (v >>> 48) & 0xFF);
-        write((int) (v >>> 40) & 0xFF);
-        write((int) (v >>> 32) & 0xFF);
-        write((int) (v >>> 24) & 0xFF);
-        write((int) (v >>> 16) & 0xFF);
-        write((int) (v >>> 8) & 0xFF);
-        write((int) (v >>> 0) & 0xFF);
-        //written += 8;
+        iraf.writeNumber(v, 8);
     }
 
     /**

@@ -558,7 +558,15 @@ public final class Long extends Number implements Comparable<Long> {
      * @return a <tt>Long</tt> instance representing <tt>l</tt>.
      * @since  1.5
      */
+    private static class ValueCache {
+        static final Long[] values = new Long[256];
+        static {
+            for (int i = 0; i < values.length; i++) values[i] = new Long(i - 128);
+        }
+    }
+
     public static Long valueOf(long l) {
+        if (l >= -128 && l <= 127) return ValueCache.values[(int)l + 128];
         return new Long(l);
     }
 

@@ -339,7 +339,7 @@ $(BUILD_DIR)/nano/nano: $(NANO_SOURCES) $(NANO_DIR)/build.sh $(NCURSES_ARCHIVE) 
 		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
 	sh $(NANO_DIR)/build.sh
 
-src/tools/pkg/repo/_pkges/nano-9.3.spkg: $(BUILD_DIR)/nano/nano \
+src/tools/pkg/repo/_pkges/nano-9.3.1.spkg: $(BUILD_DIR)/nano/nano \
 		$(NANO_DIR)/README.md $(NANO_DIR)/GPL-3.0.txt $(NANO_NCURSES_COPYING) \
 		$(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(NANO_STAGE)
@@ -347,7 +347,7 @@ src/tools/pkg/repo/_pkges/nano-9.3.spkg: $(BUILD_DIR)/nano/nano \
 	install -D -m 644 $(NANO_DIR)/GPL-3.0.txt $(NANO_STAGE)/usr/share/licenses/nano/GPL-3.0.txt
 	install -D -m 644 $(NANO_NCURSES_COPYING) $(NANO_STAGE)/usr/share/licenses/nano/ncurses-COPYING
 	install -D -m 644 $(NANO_DIR)/README.md $(NANO_STAGE)/usr/share/doc/nano/README.md
-	$(BUILD_DIR)/pkg/pkg-build nano 9.3 $(NANO_STAGE) $@ 'GNU nano text editor for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build nano 9.3.1 $(NANO_STAGE) $@ 'GNU nano text editor for OpenSillicon'
 
 HTOP_DIR := src/tools/pkg/repo/_src/htop
 HTOP_STAGE := $(BUILD_DIR)/htop/stage
@@ -361,7 +361,7 @@ $(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) $(HTOP_DIR)/build.sh $(NCURSES_ARCHIVE) 
 		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
 	sh $(HTOP_DIR)/build.sh
 
-src/tools/pkg/repo/_pkges/htop-3.5.3.spkg: $(BUILD_DIR)/htop/htop \
+src/tools/pkg/repo/_pkges/htop-3.5.3.1.spkg: $(BUILD_DIR)/htop/htop \
 		$(HTOP_DIR)/README.md $(HTOP_DIR)/upstream/COPYING \
 		$(HTOP_NCURSES_COPYING) $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(HTOP_STAGE)
@@ -369,7 +369,7 @@ src/tools/pkg/repo/_pkges/htop-3.5.3.spkg: $(BUILD_DIR)/htop/htop \
 	install -D -m 644 $(HTOP_DIR)/upstream/COPYING $(HTOP_STAGE)/usr/share/licenses/htop/COPYING
 	install -D -m 644 $(HTOP_NCURSES_COPYING) $(HTOP_STAGE)/usr/share/licenses/htop/ncurses-COPYING
 	install -D -m 644 $(HTOP_DIR)/README.md $(HTOP_STAGE)/usr/share/doc/htop/README.md
-	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3.1 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
 
 QUAKE_DIR := src/tools/pkg/repo/_src/quake
 QUAKE_BUILD := $(BUILD_DIR)/quake
@@ -442,7 +442,7 @@ $(MINIJVM_BUILD)/minijvm_rt.jar: $(MINIJVM_CLASSES) $(MINIJVM_DIR)/opensillicon/
 $(MINIJVM_BUILD)/lwjgl.jar: $(MINIJVM_LWJGL_CLASSES) $(MINIJVM_DIR)/opensillicon/build-classlib.sh
 	sh $(MINIJVM_DIR)/opensillicon/build-classlib.sh $(MINIJVM_DIR)/lwjgl $@ $(JAVAC) $(JAR)
 
-src/tools/pkg/repo/_pkges/minijvm-2021.12.spkg: $(MINIJVM_BUILD)/java \
+src/tools/pkg/repo/_pkges/minijvm-2021.12.4.spkg: $(MINIJVM_BUILD)/java \
 		$(MINIJVM_BUILD)/minijvm_rt.jar $(MINIJVM_BUILD)/lwjgl.jar $(MINIJVM_DIR)/README.md $(MINIJVM_DIR)/LICENSE \
 		src/tools/pkg/repo/_src/twm/deps/libpng/LICENSE \
 		$(MINIJVM_DIR)/licenses/mbedtls.Apache-2.0.txt $(BUILD_DIR)/pkg/pkg-build
@@ -454,23 +454,34 @@ src/tools/pkg/repo/_pkges/minijvm-2021.12.spkg: $(MINIJVM_BUILD)/java \
 	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libpng/LICENSE $(MINIJVM_STAGE)/usr/share/licenses/minijvm/libpng.LICENSE
 	install -D -m 644 $(MINIJVM_DIR)/licenses/mbedtls.Apache-2.0.txt $(MINIJVM_STAGE)/usr/share/licenses/minijvm/mbedtls.Apache-2.0.txt
 	install -D -m 644 $(MINIJVM_DIR)/README.md $(MINIJVM_STAGE)/usr/share/doc/minijvm/README.md
-	$(BUILD_DIR)/pkg/pkg-build minijvm 2021.12 $(MINIJVM_STAGE) $@ 'miniJVM with a Java 8 class library subset'
+	$(BUILD_DIR)/pkg/pkg-build minijvm 2021.12.4 $(MINIJVM_STAGE) $@ 'miniJVM with a Java 8 class library subset'
 
 MINECRAFT_DIR := src/tools/pkg/repo/_src/minecraft
 MINECRAFT_BUILD := $(BUILD_DIR)/minecraft
 MINECRAFT_STAGE := $(MINECRAFT_BUILD)/stage
-MINECRAFT_CLIENT_JAR ?= src/build/minecraft-package-input/client.jar
+MINECRAFT_CLIENT_JAR ?= $(MINECRAFT_DIR)/client.jar
 MINECRAFT_SUPPORT_JARS := \
 	src/build/minecraft-package-input/lwjgl-2.9.0.jar \
 	src/build/minecraft-package-input/lwjgl_util-2.9.0.jar \
 	src/build/minecraft-package-input/jinput-2.0.5.jar \
 	src/build/minecraft-package-input/jutils-1.0.0.jar
 
-src/tools/pkg/repo/_pkges/minecraft-1.0.0.spkg: $(MINECRAFT_DIR)/minecraft \
+$(MINECRAFT_BUILD)/minecraft: $(MINECRAFT_DIR)/minecraft.c $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+	mkdir -p $(@D)
+	$(CC) $(LIBOS_CFLAGS) -c $< -o $(MINECRAFT_BUILD)/minecraft.o
+	$(CC) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(MINECRAFT_BUILD)/minecraft.o $(LIBOS_ARCHIVE) -lgcc -o $@
+
+$(MINECRAFT_BUILD)/compat.jar: $(MINECRAFT_DIR)/compat/ahy.java $(MINECRAFT_CLIENT_JAR)
+	mkdir -p $(MINECRAFT_BUILD)/compat
+	$(JAVAC) --release 8 -encoding UTF-8 -cp $(MINECRAFT_CLIENT_JAR) -d $(MINECRAFT_BUILD)/compat $<
+	$(JAR) cf $@ -C $(MINECRAFT_BUILD)/compat .
+
+src/tools/pkg/repo/_pkges/minecraft-1.0.0.spkg: $(MINECRAFT_BUILD)/minecraft $(MINECRAFT_BUILD)/compat.jar \
 		$(MINECRAFT_DIR)/README.md $(MINECRAFT_CLIENT_JAR) $(MINECRAFT_SUPPORT_JARS) \
 		$(BUILD_DIR)/pkg/pkg-build
 	@test -f "$(MINECRAFT_CLIENT_JAR)" || { echo 'Minecraft 1.0.0 client JAR is missing; set MINECRAFT_CLIENT_JAR=...' >&2; exit 1; }
-	install -D -m 755 $(MINECRAFT_DIR)/minecraft $(MINECRAFT_STAGE)/usr/bin/minecraft
+	install -D -m 755 $(MINECRAFT_BUILD)/minecraft $(MINECRAFT_STAGE)/usr/bin/minecraft
+	install -D -m 644 $(MINECRAFT_BUILD)/compat.jar $(MINECRAFT_STAGE)/usr/share/minecraft/compat.jar
 	install -D -m 644 $(MINECRAFT_CLIENT_JAR) $(MINECRAFT_STAGE)/usr/share/minecraft/client.jar
 	install -D -m 644 src/build/minecraft-package-input/lwjgl-2.9.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/lwjgl-2.9.0.jar
 	install -D -m 644 src/build/minecraft-package-input/lwjgl_util-2.9.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/lwjgl_util-2.9.0.jar
@@ -554,3 +565,32 @@ src/tools/pkg/repo/_pkges/doom-1.0.0.spkg: $(BUILD_DIR)/pkg/doom-stage.ready $(B
 	$(BUILD_DIR)/pkg/pkg-build doom 1.0.0 $(DOOM_STAGE) $@ 'Doom with shareware game data'
 
 -include $(PKG_OBJECTS:.o=.d)
+
+XMMS_DIR := src/tools/pkg/repo/_src/xmms
+XMMS_BUILD := $(BUILD_DIR)/xmms
+XMMS_STAGE := $(XMMS_BUILD)/stage
+XMMS_SOURCES := $(shell find $(XMMS_DIR) -type f)
+
+$(XMMS_BUILD)/xmms: $(XMMS_SOURCES) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
+		$(BUILD_DIR)/x11/.apps-ready $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+	python3 $(XMMS_DIR)/opensillicon/build.py
+
+$(XMMS_BUILD)/sources.tar.gz: $(XMMS_SOURCES)
+	mkdir -p $(@D)
+	tar -czf $@ -C $(dir $(XMMS_DIR)) xmms
+
+src/tools/pkg/repo/_pkges/xmms-1.2.11.spkg: $(XMMS_BUILD)/xmms \
+		$(XMMS_BUILD)/sources.tar.gz $(BUILD_DIR)/pkg/pkg-build
+	install -D -m 755 $< $(XMMS_STAGE)/usr/bin/xmms
+	strip --strip-debug $(XMMS_STAGE)/usr/bin/xmms
+	install -D -m 644 $(XMMS_DIR)/README.md $(XMMS_STAGE)/usr/share/doc/xmms/README.md
+	install -D -m 644 $(XMMS_DIR)/upstream/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/COPYING
+	install -D -m 644 $(XMMS_DIR)/deps/glib-1.2.10/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/GLib.COPYING
+	install -D -m 644 $(XMMS_DIR)/deps/gtk+-1.2.10/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/GTK.COPYING
+	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libX11/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/libX11.COPYING
+	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libXext/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/libXext.COPYING
+	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libXau/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/libXau.COPYING
+	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libxcb/COPYING $(XMMS_STAGE)/usr/share/licenses/xmms/libxcb.COPYING
+	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libz/LICENSE $(XMMS_STAGE)/usr/share/licenses/xmms/libz.LICENSE
+	install -D -m 644 $(XMMS_BUILD)/sources.tar.gz $(XMMS_STAGE)/usr/share/doc/xmms/sources.tar.gz
+	$(BUILD_DIR)/pkg/pkg-build xmms 1.2.11 $(XMMS_STAGE) $@ 'XMMS music player with native HDA output and WAV/MP3 decoders'

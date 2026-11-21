@@ -875,6 +875,7 @@ struct _CodeAttribute {
     spinlock_t compile_lock;
     struct _Jit {
         jit_func func;
+        FieldInfo *getter; /* resolved, non-volatile leaf accessor */
         s32 len;
         volatile s32 state;
         volatile s32 interpreted_count;

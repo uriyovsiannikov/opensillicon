@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "jvm_util.h"
+#include "profile.h"
 
 Display *awt_x_display(void);
 Window lwjgl_canvas_window(void);
@@ -104,6 +105,7 @@ static void release_keys(void)
 
 static void pump_events(void)
 {
+    PROFILE_SCOPE(PROFILE_INPUT);
     Display *display = awt_x_display();
     Window canvas = lwjgl_canvas_window(), parent = lwjgl_parent_window();
     if (!display || !canvas) return;

@@ -214,8 +214,16 @@ public final class Short extends Number implements Comparable<Short> {
      * @return a <tt>Short</tt> instance representing <tt>s</tt>.
      * @since  1.5
      */
-    public static Short valueOf(short s) {
+    // Include 300: the default air-supply metadata of every Minecraft entity.
+    private static class ValueCache {
+        static final Short[] values = new Short[641];
+        static {
+            for (int i = 0; i < values.length; i++) values[i] = new Short((short)(i - 128));
+        }
+    }
 
+    public static Short valueOf(short s) {
+        if (s >= -128 && s <= 512) return ValueCache.values[(int)s + 128];
         return new Short(s);
     }
 

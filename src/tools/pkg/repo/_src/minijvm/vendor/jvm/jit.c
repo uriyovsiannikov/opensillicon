@@ -4,6 +4,12 @@
 
 
 #include "jit.h"
+#ifdef OPEN_SILLICON
+#include "../../opensillicon/threads.h"
+#endif
+
+int minijvm_jit_enabled = JIT_ENABLE;
+unsigned long minijvm_jit_compiled;
 
 #if JIT_ENABLE
 
@@ -26,6 +32,12 @@
 //------------------------  declare ----------------------------
 
 static thread_suspend_check_func check_suspend;
+#ifdef OPEN_SILLICON
+static void jit_cooperative_pause(Runtime *runtime) {
+    minijvm_cooperative_yield();
+    check_suspend_and_pause(runtime);
+}
+#endif
 
 /**
  * Generate jit code for exception check , throw , and handle
@@ -1131,6 +1143,7 @@ static s32 instanceof(JClass *other, Instance *ins, Runtime *runtime) {
 
 void gen_jit_suspend_check_func() {
     struct sljit_compiler *C = sljit_create_compiler(NULL, NULL);
+    if (!C) return;
     sljit_set_context(C, 0, 0, 3, 3, 3, 3, LOCAL_COUNT * sizeof(sljit_sw));
 
     sljit_emit_fast_enter(C, SLJIT_R2, 0);
@@ -1141,6 +1154,17 @@ void gen_jit_suspend_check_func() {
     struct sljit_jump *jump_suspended, *jump_out, *jump_to_interrupted, *jump_not_interrupted;
     struct sljit_label *label_out, *label_suspended, *label_not_interrupted, *label_interrupted;
     jump_suspended = sljit_emit_cmp(C, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
+#ifdef OPEN_SILLICON
+    /* Keep the common loop backedge in machine code. Enter C only when
+     * suspended or once every 256 backedges, as in the interpreter. */
+    sljit_emit_op2(C, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
+        SLJIT_OFFSETOF(JavaThreadInfo, cooperative_branches), SLJIT_IMM, 1);
+    sljit_emit_op1(C, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0),
+        SLJIT_OFFSETOF(JavaThreadInfo, cooperative_branches), SLJIT_R1, 0);
+    sljit_emit_op2(C, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 255);
+    struct sljit_jump *jump_periodic = sljit_emit_cmp(C,
+        SLJIT_EQUAL | SLJIT_I32_OP, SLJIT_R1, 0, SLJIT_IMM, 0);
+#endif
     {
         jump_out = sljit_emit_jump(C, SLJIT_JUMP);
     }
@@ -1165,7 +1189,13 @@ void gen_jit_suspend_check_func() {
         }
         label_not_interrupted = sljit_emit_label(C);
         sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sizeof(sljit_sw) * LOCAL_RUNTIME);
-        sljit_emit_icall(C, SLJIT_CALL, SLJIT_RET(S32) | SLJIT_ARG1(UW), SLJIT_IMM, SLJIT_FUNC_OFFSET(check_suspend_and_pause));
+        sljit_emit_icall(C, SLJIT_CALL, SLJIT_RET(S32) | SLJIT_ARG1(UW), SLJIT_IMM, SLJIT_FUNC_OFFSET(
+#ifdef OPEN_SILLICON
+            jit_cooperative_pause
+#else
+            check_suspend_and_pause
+#endif
+        ));
 
         _gen_load_sp_ip(C);
         sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), sizeof(sljit_sw) * LOCAL_R2);
@@ -1175,6 +1205,9 @@ void gen_jit_suspend_check_func() {
     //
     sljit_set_label(jump_out, label_out);
     sljit_set_label(jump_suspended, label_suspended);
+#ifdef OPEN_SILLICON
+    sljit_set_label(jump_periodic, label_suspended);
+#endif
     sljit_set_label(jump_to_interrupted, label_interrupted);
     sljit_set_label(jump_not_interrupted, label_not_interrupted);
 
@@ -2616,7 +2649,7 @@ s32 gen_jit_bytecode_func(struct sljit_compiler *C, MethodInfo *method, Runtime 
                 }
 
                 _gen_stack_peek_ref(C, -1, SLJIT_R0, 0);
-                _gen_exception_check_throw_handle(C, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, RUNTIME_STATUS_EXCEPTION, JVM_EXCEPTION_NULLPOINTER, -1);
+                _gen_exception_check_throw_handle(C, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0, JVM_EXCEPTION_NULLPOINTER, -1);
 
                 //&(ins->obj_fields[fi->offset_instance]);
                 sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), SLJIT_OFFSETOF(Instance, obj_fields));
@@ -2715,7 +2748,7 @@ s32 gen_jit_bytecode_func(struct sljit_compiler *C, MethodInfo *method, Runtime 
                 }
 
                 _gen_stack_peek_ref(C, -stack_size, SLJIT_R0, 0);
-                _gen_exception_check_throw_handle(C, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, RUNTIME_STATUS_EXCEPTION, JVM_EXCEPTION_NULLPOINTER, -stack_size);
+                _gen_exception_check_throw_handle(C, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0, JVM_EXCEPTION_NULLPOINTER, -stack_size);
 
 
                 //&(ins->obj_fields[fi->offset_instance]);
@@ -3144,9 +3177,12 @@ s32 gen_jit_bytecode_func(struct sljit_compiler *C, MethodInfo *method, Runtime 
                 sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), sizeof(sljit_sw) * LOCAL_RUNTIME);
                 sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, (sljit_sw) desc);
                 sljit_emit_op1(C, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, count);
-                sljit_emit_icall(C, SLJIT_CALL, SLJIT_RET(VOID) | SLJIT_ARG1(UW) | SLJIT_ARG2(UW), SLJIT_IMM, SLJIT_FUNC_OFFSET(multiarray));
+                /* multiarray takes three arguments and returns a runtime status,
+                 * not an object pointer. NORMAL is zero: never turn a
+                 * successfully allocated array into NullPointerException. */
+                sljit_emit_icall(C, SLJIT_CALL, SLJIT_RET(S32) | SLJIT_ARG1(UW) | SLJIT_ARG2(UW) | SLJIT_ARG3(S32), SLJIT_IMM, SLJIT_FUNC_OFFSET(multiarray));
                 _gen_load_sp_ip(C);
-                _gen_exception_check_throw_handle(C, SLJIT_EQUAL, SLJIT_RETURN_REG, 0, SLJIT_IMM, 0, JVM_EXCEPTION_NULLPOINTER, 0);
+                _gen_exception_check_throw_handle(C, SLJIT_NOT_EQUAL, SLJIT_RETURN_REG, 0, SLJIT_IMM, RUNTIME_STATUS_NORMAL, -1, 0);
 
                 _gen_ip_modify_imm(C, 4);
                 ip += 4;
@@ -3318,14 +3354,33 @@ void construct_jit(MethodInfo *method, Runtime *runtime) {
     if (!check_suspend) {
         gen_jit_suspend_check_func();
     }
-    if (runtime->jvm->jdwp_enable) {
+    if (!check_suspend || runtime->jvm->jdwp_enable) {
         ca->jit.state = JIT_GEN_ERROR;
         return;
     }
     /* Create a SLJIT compiler */
     struct sljit_compiler *C = sljit_create_compiler(NULL, NULL);
+    if (!C) { ca->jit.state = JIT_GEN_ERROR; return; }
     ca->jit.state = JIT_GEN_COMPILING;
     ca->jit.state = gen_jit_bytecode_func(C, method, runtime);
+    if (ca->jit.state == JIT_GEN_SUCCESS) {
+        ++minijvm_jit_compiled;
+        /* A resolved leaf getter needs no callee frame, allocation, lock or
+         * safepoint. Keep null receivers on the ordinary exception path. */
+        u8 *code=ca->bytecode_for_jit;
+        if (!method->is_static && !method->is_sync && method->para_slots==1 &&
+            ca->code_length==5 && !ca->exception_table_length && code &&
+            code[0]==op_aload_0 && code[1]==op_getfield) {
+            u16 index; memcpy(&index,code+2,sizeof index);
+            FieldInfo *field=class_get_constant_fieldref(method->_this_class,index)->fieldInfo;
+            if(field && !field->isvolatile &&
+                ((field->isrefer && code[4]==op_areturn) ||
+                 (!field->isrefer && field->datatype_bytes<=4 &&
+                    (code[4]==op_ireturn || code[4]==op_freturn)) ||
+                 (!field->isrefer && field->datatype_bytes==8 &&
+                    (code[4]==op_lreturn || code[4]==op_dreturn)))) ca->jit.getter=field;
+        }
+    }
 
     if (ca->jit.state == JIT_GEN_SUCCESS) {
         int debug = 1;
@@ -3355,6 +3410,7 @@ void jit_destory(Jit *jit) {
 
     while (jit->switchtable) {
         SwitchTable *tmp = jit->switchtable->next;
+        jvm_free(jit->switchtable->table);
         jvm_free(jit->switchtable);
         jit->switchtable = tmp;
     }

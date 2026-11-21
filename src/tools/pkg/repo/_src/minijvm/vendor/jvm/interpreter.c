@@ -3,6 +3,10 @@
 #include "jvm.h"
 #include "jvm_util.h"
 #include "jit.h"
+#ifdef OPEN_SILLICON
+#include "../../opensillicon/profile.h"
+#include "../../opensillicon/threads.h"
+#endif
 
 
 /* ==================================opcode implementation =============================*/
@@ -133,7 +137,7 @@ static s32 filterClassName(Utf8String *clsName) {
             goto label_exit_while;\
         }\
 		/* Keep loop safepoints while amortizing scheduler syscalls. */\
-		if ((++thrd_info->cooperative_branches & 255) == 0) thrd_yield();\
+		if ((++thrd_info->cooperative_branches & 255) == 0) minijvm_cooperative_yield();\
         check_suspend_and_pause(runtime);\
     }\
 }
@@ -465,6 +469,32 @@ static inline int _optimize_inline_setter(JClass *clazz, s32 cmrIdx, Runtime *ru
 
 
 s32 execute_method_impl(MethodInfo *method, Runtime *pruntime) {
+#ifdef OPEN_SILLICON
+    PROFILE_METHOD_SCOPE(method_profile, method);
+#endif
+
+#ifdef OPEN_SILLICON
+    CodeAttribute *getter_code=method->converted_code;
+    if(minijvm_jit_enabled && getter_code && getter_code->jit.getter &&
+        !pruntime->jvm->jdwp_enable) {
+        RuntimeStack *operands=pruntime->stack;
+        Instance *receiver=(operands->sp-1)->rvalue;
+        if(receiver) {
+            PROFILE_DETAIL_SCOPE(PROFILE_JIT);
+            FieldInfo *field=getter_code->jit.getter;
+            c8 *data=receiver->obj_fields+field->offset_instance;
+            --operands->sp;
+            if(field->isrefer)push_ref(operands,*(__refer *)data);
+            else switch(field->datatype_bytes) {
+                case 1:push_int(operands,*(s8 *)data);break;
+                case 2:push_int(operands,field->datatype_idx==DATATYPE_JCHAR ? *(u16 *)data : *(s16 *)data);break;
+                case 4:push_int(operands,*(s32 *)data);break;
+                case 8:push_long(operands,*(s64 *)data);break;
+            }
+            return RUNTIME_STATUS_NORMAL;
+        }
+    }
+#endif
 
     //shared local var for opcode
     Instance *ins;
@@ -550,9 +580,15 @@ s32 execute_method_impl(MethodInfo *method, Runtime *pruntime) {
 
             if (method->is_sync)_synchronized_lock_method(method, runtime);
 
-            if (JIT_ENABLE && ca->jit.state == JIT_GEN_SUCCESS) {
+            if (minijvm_jit_enabled && ca->jit.state == JIT_GEN_SUCCESS) {
                 //jvm_printf("jit call %s.%s()\n", method->_this_class->name->data, method->name->data);
+#ifdef OPEN_SILLICON
+                { PROFILE_DETAIL_SCOPE(PROFILE_JIT);
+#endif
                 ret = ca->jit.func(method, runtime);
+#ifdef OPEN_SILLICON
+                }
+#endif
                 if (!ret) {
                     switch (method->return_slots) {
                         case 0: {// V
@@ -577,17 +613,26 @@ s32 execute_method_impl(MethodInfo *method, Runtime *pruntime) {
                     }
                 }
             } else {
-                if (JIT_ENABLE && ca->jit.state == JIT_GEN_UNKNOW) {
+                if (minijvm_jit_enabled && ca->jit.state == JIT_GEN_UNKNOW) {
                     if (ca->jit.interpreted_count++ > JIT_COMPILE_EXEC_COUNT) {
                         spin_lock(&ca->compile_lock);
                         if (ca->jit.state == JIT_GEN_UNKNOW) {//re test
                             //jvm_printf("enter jit %s.%s()\n", utf8_cstr(method->_this_class->name), utf8_cstr(method->name));
+#ifdef OPEN_SILLICON
+                            { PROFILE_SCOPE(PROFILE_COMPILE);
+#endif
                             construct_jit(method, runtime);
+#ifdef OPEN_SILLICON
+                            }
+#endif
                         }
                         spin_unlock(&ca->compile_lock);
                     }
                 }
 
+#ifdef OPEN_SILLICON
+                PROFILE_DETAIL_SCOPE(PROFILE_INTERP);
+#endif
                 thrd_info = runtime->thrd_info;
                 localvar = runtime->localvar;
                 sp = runtime->stack->sp;

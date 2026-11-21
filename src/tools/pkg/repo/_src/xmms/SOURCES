@@ -1,0 +1,11 @@
+XMMS 1.2.11 (GPL-2.0-or-later)
+https://distro.ibiblio.org/amigolinux/download/Applications/MultiMedia/xmms-1.2.11/xmms-1.2.11.tar.bz2
+SHA256 7ec15c56632b6c82e61ccddeaefd372359af2f005708a58cdf3951c574b20390
+GLib 1.2.10 (LGPL-2.0-or-later)
+https://download.gnome.org/sources/glib/1.2/glib-1.2.10.tar.gz
+SHA256 6e1ce7eedae713b11db82f11434d455d8a1379f783a79812cd2e05fc024a8d9f
+GTK+ 1.2.10 (LGPL-2.0-or-later)
+https://download.gnome.org/sources/gtk+/1.2/gtk+-1.2.10.tar.gz
+SHA256 3fb843ea671c89b909fd145fa09fd2276af3312e58cbab29ed1c93b462108c34
+config.sub/config.guess replaced with GNU Automake 1.18 host copies for x86-64.
+Local compatibility changes are in the source files and opensillicon/.

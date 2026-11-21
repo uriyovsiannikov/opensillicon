@@ -6,6 +6,9 @@
 #include <pwd.h>
 
 #include "jvm_util.h"
+#include "jit.h"
+#include "../opensillicon/profile.h"
+#include <sys/mman.h>
 
 void reg_awt_native_lib(MiniJVM *jvm);
 void reg_lwjgl_native_lib(MiniJVM *jvm);
@@ -16,7 +19,7 @@ void reg_zip_stream_native_lib(MiniJVM *jvm);
 
 static void usage(FILE *stream)
 {
-    fputs("usage: java [-Xmx<size>] [-Dkey=value] [-cp path] [-bootclasspath path] class [args...]\n"
+    fputs("usage: java [-Xint] [-Xmx<size>] [-Dkey=value] [-cp path] [-bootclasspath path] class [args...]\n"
           "       java -version\n", stream);
 }
 
@@ -54,6 +57,7 @@ int main(int argc, char **argv)
 
     while (i < argc && argv[i][0] == '-') {
         const char *option = argv[i++];
+        if (!strcmp(option, "-Xint")) { minijvm_jit_enabled = 0; continue; }
         if (!strcmp(option, "-version")) {
             puts("miniJVM 2021.12 for OpenSillicon (Java 8 bytecode, bundled class library)");
             return 0;
@@ -68,6 +72,18 @@ int main(int argc, char **argv)
                 return 2;
             }
             continue;
+        }
+        if (!strncmp(option, "-Dopensillicon.profile.log=", sizeof("-Dopensillicon.profile.log=")-1)) {
+            if (setenv("OPEN_SILLICON_JVM_PROFILE_LOG", option+sizeof("-Dopensillicon.profile.log=")-1, 1)) return 1;
+        }
+        if (!strcmp(option, "-Dopensillicon.profile.methods=1")) {
+            if (setenv("OPEN_SILLICON_JVM_PROFILE_METHODS", "1", 1)) return 1;
+        }
+        if (!strcmp(option, "-Dopensillicon.profile=1")) {
+            if (setenv("OPEN_SILLICON_JVM_PROFILE", "1", 1)) {
+                perror("java: enabling profile");
+                return 1;
+            }
         }
         if (!strncmp(option, "-D", 2)) {
             if (!option[2] || option[2] == '=') {
@@ -103,6 +119,7 @@ int main(int argc, char **argv)
 
     int class_index = i;
     char *main_class = argv[i++];
+    jvm_profile_init();
     MiniJVM *jvm = jvm_create();
     ArrayList *arguments = arraylist_create(0);
     if (!jvm || !arguments) {
@@ -112,6 +129,15 @@ int main(int argc, char **argv)
     for (; i < argc; i++)
         arraylist_push_back(arguments, argv[i]);
 
+    if (minijvm_jit_enabled) {
+        void *probe = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (probe == MAP_FAILED || mprotect(probe, 4096, PROT_READ | PROT_EXEC)) {
+            fputs("java: kernel lacks JIT memory support; using interpreter\n", stderr);
+            minijvm_jit_enabled = 0;
+        }
+        if (probe != MAP_FAILED) munmap(probe, 4096);
+    }
+    fprintf(stderr, "java: execution mode: %s\n", minijvm_jit_enabled ? "JIT (W^X)" : "interpreter");
     jvm->max_heap_size = heap_size;
     if (jvm_init(jvm, bootclasspath, classpath) != 0) {
         fputs("java: could not initialize virtual machine\n", stderr);
@@ -121,7 +147,7 @@ int main(int argc, char **argv)
     /* The native allocator maps slabs through the kernel. Waiting ten minutes
      * between collections retains terrain-generation garbage and makes later
      * allocations increasingly expensive, well before Java's heap is full. */
-    jvm->garbage_collect_period_ms = 1000;
+    jvm->garbage_collect_period_ms = 10000;
 #endif
     reg_awt_native_lib(jvm);
     reg_lwjgl_native_lib(jvm);
@@ -145,7 +171,7 @@ int main(int argc, char **argv)
         sys_properties_set_c(jvm, "user.home", home);
     }
     for (int option = 1; option < class_index; option++) {
-        if (!strncmp(argv[option], "-Xmx", 4)) continue;
+        if (!strncmp(argv[option], "-Xmx", 4) || !strcmp(argv[option], "-Xint")) continue;
         if (strncmp(argv[option], "-D", 2)) {
             option++; // The classpath options each consume one argument.
             continue;
@@ -165,7 +191,9 @@ int main(int argc, char **argv)
         free(definition);
     }
     int result = call_main(jvm, main_class, arguments);
+    jvm_profile_flush();
     arraylist_destory(arguments);
+    fprintf(stderr, "java: JIT compiled methods: %lu\n", minijvm_jit_compiled);
     jvm_destroy(jvm);
     return result == RUNTIME_STATUS_NORMAL ? 0 : 1;
 }
