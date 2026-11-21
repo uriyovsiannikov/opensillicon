@@ -159,8 +159,9 @@ static const char *match_name(enum nouveau_scanout_match status)
 	return "unknown";
 }
 void nouveau_scanout_probe_log(const struct pci_device_lease *claim,
-	const struct pci_bar_resource *bar,uint32_t context,uint64_t vram,uint64_t offset,uint64_t span)
+	const struct pci_bar_resource *bar,uint32_t context,uint64_t vram,uint64_t offset,uint64_t span,uint64_t *sample_candidate)
 {
+	if(sample_candidate) *sample_candidate=UINT64_MAX;
 	/* Only the observed physical-mode GP107 32MiB aperture, upper half.
 	 * Candidates are hypotheses, not translations derived from BAR offset. */
 	if(context!=0x40000000 || vram<0x2000000 || vram>(UINT64_C(1)<<40) ||
@@ -177,13 +178,14 @@ void nouveau_scanout_probe_log(const struct pci_device_lease *claim,
 	m.mapping.aperture=address;
 	struct nouveau_scanout_reader io={.context=&m,.cpu=scan_cpu,.gpu=scan_gpu};
 	uint64_t candidates[]={0,offset,vram-0x2000000+offset};
-	unsigned matches=0;
+	unsigned matches=0;uint64_t matched=UINT64_MAX;
 	for(unsigned i=0;i<3;i++) {
 		enum nouveau_scanout_match status=nouveau_scanout_compare(&io,vram,candidates[i],span);
 		klog("nouveau: FBMATCH candidate VRAM=0x");hex(candidates[i],10);
 		klog(" ");klog(match_name(status));klog("\n");
-		if(status==NOUVEAU_SCANOUT_SAMPLE_MATCH) matches++;
+		if(status==NOUVEAU_SCANOUT_SAMPLE_MATCH) { matches++;matched=candidates[i]; }
 	}
+	if(matches==1 && sample_candidate) *sample_candidate=matched;
 	klog("nouveau: FBMATCH sample_matches=");klog_u64(matches);
 	klog("; no VRAM writes or reservation\n");
 out:

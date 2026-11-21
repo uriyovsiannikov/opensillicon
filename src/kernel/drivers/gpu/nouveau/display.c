@@ -183,3 +183,29 @@ enum nouveau_display_plan_status nouveau_display_plan(
 	data(p,xy(m->width,m->height)); data(p,xy(m->width,m->height)); data(p,xy(m->width,m->height));
 	return NOUVEAU_PLAN_OK;
 }
+
+
+bool nouveau_display_surface_plan(unsigned head,uint64_t address,uint64_t vram,
+	uint32_t handle,const struct os_framebuffer_info *fb,struct nouveau_surface_plan *plan)
+{
+	if(!plan) return false;
+	*plan=(struct nouveau_surface_plan){0};
+	if(!fb || head>=4 || !handle || !fb->width || fb->width>65535 ||
+	    !fb->height || fb->height>65535 || fb->bits_per_pixel!=32 ||
+	    fb->red_mask_size!=8 || fb->green_mask_size!=8 || fb->blue_mask_size!=8 ||
+	    fb->green_mask_shift!=8 ||
+	    !((fb->red_mask_shift==16 && fb->blue_mask_shift==0) ||
+	      (fb->red_mask_shift==0 && fb->blue_mask_shift==16)) ||
+	    (address&255) || !fb->pitch || (fb->pitch&255) || fb->pitch>0x1fff00 ||
+	    fb->pitch<fb->width*4 || vram>(UINT64_C(1)<<40) || address>=vram ||
+	    fb->height>(vram-address)/fb->pitch || fb->size<fb->pitch*fb->height) return false;
+	unsigned base=head*0x300;
+	uint32_t format=fb->red_mask_shift==16?0xcf:0xd5;
+	/* head907d_core_set: offset, four consecutive surface methods, viewport. */
+	uint32_t words[]={ (1U<<18)|(0x460+base),(uint32_t)(address>>8),
+	    (4U<<18)|(0x468+base),(uint32_t)(fb->width|(fb->height<<16)),
+	    0x1000000|(uint32_t)fb->pitch,format<<8,handle,
+	    (1U<<18)|(0x4b0+base),0 };
+	for(unsigned i=0;i<NOUVEAU_SURFACE_PLAN_WORDS;i++) plan->words[i]=words[i];
+	return true;
+}

@@ -68,4 +68,11 @@ enum nouveau_display_plan_status nouveau_display_plan(
 void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar, const struct nouveau_dcb_output *output,
 	const struct nouveau_edid *edid);
+#define NOUVEAU_SURFACE_PLAN_WORDS 9U
+struct nouveau_surface_plan { uint32_t words[NOUVEAU_SURFACE_PLAN_WORDS]; };
+/* CPU-only pitch/RGB surface methods. Address is relative to a VRAM context
+ * spanning [0,vram_size). This neither allocates VRAM nor grants ownership. */
+bool nouveau_display_surface_plan(unsigned head, uint64_t address, uint64_t vram_size,
+	uint32_t dma_handle, const struct os_framebuffer_info *fb,
+	struct nouveau_surface_plan *plan);
 #endif

@@ -192,15 +192,15 @@ int main(void)
 	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,0)==NOUVEAU_SCANOUT_INVALID);
 	/* Native reader restores the register before each second CPU sample. */
 	for(unsigned i=0;i<sizeof(aperture)/4;i++)aperture[i]=pattern(i*4);
-	reset();nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+	reset();nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192,NULL);
 	assert(!maps&&!allocations&&control==0x200&&map_calls==2);
 	for(unsigned i=0;i<sizeof(aperture)/4;i++)assert(aperture[i]==pattern(i*4));
 	for(unsigned i=1;i<=2;i++) {
-		reset();fail_map=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+		reset();fail_map=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192,NULL);
 		assert(!maps&&!allocations&&control==0x200);
-		reset();fail_address=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+		reset();fail_address=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192,NULL);
 		assert(!maps&&!allocations&&control==0x200);
 	}
-	reset();nouveau_scanout_probe_log(&claim,&bar,0x80000000,UINT64_C(0x100000000),0x1000000,8192);assert(!map_calls);
+	reset();nouveau_scanout_probe_log(&claim,&bar,0x80000000,UINT64_C(0x100000000),0x1000000,8192,NULL);assert(!map_calls);
 	puts("NOUVEAU_VRAM_PASS: PRAMIN window crossing, 40-bit bounds, every IO failure, restore verification, native readonly aperture/cleanup, scanout sample match/mismatch/flat/unstable and every read failure");
 }

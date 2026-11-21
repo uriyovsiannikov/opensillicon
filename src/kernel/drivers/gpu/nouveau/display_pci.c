@@ -166,10 +166,11 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	}
 	struct os_framebuffer_info fb;
 	if(!framebuffer_device_info(&fb)) { klog("nouveau: MODEPLAN framebuffer unavailable\n");goto out; }
+	uint64_t sample_candidate=UINT64_MAX;
 	struct bootfb_bar3 location={0};
 	boot_framebuffer_log(claim,&fb,&location);
 	if(location.found) nouveau_scanout_probe_log(claim,bar,s.bar3_instance,
-	    vram,location.offset,location.size);
+	    vram,location.offset,location.size,&sample_candidate);
 	nouveau_firmware_instance_log(claim,bar,&s,vram);
 	nouveau_firmware_bar_log(claim,bar,1,s.bar1_instance,vram);
 	nouveau_firmware_bar_log(claim,bar,3,s.bar3_instance,vram);
@@ -192,6 +193,16 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 		klog(" link=");klog_u64(p.link);klog(" dwords=");klog_u64(p.count);
 	}
 	klog("\n");
+	if(status==NOUVEAU_PLAN_OK && sample_candidate!=UINT64_MAX) {
+		struct nouveau_surface_plan surface;
+		if(nouveau_display_surface_plan(p.head,sample_candidate,vram,
+		    NOUVEAU_SURFACE_HANDLE,&fb,&surface)) {
+			klog("nouveau: SURFACEPLAN sample candidate VRAM=0x");hex(sample_candidate,10);
+			klog(" words=9 pitch=");klog_u64(fb.pitch);
+			klog(" context=0x");hex(NOUVEAU_SURFACE_HANDLE,8);
+			klog(" (CPU only; ownership/binding pending)\n");
+		}
+	}
 	if(status==NOUVEAU_PLAN_OK && vram) {
 		struct nouveau_display_staging staging={0};
 		enum nouveau_staging_status result=nouveau_display_staging_create(vram,&p,&staging);

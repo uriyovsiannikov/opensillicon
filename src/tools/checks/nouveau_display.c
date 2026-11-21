@@ -92,8 +92,8 @@ void nouveau_firmware_bar_log(const struct pci_device_lease *c,
 	const struct pci_bar_resource *b,unsigned index,uint32_t reg,uint64_t size)
 {assert(c==&claim&&b==&bar&&(index==1||index==3)&&reg==(index==1?0x80002000U:0x80002001U)&&size==UINT64_C(0x100000000));}
 void nouveau_scanout_probe_log(const struct pci_device_lease *c,
-	const struct pci_bar_resource *b,uint32_t reg,uint64_t size,uint64_t offset,uint64_t span)
-{assert(c==&claim&&b==&bar&&reg==0x80002001&&size==UINT64_C(0x100000000)&&offset==0x1000000&&span==fb.size);}
+	const struct pci_bar_resource *b,uint32_t reg,uint64_t size,uint64_t offset,uint64_t span,uint64_t *candidate)
+{*candidate=UINT64_MAX;assert(c==&claim&&b==&bar&&reg==0x80002001&&size==UINT64_C(0x100000000)&&offset==0x1000000&&span==fb.size);}
 bool framebuffer_device_boot_physical(uint64_t *base,uint64_t *size)
 {*base=boot_physical;*size=fb.size;return framebuffer_available;}
 bool pci_bar_probe_size(const struct pci_device_lease *c,unsigned index,struct pci_bar_resource *b)
@@ -139,6 +139,23 @@ int main(void)
 		(1080U<<16)|1920,(1080U<<16)|1920,(1080U<<16)|1920
 	};
 	assert(sizeof(expected)==sizeof(p.words)&&!memcmp(p.words,expected,sizeof(expected)));
+	struct nouveau_surface_plan surface;
+	assert(nouveau_display_surface_plan(0,0,UINT64_C(0x100000000),0xf0000001,&fb,&surface));
+	const uint32_t expected_surface[]={0x40460,0,0x100468,0x04380780,0x01001e00,
+	    0xcf00,0xf0000001,0x404b0,0};
+	assert(!memcmp(surface.words,expected_surface,sizeof(expected_surface)));
+	assert(nouveau_display_surface_plan(3,0x100000,UINT64_C(0x100000000),1,&fb,&surface));
+	assert(surface.words[0]==0x40d60&&surface.words[1]==0x1000&&surface.words[7]==0x40db0);
+	assert(!nouveau_display_surface_plan(4,0,UINT64_C(0x100000000),1,&fb,&surface));
+	assert(!nouveau_display_surface_plan(0,1,UINT64_C(0x100000000),1,&fb,&surface));
+	assert(!nouveau_display_surface_plan(0,0,fb.size-1,1,&fb,&surface));
+	assert(!nouveau_display_surface_plan(0,0,UINT64_C(0x100000000),0,&fb,&surface));
+	struct os_framebuffer_info invalid_fb=fb;invalid_fb.pitch++;
+	assert(!nouveau_display_surface_plan(0,0,UINT64_C(0x100000000),1,&invalid_fb,&surface));
+	invalid_fb=fb;invalid_fb.size--;
+	assert(!nouveau_display_surface_plan(0,0,UINT64_C(0x100000000),1,&invalid_fb,&surface));
+	invalid_fb=fb;invalid_fb.red_mask_shift=0;invalid_fb.blue_mask_shift=16;
+	assert(nouveau_display_surface_plan(0,0,UINT64_C(0x100000000),1,&invalid_fb,&surface)&&surface.words[5]==0xd500);
 	unsigned total_reads=reads;
 	for(unsigned i=1;i<=total_reads;i++){
 		reads=0;fail_read=i;assert(!nouveau_display_snapshot(read_reg,NULL,&s));

@@ -41,5 +41,6 @@ enum nouveau_scanout_match nouveau_scanout_compare(const struct nouveau_scanout_
 	uint64_t vram_size, uint64_t candidate, uint64_t framebuffer_size);
 void nouveau_scanout_probe_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar, uint32_t bar3_context,
-	uint64_t vram_size, uint64_t bar_offset, uint64_t framebuffer_size);
+	uint64_t vram_size, uint64_t bar_offset, uint64_t framebuffer_size,
+	uint64_t *sample_candidate);
 #endif
