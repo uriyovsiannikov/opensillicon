@@ -14,6 +14,7 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         ("nouveau", ["device.c", "pci.c"]),
         ("nouveau_bios", ["bios.c", "bios_shadow.c"]),
         ("nouveau_edid", ["edid.c", "ddc.c"]),
+        ("nouveau_vram", ["memory.c", "vram.c", "vram_pci.c"]),
         ("nouveau_memory", ["memory.c", "memory_dma.c"]),
         ("nouveau_display", ["display.c", "display_pci.c", "memory.c", "memory_dma.c"]),
     ]:

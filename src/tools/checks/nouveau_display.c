@@ -80,6 +80,9 @@ bool pci_mmio_release(struct pci_mmio_lease *l)
 {
 	assert(l->generation==1&&maps>0);maps--;l->generation=0;return true;
 }
+void nouveau_firmware_instance_log(const struct pci_device_lease *c,
+	const struct pci_bar_resource *b,const struct nouveau_display_snapshot *s,uint64_t size)
+{assert(c==&claim&&b==&bar&&s->instance==0x10009&&size==UINT64_C(0x100000000));}
 bool framebuffer_device_boot_physical(uint64_t *base,uint64_t *size)
 {*base=0xb0100000;*size=fb.size;return framebuffer_available;}
 bool pci_bar_probe_size(const struct pci_device_lease *c,unsigned index,struct pci_bar_resource *b)

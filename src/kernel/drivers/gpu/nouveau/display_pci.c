@@ -2,6 +2,7 @@
  * Read-only GP107 display-state capture and timing-block preparation. */
 #include "kernel/nouveau_display.h"
 #include "kernel/nouveau_memory.h"
+#include "kernel/nouveau_vram.h"
 #include "kernel/framebuffer_device.h"
 #include "kernel/log.h"
 
@@ -152,6 +153,7 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	struct os_framebuffer_info fb;
 	if(!framebuffer_device_info(&fb)) { klog("nouveau: MODEPLAN framebuffer unavailable\n");goto out; }
 	boot_framebuffer_log(claim,&fb);
+	nouveau_firmware_instance_log(claim,bar,&s,vram);
 	const struct nouveau_edid_mode *mode=NULL;
 	for(unsigned i=0;i<edid->mode_count;i++) if(edid->modes[i].detailed) {
 		if(mode==NULL || edid->modes[i].preferred) mode=&edid->modes[i];
