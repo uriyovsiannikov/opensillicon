@@ -283,6 +283,54 @@ $(BUILD_DIR)/pci_resource.o: src/kernel/drivers/bus/pci/pci_resource.c \
 		src/include/kernel/vmm.h src/include/kernel/log.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
+$(BUILD_DIR)/nouveau_device.o: src/kernel/drivers/gpu/nouveau/device.c \
+		src/include/kernel/nouveau.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_pci.o: src/kernel/drivers/gpu/nouveau/pci.c \
+		src/include/kernel/nouveau.h src/include/arch/x86_64/pci_resource.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_bios.o: src/kernel/drivers/gpu/nouveau/bios.c \
+		src/include/kernel/nouveau_bios.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_bios_shadow.o: src/kernel/drivers/gpu/nouveau/bios_shadow.c \
+		src/include/kernel/nouveau_bios.h src/include/kernel/heap.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_edid.o: src/kernel/drivers/gpu/nouveau/edid.c \
+		src/include/kernel/nouveau_edid.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_ddc.o: src/kernel/drivers/gpu/nouveau/ddc.c \
+		src/include/kernel/nouveau_edid.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_ddc_pci.o: src/kernel/drivers/gpu/nouveau/ddc_pci.c \
+		src/include/kernel/nouveau_edid.h src/include/kernel/timer.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_display.o: src/kernel/drivers/gpu/nouveau/display.c \
+		src/include/kernel/nouveau_display.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_display_pci.o: src/kernel/drivers/gpu/nouveau/display_pci.c \
+		src/include/kernel/nouveau_display.h src/include/kernel/nouveau_memory.h src/include/kernel/framebuffer_device.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_memory.o: src/kernel/drivers/gpu/nouveau/memory.c \
+		src/include/kernel/nouveau_memory.h src/include/kernel/nouveau_display.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_memory_dma.o: src/kernel/drivers/gpu/nouveau/memory_dma.c \
+		src/include/kernel/nouveau_memory.h src/include/kernel/dma.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+.PHONY: check-nouveau
+check-nouveau:
+	python3 src/tools/checks/nouveau.py
+
 $(BUILD_DIR)/netbuf.o: src/kernel/net/core/netbuf.c src/include/kernel/netbuf.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
@@ -402,6 +450,11 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 	$(BUILD_DIR)/ioapic.o $(BUILD_DIR)/ahci.o $(BUILD_DIR)/block.o \
 	$(BUILD_DIR)/block_silliconfs.o $(BUILD_DIR)/gpt.o $(BUILD_DIR)/root_device.o $(BUILD_DIR)/mount.o \
 	$(BUILD_DIR)/pci.o $(BUILD_DIR)/pci_resource.o $(BUILD_DIR)/dma.o \
+	$(BUILD_DIR)/nouveau_device.o $(BUILD_DIR)/nouveau_pci.o \
+	$(BUILD_DIR)/nouveau_bios.o $(BUILD_DIR)/nouveau_bios_shadow.o \
+	$(BUILD_DIR)/nouveau_edid.o $(BUILD_DIR)/nouveau_ddc.o $(BUILD_DIR)/nouveau_ddc_pci.o \
+	$(BUILD_DIR)/nouveau_display.o $(BUILD_DIR)/nouveau_display_pci.o \
+	$(BUILD_DIR)/nouveau_memory.o $(BUILD_DIR)/nouveau_memory_dma.o \
 	$(BUILD_DIR)/dma_ring.o $(BUILD_DIR)/netbuf.o $(BUILD_DIR)/netdev.o \
 	$(BUILD_DIR)/udp_socket.o $(BUILD_DIR)/tcp_socket.o \
 	$(BUILD_DIR)/network_service.o \

@@ -40,6 +40,7 @@
 #include "kernel/tty.h"
 #include "kernel/framebuffer.h"
 #include "kernel/framebuffer_device.h"
+#include "kernel/nouveau.h"
 #include "arch/x86_64/ahci.h"
 #include "arch/x86_64/fpu.h"
 #include "arch/x86_64/lapic.h"
@@ -656,6 +657,9 @@ _start(void)
 		kernel_halt();
 	}
 	klog_status("PCI", true, NULL);
+	if (!boot_has_option("nouveau=off"))
+		nouveau_boot_probe(!boot_has_option("nouveau=nobios"),
+		    !boot_has_option("nouveau=noedid"), !boot_has_option("nouveau=nodisplay"));
 	gpt_discover();
 	if (!usb_host_init())
 		klog_status("USBX", false, "host core initialization failed");

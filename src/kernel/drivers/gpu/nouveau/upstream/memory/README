@@ -1,0 +1,7 @@
+Linux v6.12, drivers/gpu/drm/nouveau/
+Sources: https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/v6.12/drivers/gpu/drm/nouveau/
+Filename underscores replace source path slashes. Original licenses preserved.
+ramht: fixed display hash and parent-relative binding.
+usergf119: six-word VRAM DMA object.
+gp102, ramgp102: physical capacity and reserved ranges.
+HOST push encoding: upstream/display/nvkm_engine_disp_nv50.c nv50_disp_dmac_push.
