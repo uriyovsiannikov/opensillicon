@@ -23,6 +23,7 @@ static bool dma_live,core_running,core_stopped,fail_dma_alloc,dma_available=true
 static enum dma_owner dma_owner;
 static uint32_t push_words[1024];
 static const struct dma_buffer dma_handle={.generation=100,.slot=0};
+static unsigned dma_alloc_calls;
 static bool expect_stop_failure;
 static uint32_t bound_fail_reg;
 static bool bound_read(void *ctx,uint32_t reg,uint32_t *value)
@@ -39,6 +40,7 @@ static void fixture(void)
 	external_maps=0;
 	assert(!allocations);alloc_calls=fail_alloc=0;uploaded=vr_restored=bound=unbound=false;
 	assert(!dma_live);core_running=core_stopped=fail_dma_alloc=fail_dma_acquire=false;dma_available=true;
+	dma_alloc_calls=0;
 	stalled=taken=caps=restored=busy=false;clock_ns=0;
 	log_text[0]=0;
 	memset(regs,0,sizeof(regs));
@@ -94,6 +96,7 @@ bool dma_identity_addressing_available(void){return dma_available;}
 bool dma_alloc(size_t size,size_t align,unsigned bits,struct dma_buffer *b)
 {
 	assert(!dma_live&&size==4096&&align==4096&&bits==40);
+	dma_alloc_calls++;
 	if(fail_dma_alloc)return false;
 	dma_live=true;dma_owner=DMA_OWNER_CPU;*b=dma_handle;
 	memset(push_words,0xa5,sizeof(push_words));return true;
@@ -259,7 +262,8 @@ unsigned total=calls;assert(total==ENGINE_MAPS);
 		assert(core_running==(test==0||test==17)&&core_stopped==(test==0||test==17)&&!dma_live);
 		if(test==17)assert(calls==ENGINE_MAPS+4&&external_maps==12);
 		if(test==18)assert(strstr(log_text,"CORECHANNEL PUT MMIO unavailable")&&external_maps==14);
-		if(test==19)assert(strstr(log_text,"CORECHANNEL disabled (experimental start/stop)"));
+		if(test==19)assert(strstr(log_text,"CORECHANNEL disabled (experimental start/stop)")&&
+		    !dma_alloc_calls&&calls==ENGINE_MAPS+2);
 		snapshot.heads[1].arm.timing_valid=false;layout.scanout_sample=0;
 		layout.test_core_channel=true;
 	}

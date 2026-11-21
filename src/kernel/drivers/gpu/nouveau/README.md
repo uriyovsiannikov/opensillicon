@@ -882,3 +882,26 @@ Host-regression моделирует занятые другими пользо�
 собственных ресурсов и сохранением внешних. Все map/address fault indices
 обновлены под компактную таблицу. Аппаратный start/stop после исправления
 бюджета ещё требуется подтвердить.
+
+После исправления lease budget аппаратный core start прошёл ожидание
+ready (`start status=0`, control на фотографии 0x490a009b, PUT=0), но
+последующая проверка readback была отклонена. После `start failed; stopping
+before rollback` пользователь наблюдал мерцание и чёрный экран. Завершение
+stop/restore не подтверждено; считать core start/stop рабочим нельзя.
+Причина потери изображения пока не установлена: native init/fini затрагивает
+общий display engine даже при пустом push, а модель регистров не воспроизводит
+все аппаратные side effects. Пустой PUT сам по себе не гарантирует сохранение
+firmware scanout при таком эксперименте.
+
+Нормальная boot probe больше не вызывает core start/stop. Новый layout flag
+`test_core_channel` по умолчанию false; production display caller его не
+устанавливает. Проверенный upload/bind/unbind/VRAM/PRAMIN/handoff цикл
+сохранён. Журнал показывает `CORECHANNEL disabled (experimental start/stop)`.
+Host-тест disabled пути проверяет отсутствие DMA allocations и обоих channel
+MMIO mappings. Эксперимент остаётся доступным через явный flag внутреннего
+API для тестов; пользовательской boot option для него пока нет.
+
+В эксперимент добавлен capture readback push/limit/target и rejection bitmap:
+bit0 PUT, bit1 control read, bit2 busy31, bit3 push, bit4 limit, bit5 target.
+Печатаются сохранённые отвергающие чтения, а не новые значения при логировании.
+Это диагностика незавершённого порта, не исправление аппаратного start/stop.

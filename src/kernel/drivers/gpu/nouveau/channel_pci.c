@@ -154,14 +154,22 @@ void nouveau_core_channel_probe_log(const struct pci_device_lease *claim,
 	    p.saved_control==UINT32_MAX || (p.saved_control&0x801e1013) ||
 	    !nouveau_channel_prepare(&channel,0,(uint32_t)(p.device_address>>8)|3,0))goto out;
 	enum nouveau_channel_status status=nouveau_channel_start(&channel,&io);
-	uint32_t control;
+	uint32_t control=UINT32_MAX,put=*p.put,descriptor[3];
+	bool control_read=read_reg(&p,0x610490,&control);
+	for(unsigned i=0;i<3;i++)descriptor[i]=p.descriptor[i];
+	uint32_t expected_push=(uint32_t)(p.device_address>>8)|3;
+	/* Keep the rejecting readback, rather than reading changing fields again
+	 * while printing a supposedly coherent diagnostic. */
+	uint32_t rejected=(put?1U:0)|(!control_read||control==UINT32_MAX?2U:0)|
+	    ((control&0x80000000)?4U:0)|(descriptor[0]!=expected_push?8U:0)|
+	    (descriptor[1]!=0x10000?16U:0)|(descriptor[2]!=1?32U:0);
 	klog("nouveau: CORECHANNEL start status=0x");hex32(status);
-	if(read_reg(&p,0x610490,&control)) {klog(" control=0x");hex32(control);}
-	klog(" PUT=0x");hex32(*p.put);klog("\n");
-	if(status==NOUVEAU_CHANNEL_OK && *p.put==0 && read_reg(&p,0x610490,&control) &&
-	    control!=UINT32_MAX && !(control&0x80000000) &&
-	    p.descriptor[0]==((uint32_t)(p.device_address>>8)|3) &&
-	    p.descriptor[1]==0x10000 && p.descriptor[2]==1) {
+	klog(" control=0x");hex32(control);klog(" PUT=0x");hex32(put);klog("\n");
+	klog("nouveau: CORECHANNEL push readback=0x");hex32(descriptor[0]);
+	klog(" expected=0x");hex32(expected_push);klog("\n");
+	klog("nouveau: CORECHANNEL limit=0x");hex32(descriptor[1]);
+	klog(" target=0x");hex32(descriptor[2]);klog(" rejected=0x");hex32(rejected);klog("\n");
+	if(status==NOUVEAU_CHANNEL_OK && !rejected) {
 		klog("nouveau: CORECHANNEL running empty PUT=0 (no methods submitted)\n");
 	} else klog("nouveau: CORECHANNEL start failed; stopping before rollback\n");
 	if(channel.resources_held) {
