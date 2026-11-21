@@ -442,3 +442,29 @@ buffers и только потом снимает логический резе�
 размещения и сохранение/снятие резерва при частичном release failure.
 Фото предыдущего этапа подтвердило `SURFACEPLAN` и `staged_words=33` на
 GTX 1050 Ti; новый VRAMPLAN пока проверен только host-тестами.
+
+## Lifecycle DMA-каналов GP102
+
+`channel.c` переносит GP102 init и GF119 fini core/base/overlay DMA channels
+(0..8) из NVKM v6.12. Поддержаны HOST push descriptor, GP102 0x61149x,
+PUT=0 при запуске и отдельные core/base stop masks. PIO не реализован.
+Транспорт read/write/time/delay/resource acquire/release инъецируется:
+в native boot probe данный lifecycle пока не вызывается.
+
+Начало требует inactive channel и resource acquire callback, который обязан
+уже обеспечить владение дисплеем, загрузку instance/RAMHT/notifier и DMA
+push ownership. Сам range allocator этого не обеспечивает. Чужой активный
+канал отклоняется без записей. Любая ошибка после acquire (включая callback
+write=false после реальной записи) оставляет канал quarantined и ресурсы
+закреплёнными. Остановка повторяема; release разрешён только после
+подтверждённой неактивности и чтения PUT. Ошибка release сохраняет handles.
+
+Ожидание ограничено 2 секундами и 20001 чтением; stalled/backward clock,
+IO failure и all-ones read приводят к отказу. Fini дополнительно требует
+снятия GP102 busy bit, чтобы не освободить память после неудачного init.
+Никакие staged методы, UPDATE, supervisor interrupts или engine handoff
+этот модуль автоматически не отправляет.
+Host-тест сверяет полный init protocol, все 9 channel IDs, core/base stop,
+каждый read/write/time отказ, failed writes с side effect, retry/quarantine,
+resource-release failure и timeout/stalled/backward clock. Реальное
+железо ещё не выполняло этот код; потребуется integration с engine lifecycle.
