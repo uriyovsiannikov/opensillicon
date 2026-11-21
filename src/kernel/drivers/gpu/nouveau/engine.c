@@ -101,9 +101,24 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 	    !read32(io,0x6194e8,&firmware) || !read32(io,0x6100ac,&supervisor)) return NOUVEAU_ENGINE_IO_FAILED;
 	for(unsigned i=0;i<3;i++) if(!read32(io,masks[i],&interrupts[i])) return NOUVEAU_ENGINE_IO_FAILED;
 	enum nouveau_engine_status status=idle(e,io);
-	if(status!=NOUVEAU_ENGINE_OK) return status;
+	bool deferred_core=status==NOUVEAU_ENGINE_BUSY && (supervisor&0x100) &&
+	    e->blocked_reg==0x610490 && !(e->blocked_value&0x80000013);
+	if(status!=NOUVEAU_ENGINE_OK && !deferred_core) return status;
+	if(deferred_core) {
+		/* Firmware may hold activity until request/ack completes. Still reject
+		 * every other live channel before touching handoff, and never steal
+		 * an allocated/connected/PUT-enabled core. */
+		for(unsigned i=1;i<17;i++) {
+			uint32_t value;
+			if(!read32(io,0x610490+i*16,&value)) return NOUVEAU_ENGINE_IO_FAILED;
+			if(value&0x801e0003) {
+				e->blocked_reg=0x610490+i*16;e->blocked_value=value;e->blocked_mask=0x801e0003;
+				return NOUVEAU_ENGINE_BUSY;
+			}
+		}
+	}
 	*e=(struct nouveau_engine){.state=NOUVEAU_ENGINE_QUARANTINED,.io=io,
-	    .saved_instance=instance,.saved_firmware=firmware,.snapshot_valid=true};
+	    .saved_instance=instance,.saved_firmware=firmware,.saved_supervisor=supervisor,.snapshot_valid=true};
 	for(unsigned i=0;i<3;i++) e->saved_interrupts[i]=interrupts[i];
 	if(supervisor&0x100) {
 		/* Write-one-to-clear is an acknowledgement, not restorable state. */
@@ -123,6 +138,11 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 	if(released&3) {
 		e->blocked_reg=0x6194e8;e->blocked_value=released;e->blocked_mask=3;
 		return NOUVEAU_ENGINE_BUSY;
+	}
+	if(deferred_core) {
+		e->drain_attempted=true;
+		e->drain_status=nouveau_engine_drain_disabled_core(io);
+		if(e->drain_status!=NOUVEAU_ENGINE_OK) return e->drain_status;
 	}
 	status=idle(e,io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
@@ -187,8 +207,13 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 	if(!e || e->state==NOUVEAU_ENGINE_EMPTY || !e->snapshot_valid || !e->io)
 		return NOUVEAU_ENGINE_INVALID;
 	e->state=NOUVEAU_ENGINE_QUARANTINED;
-	enum nouveau_engine_status status=idle(e,e->io);
-	if(status!=NOUVEAU_ENGINE_OK) return status;
+	/* Failed handoff/drain never bound any driver resources or changed
+	 * capability/IRQ state. Return only the firmware request bit even when
+	 * firmware activity could not drain. Full teardown still requires idle. */
+	if(e->instance || e->instance_touched || e->caps_touched || e->interrupts_touched) {
+		enum nouveau_engine_status status=idle(e,e->io);
+		if(status!=NOUVEAU_ENGINE_OK) return status;
+	}
 	uint32_t value;
 	if(e->instance_touched) {
 		if(!e->io->write32(e->io->context,0x610010,e->saved_instance) ||

@@ -8,7 +8,7 @@ struct model {
 	uint32_t instance,firmware,supervisor,masks[3],controls[17],caps[20];
 	unsigned reads,writes,fail_read,fail_write,wrong_read,delays;
 	uint64_t now;
-	bool stuck,stalled,backward,owner,fail_memory;
+	bool stuck,stalled,backward,owner,fail_memory,require_handoff,core_stuck;
 	struct nouveau_engine engine;
 	struct nouveau_engine_io io;
 	struct nouveau_vram_pool pool;
@@ -47,7 +47,8 @@ static bool write32(void *ctx,uint32_t reg,uint32_t value)
 	if(cap_index(reg,false)>=0)m->caps[cap_index(reg,false)]=value;
 	else if(reg==0x610490) {
 		assert(!(value&0x80000013));
-		m->controls[0]=m->stuck?value:value&~0x001e0000U;
+		if(m->require_handoff)assert(!(m->firmware&3));
+		m->controls[0]=(m->stuck||m->core_stuck)?value:value&~0x001e0000U;
 	}
 	else if(reg==0x610010) {
 		assert(value==1||m->upload.state==NOUVEAU_UPLOAD_PINNED);m->instance=value;
@@ -129,7 +130,32 @@ int main(void)
 		assert(m.writes==2&&m.delays<=20000);
 	}
 	setup(&m);
-	m.firmware=1;m.supervisor=0;
+	m.controls[0]=0x48070088;m.require_handoff=true;
+	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
+	assert(m.engine.drain_attempted&&m.engine.drain_status==NOUVEAU_ENGINE_OK);
+	assert(m.engine.saved_supervisor==0x100&&!(m.controls[0]&0x001e0000));
+	unsigned deferred_reads=m.reads,deferred_writes=m.writes;
+	recovered(&m);
+	for(unsigned type=0;type<2;type++)for(unsigned i=1;i<=(type?deferred_writes:deferred_reads);i++) {
+		setup(&m);m.controls[0]=0x48070088;m.require_handoff=true;
+		if(type)m.fail_write=i;else m.fail_read=i;
+		assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_IO_FAILED);
+		if(m.engine.snapshot_valid)recovered(&m);else assert(!m.writes);
+	}
+	setup(&m);m.controls[0]=0x48070088;m.require_handoff=true;m.core_stuck=true;
+	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_TIMEOUT);
+	assert(m.engine.drain_attempted&&m.engine.drain_status==NOUVEAU_ENGINE_TIMEOUT);
+	assert(!m.engine.interrupts_touched&&!m.engine.caps_touched&&!m.engine.instance);
+	assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_OK&&(m.firmware&1));
+	assert(m.controls[0]==0x48070088&&m.masks[0]==0x12);
+	setup(&m);m.controls[0]=0x48070088;m.supervisor=0;
+	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+	for(unsigned id=1;id<17;id++) {
+		setup(&m);m.controls[0]=0x48070088;m.controls[id]=0x20000;
+		assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+		assert(m.engine.blocked_reg==0x610490+id*16);
+	}
+	setup(&m);m.firmware=1;m.supervisor=0;
 	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
 	assert(m.engine.blocked_reg==0x6194e8&&m.engine.blocked_value==1&&m.engine.blocked_mask==3);
 	assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_OK);

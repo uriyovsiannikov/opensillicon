@@ -23,7 +23,7 @@ struct nouveau_engine {
 	enum nouveau_engine_state state;
 	const struct nouveau_engine_io *io;
 	struct nouveau_upload *instance;
-	uint32_t saved_instance,saved_firmware,saved_interrupts[3];
+	uint32_t saved_instance,saved_firmware,saved_supervisor,saved_interrupts[3];
 	bool snapshot_valid,firmware_touched,interrupts_touched,instance_touched;
 	struct nouveau_engine_cap caps[20];
 	uint8_t cap_count;
@@ -31,10 +31,13 @@ struct nouveau_engine {
 	/* Exact rejecting read for BUSY, captured before any rollback/re-read.
 	 * Channel controls use mask 0x801e0003; firmware uses 0x3. */
 	uint32_t blocked_reg,blocked_value,blocked_mask;
+	bool drain_attempted;
+	enum nouveau_engine_status drain_status;
 };
 /* Caller holds exclusive PCI/engine ownership for the entire lifetime.
- * Requires all 17 GP102 channel controls inactive; never steals an active
- * channel. Performs GF119 firmware request/ack and masks interrupts.
+ * Requires all 17 GP102 channel controls inactive before driver ownership;
+ * a disabled core's activity may drain after indicated firmware request/ack.
+ * Never steals allocated/connected/PUT-enabled core or another busy channel.
  * W1C supervisor acknowledgement cannot be recreated during rollback. */
 enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *,const struct nouveau_engine_io *);
 /* GF119 core fini for an already disabled firmware core only. Requires
@@ -49,7 +52,9 @@ enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *);
  * Requires successful capability preparation. Does not start channels,
  * enable IRQs or submit UPDATE. */
 enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *,struct nouveau_upload *);
-/* Requires ALL channels inactive. Restore instance/readback before unpin,
+/* Requires ALL channels inactive when driver resources/mirrors/IRQs changed.
+ * Firmware-only failed handoff restores request even if its core stays busy.
+ * Restore instance/readback before unpin,
  * restore uploaded VRAM, then saved interrupt masks and firmware request bit. On failure keep the
  * transaction quarantined. Upload stays pinned until old instance read-back;
  * after unpin, upload rollback state still prevents premature free. */

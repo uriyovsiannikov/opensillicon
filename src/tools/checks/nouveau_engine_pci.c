@@ -97,13 +97,19 @@ int main(void)
 	}
 	fixture();stalled=true;nouveau_engine_probe_log(&claim,&bar);
 	assert(!calls&&!taken&&!maps);
-	/* Real GP107 photograph: requests already off, activity stuck at 3.
-	 * Plain RAM cannot emulate drain completion: require bounded timeout,
-	 * retain the observed value, and never run capabilities or bind. */
+	/* Without VBIOS handoff indication, disabled activity still rejects
+	 * before writes; do not retry the pre-handoff drain that timed out. */
 	fixture();regs[0x610490/4]=0x48070088;memcpy(saved,regs,sizeof(regs));
 	nouveau_engine_probe_log(&claim,&bar);
 	assert(!taken&&!caps&&!restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
-	assert(strstr(log_text,"HANDOFF disabled core drain=timeout"));
+	assert(strstr(log_text,"HANDOFF take=channels/firmware busy"));
+	assert(strstr(log_text,"HANDOFF blocked firmware=0x00000000 supervisor=0x00000000"));
+	/* After supported request/ack, RAM leaves activity stuck. Roll back only
+	 * firmware state without requiring that unowned firmware channel idle. */
+	fixture();regs[0x610490/4]=0x48070088;regs[0x6194e8/4]=1;regs[0x6100ac/4]=0x100;
+	memcpy(saved,regs,sizeof(regs));nouveau_engine_probe_log(&claim,&bar);
+	assert(!taken&&!caps&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
+	assert(strstr(log_text,"HANDOFF core drain after firmware=timeout"));
 	fixture();regs[0x6194e8/4]=1;memcpy(saved,regs,sizeof(regs));
 	nouveau_engine_probe_log(&claim,&bar);
 	assert(busy&&!taken&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));

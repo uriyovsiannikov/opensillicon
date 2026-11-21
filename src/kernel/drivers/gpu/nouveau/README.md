@@ -717,3 +717,22 @@ Host-регрессия использует точное значение с ф
 write failures, все read failures, busy других каналов, enabled core,
 stalled/backward clock и неизменность VRAM/instance/PUT. Модель нативного
 адаптера дополнительно проверяет bounded timeout при stuck status.
+
+Аппаратный повторный stop до handoff дал timeout. Этот порядок больше не
+используется: drain переносится после подтверждённого firmware request/ack.
+Исключение preflight разрешает только disabled core0 с ненулевой activity,
+при supervisor handoff bit 0x100 и неактивных остальных 16 каналах. Core
+allocation/connect/PUT/init-busy по-прежнему запрещены. Без handoff bit
+никаких drain-записей не выполняется; выводятся firmware/supervisor для
+определения следующего шага. После handoff/drain ещё раз проверяется полный
+idle mask всех каналов, затем маскируются IRQ и разрешаются capabilities.
+
+При неудаче до изменения capabilities/IRQs/instance rollback возвращает
+только firmware request с readback и не требует idle firmware-канала:
+драйверных ресурсов в этом состоянии нет. После изменения ресурсов остаётся
+прежнее обязательное idle перед rollback. Проверки моделируют firmware,
+который разрешает drain только после request/ack, stuck core после ack,
+все read/write отказы этого нового пути и восстановление request при timeout.
+В журнал добавлены saved firmware/supervisor, `core drain after firmware`
+и `core after drain`. Работоспособность нового порядка на GP107 ещё не
+подтверждена; успешные host-модели не означают аппаратного handoff.

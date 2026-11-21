@@ -115,15 +115,26 @@ void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct 
 		m.addresses[i]=address;
 	}
 	enum nouveau_engine_status status=nouveau_engine_take(&engine,&io);
-	if(status==NOUVEAU_ENGINE_BUSY && !engine.snapshot_valid &&
-	    engine.blocked_reg==0x610490 && !(engine.blocked_value&0x80000013)) {
-		blocker_log(&engine);
-		status=nouveau_engine_drain_disabled_core(&io);
-		klog("nouveau: HANDOFF disabled core drain=");klog(status_name(status));klog("\n");
-		if(status==NOUVEAU_ENGINE_OK) status=nouveau_engine_take(&engine,&io);
+	if(engine.snapshot_valid) {
+		klog("nouveau: HANDOFF saved firmware=0x");hex32(engine.saved_firmware);
+		klog(" supervisor=0x");hex32(engine.saved_supervisor);klog("\n");
+	}
+	if(engine.drain_attempted) {
+		klog("nouveau: HANDOFF core drain after firmware=");klog(status_name(engine.drain_status));klog("\n");
+		uint32_t control;
+		if(read32(&m,0x610490,&control)) {
+			klog("nouveau: HANDOFF core after drain=0x");hex32(control);klog("\n");
+		}
 	}
 	klog("nouveau: HANDOFF take=");klog(status_name(status));klog("\n");
 	if(status==NOUVEAU_ENGINE_BUSY) blocker_log(&engine);
+	if(status==NOUVEAU_ENGINE_BUSY && !engine.snapshot_valid) {
+		uint32_t firmware,supervisor;
+		if(read32(&m,0x6194e8,&firmware) && read32(&m,0x6100ac,&supervisor)) {
+			klog("nouveau: HANDOFF blocked firmware=0x");hex32(firmware);
+			klog(" supervisor=0x");hex32(supervisor);klog("\n");
+		}
+	}
 	if(status==NOUVEAU_ENGINE_OK) {
 		status=nouveau_engine_capabilities(&engine);
 		klog("nouveau: HANDOFF capabilities=");klog(status_name(status));klog("\n");
