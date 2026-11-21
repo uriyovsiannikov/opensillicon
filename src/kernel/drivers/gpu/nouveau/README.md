@@ -400,3 +400,20 @@ Notifier по-прежнему instance-relative, UPDATE/активация ка
 сохранение таймингов/нулевого хвоста, query/ownership/descriptor отказы.
 Аппаратный следующий результат: `SURFACEPLAN` и
 `MEM surface appended; staged_words=33 (CPU owned, not submitted)`.
+
+## Учёт диапазонов VRAM
+
+`vram_pool.c` реализует native first-fit allocator с 32 слотами для ranges,
+резервов и allocations. Базовые исключения GP102: VGA первые 256 КиБ,
+VBIOS последний 1 МиБ. Caller добавляет scanout и другие известные резервы;
+перекрывающиеся исключения допустимы, резерв поверх live allocation запрещён.
+Размер/выравнивание проверяются без overflow, поиск ограничен числом слотов.
+Handles содержат pool/slot/generation: double-free и stale handle после
+повторного использования слота отклоняются; wrap generation закрывает
+дальнейшее выделение. Pool непереносим, caller сериализует доступ.
+
+Это software accounting, не доказательство свободной VRAM. Инициализация
+pool не отключает прошивку и не передаёт владение GPU. До реализации
+аппаратного lifecycle загружать данные по выбранному адресу нельзя.
+Тест проверяет scanout/VGA/VBIOS exclusions, overlap, alignment, exhaustion,
+неизменность при invalid init, stale handles и 240000 случайных allocations.
