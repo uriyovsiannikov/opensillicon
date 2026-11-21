@@ -560,3 +560,20 @@ clock, отказ VRAM rollback и retry. Нативная boot probe этот A
 частичный rollback и повторное восстановление, а также неверный read-back
 instance после фактической записи. Supervisor/PLL, IRQ dispatch и native
 adapter всё ещё не подключены; boot probe handoff не выполняет.
+
+## GF119 supervisor dispatcher
+
+`supervisor.c` переносит порядок `gf119_disp_super`: stage 1 делает armed/async
+snapshot и detach1; stage 2 выполняет detach2 для всех отмеченных heads,
+затем PLL для mask 0x10000, затем attach2; stage 3 делает attach3.
+Head masks читаются до W1C ack pending stage. После успешных callbacks
+очищаются head masks и записывается supervisor completion 0x80000000.
+
+Callbacks обязаны реализовывать реальные IED/routing/PLL действия; заглушки
+с возвратом успеха недопустимы. Ошибка read/write/action оставляет FAILED,
+completion не отправляется. Автоматический retry и reentry запрещены,
+поскольку BIOS-действия и W1C могут уже иметь side effects. Несколько
+одновременных stage bits отклоняются до ack. Неизвестные status bits
+остаются нетронутыми. Это polling primitive, не готовый IRQ dispatcher.
+Host-тест сверяет порядок всех стадий и все read/write/action отказы.
+Нативная probe supervisor не вызывает, IED interpreter пока отсутствует.
