@@ -2,6 +2,7 @@
  * Inspect firmware instance memory without binding objects or writing VRAM. */
 #include "kernel/nouveau_vram.h"
 #include "kernel/heap.h"
+#include "kernel/framebuffer_device.h"
 #include "kernel/log.h"
 struct pramin_mapping { volatile uint32_t *control, *aperture; };
 static bool read32(void *context,uint32_t reg,uint32_t *value)
@@ -128,4 +129,65 @@ void nouveau_firmware_bar_log(const struct pci_device_lease *claim,
 	klog(" instance=0x");hex(base,10);klog(" pdb_raw=0x");hex(pdb,16);
 	klog(" va_limit=0x");hex(limit,16);klog("; PRAMIN restored\n");
 	firmware_free(image);
+}
+
+struct scanout_mapping { struct pramin_mapping mapping;uint64_t vram; };
+static bool scan_cpu(void *context,uint64_t offset,uint32_t *words,size_t count)
+{
+	(void)context;return framebuffer_device_boot_read(offset,words,count);
+}
+static bool scan_gpu(void *context,uint64_t address,uint32_t *words,size_t count)
+{
+	struct scanout_mapping *m=context;
+	struct nouveau_pramin_io io={.context=&m->mapping,.read32=read32,.write32=write32};
+	enum nouveau_vram_status status=nouveau_vram_read(&io,m->vram,address,words,count*4);
+	if(status==NOUVEAU_VRAM_RESTORE_FAILED) {
+		klog("nouveau: FBMATCH PRAMIN restore failed\n");kernel_halt();
+	}
+	return status==NOUVEAU_VRAM_OK;
+}
+static const char *match_name(enum nouveau_scanout_match status)
+{
+	switch(status) {
+	case NOUVEAU_SCANOUT_SAMPLE_MATCH:return "nonuniform samples match (not ownership)";
+	case NOUVEAU_SCANOUT_MISMATCH:return "mismatch";
+	case NOUVEAU_SCANOUT_FLAT:return "uniform samples; inconclusive";
+	case NOUVEAU_SCANOUT_UNSTABLE:return "pixels changed; inconclusive";
+	case NOUVEAU_SCANOUT_IO_FAILED:return "read failed";
+	case NOUVEAU_SCANOUT_INVALID:return "range invalid";
+	}
+	return "unknown";
+}
+void nouveau_scanout_probe_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar,uint32_t context,uint64_t vram,uint64_t offset,uint64_t span)
+{
+	/* Only the observed physical-mode GP107 32MiB aperture, upper half.
+	 * Candidates are hypotheses, not translations derived from BAR offset. */
+	if(context!=0x40000000 || vram<0x2000000 || vram>(UINT64_C(1)<<40) ||
+	    offset<0x1000000 || offset>=0x2000000 || !span || span>0x2000000-offset) {
+		klog("nouveau: FBMATCH physical BAR3 layout unsupported\n");return;
+	}
+	struct pci_mmio_lease leases[2]={{0}};
+	struct scanout_mapping m={.vram=vram};volatile void *address;
+	if(!pci_mmio_map(claim,bar,0x1700,4,&leases[0]) ||
+	    !pci_mmio_lease_address(&leases[0],&address)) goto out;
+	m.mapping.control=address;
+	if(!pci_mmio_map_readonly(claim,bar,0x700000,0x100000,&leases[1]) ||
+	    !pci_mmio_lease_address(&leases[1],&address)) goto out;
+	m.mapping.aperture=address;
+	struct nouveau_scanout_reader io={.context=&m,.cpu=scan_cpu,.gpu=scan_gpu};
+	uint64_t candidates[]={0,offset,vram-0x2000000+offset};
+	unsigned matches=0;
+	for(unsigned i=0;i<3;i++) {
+		enum nouveau_scanout_match status=nouveau_scanout_compare(&io,vram,candidates[i],span);
+		klog("nouveau: FBMATCH candidate VRAM=0x");hex(candidates[i],10);
+		klog(" ");klog(match_name(status));klog("\n");
+		if(status==NOUVEAU_SCANOUT_SAMPLE_MATCH) matches++;
+	}
+	klog("nouveau: FBMATCH sample_matches=");klog_u64(matches);
+	klog("; no VRAM writes or reservation\n");
+out:
+	for(unsigned i=2;i>0;i--) if(leases[i-1].generation && !pci_mmio_release(&leases[i-1])) {
+		klog("nouveau: FBMATCH MMIO release failed\n");kernel_halt();
+	}
 }

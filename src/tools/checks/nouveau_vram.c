@@ -66,6 +66,30 @@ static void reset(void)
 	assert(!maps&&!allocations);control=0x200;
 	map_calls=address_calls=fail_map=fail_address=decoded_contexts=decoded_bar_pdbs=0;fail_alloc=false;
 }
+
+struct compare_model { unsigned cpu_calls,gpu_calls,fail_cpu,fail_gpu;bool flat,change,wrong; };
+static bool compare_cpu(void *context,uint64_t offset,uint32_t *words,size_t count)
+{
+	struct compare_model *m=context;assert(count==16&&offset+64<=8192);m->cpu_calls++;
+	if(m->cpu_calls==m->fail_cpu)return false;
+	for(unsigned i=0;i<count;i++)words[i]=m->flat?7:pattern(offset+i*4);
+	if(m->change && !(m->cpu_calls&1)) words[0]^=1;
+	return true;
+}
+static bool compare_gpu(void *context,uint64_t address,uint32_t *words,size_t count)
+{
+	struct compare_model *m=context;assert(count==16&&address>=0x1000000);m->gpu_calls++;
+	if(m->gpu_calls==m->fail_gpu)return false;
+	for(unsigned i=0;i<count;i++)words[i]=m->flat?7:pattern(address-0x1000000+i*4);
+	if(m->wrong && address==0x1000000+8192-64) words[15]^=1;
+	return true;
+}
+bool framebuffer_device_boot_read(uint64_t offset,uint32_t *words,size_t count)
+{
+	assert(control==0x200&&count==16&&offset+64<=8192);
+	for(unsigned i=0;i<count;i++)words[i]=pattern(offset+i*4);
+	return true;
+}
 int main(void)
 {
 	uint32_t words[16];struct model m={.window=0x200,.saved=0x200};
@@ -144,5 +168,39 @@ int main(void)
 	nouveau_firmware_bar_log(&claim,&bar,1,0xc0001000,UINT64_C(0x100000000));assert(!map_calls);
 	nouveau_firmware_bar_log(&claim,&bar,3,0xb0001000,UINT64_C(0x100000000));assert(!map_calls);
 	nouveau_firmware_bar_log(&claim,&bar,3,0x80001000,0x100000);assert(!map_calls);
-	puts("NOUVEAU_VRAM_PASS: PRAMIN window crossing, 40-bit bounds, every IO failure, restore verification, native readonly aperture and partial lease cleanup");
+	struct compare_model compare={0};
+	struct nouveau_scanout_reader reader={.context=&compare,.cpu=compare_cpu,.gpu=compare_gpu};
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_SAMPLE_MATCH);
+	assert(compare.cpu_calls==256&&compare.gpu_calls==128);
+	compare=(struct compare_model){.wrong=true};
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_MISMATCH);
+	assert(compare.gpu_calls==128); /* Must include final 64 bytes of the span. */
+	compare=(struct compare_model){.flat=true};
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_FLAT);
+	compare=(struct compare_model){.change=true};
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_UNSTABLE);
+	for(unsigned i=1;i<=256;i++) {
+		compare=(struct compare_model){.fail_cpu=i};
+		assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_IO_FAILED);
+	}
+	for(unsigned i=1;i<=128;i++) {
+		compare=(struct compare_model){.fail_gpu=i};
+		assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,8192)==NOUVEAU_SCANOUT_IO_FAILED);
+	}
+	assert(nouveau_scanout_compare(&reader,0x1001000,0x1000000,8192)==NOUVEAU_SCANOUT_INVALID);
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000001,8192)==NOUVEAU_SCANOUT_INVALID);
+	assert(nouveau_scanout_compare(&reader,0x4000000,0x1000000,0)==NOUVEAU_SCANOUT_INVALID);
+	/* Native reader restores the register before each second CPU sample. */
+	for(unsigned i=0;i<sizeof(aperture)/4;i++)aperture[i]=pattern(i*4);
+	reset();nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+	assert(!maps&&!allocations&&control==0x200&&map_calls==2);
+	for(unsigned i=0;i<sizeof(aperture)/4;i++)assert(aperture[i]==pattern(i*4));
+	for(unsigned i=1;i<=2;i++) {
+		reset();fail_map=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+		assert(!maps&&!allocations&&control==0x200);
+		reset();fail_address=i;nouveau_scanout_probe_log(&claim,&bar,0x40000000,UINT64_C(0x100000000),0x1000000,8192);
+		assert(!maps&&!allocations&&control==0x200);
+	}
+	reset();nouveau_scanout_probe_log(&claim,&bar,0x80000000,UINT64_C(0x100000000),0x1000000,8192);assert(!map_calls);
+	puts("NOUVEAU_VRAM_PASS: PRAMIN window crossing, 40-bit bounds, every IO failure, restore verification, native readonly aperture/cleanup, scanout sample match/mismatch/flat/unstable and every read failure");
 }

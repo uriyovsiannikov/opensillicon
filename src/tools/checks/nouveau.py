@@ -14,6 +14,7 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         ("nouveau", ["device.c", "pci.c"]),
         ("nouveau_bios", ["bios.c", "bios_shadow.c"]),
         ("nouveau_edid", ["edid.c", "ddc.c"]),
+        ("nouveau_framebuffer", ["../../../tty/fb/framebuffer_device.c"]),
         ("nouveau_vram", ["memory.c", "vram.c", "vram_pci.c"]),
         ("nouveau_memory", ["memory.c", "memory_dma.c"]),
         ("nouveau_display", ["display.c", "display_pci.c", "memory.c", "memory_dma.c"]),
@@ -22,7 +23,8 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         subprocess.run(shlex.split(os.environ.get("CC", "gcc")) + [
             "-std=c11", "-O1", "-g",
             "-Wall", "-Wextra", "-Werror", *sanitizer,
-            "-fno-omit-frame-pointer", "-Isrc/include", "-Isrc/limine",
+            "-fno-omit-frame-pointer", "-ffunction-sections", "-fdata-sections",
+            "-Wl,--gc-sections", "-Isrc/include", "-Isrc/limine",
             f"src/tools/checks/{name}.c",
             *[f"src/kernel/drivers/gpu/nouveau/{s}" for s in sources],
             "-o", str(exe)

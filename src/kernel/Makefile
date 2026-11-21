@@ -332,7 +332,7 @@ $(BUILD_DIR)/nouveau_vram.o: src/kernel/drivers/gpu/nouveau/vram.c \
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/nouveau_vram_pci.o: src/kernel/drivers/gpu/nouveau/vram_pci.c \
-		src/include/kernel/nouveau_vram.h src/include/kernel/heap.h | $(BUILD_DIR)
+		src/include/kernel/nouveau_vram.h src/include/kernel/heap.h src/include/kernel/framebuffer_device.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 .PHONY: check-nouveau

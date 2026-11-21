@@ -83,6 +83,20 @@ framebuffer_device_boot_physical(uint64_t *base, uint64_t *size)
 	return true;
 }
 
+bool
+framebuffer_device_boot_read(uint64_t offset, uint32_t *words, size_t count)
+{
+	if (active_framebuffer == NULL || words == NULL || count == 0 ||
+	    count > 16 || (offset & 3) || ((uintptr_t)active_framebuffer->address & 3) ||
+	    offset >= active_framebuffer_size || count * sizeof(uint32_t) > active_framebuffer_size - offset)
+		return false;
+	const volatile uint32_t *source = (const volatile uint32_t *)
+	    ((const uint8_t *)active_framebuffer->address + offset);
+	for (size_t i = 0; i < count; i++)
+		words[i] = source[i];
+	return true;
+}
+
 int
 framebuffer_device_present(uint64_t user_address, size_t length)
 {

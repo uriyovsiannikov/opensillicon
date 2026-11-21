@@ -349,3 +349,26 @@ mode без VM instance. Эти регистры не следует интер�
 Источник: NVIDIA open-gpu-kernel-modules tag 570.124.04,
 `src/common/inc/swref/published/maxwell/gm107/dev_bus.h`;
 `kern_bus_gm107.c` также описывает физический bootstrap BAR2.
+
+## Проверка кандидатов адреса GOP framebuffer
+
+`FBMATCH` работает только для наблюдаемой конфигурации GP107: PCI BAR3
+32 МиБ, context=0x40000000, framebuffer полностью в верхних 16 МиБ.
+Без записи VRAM сравниваются 128 выборок по 64 байта, распределённых по
+всему span framebuffer, включая последние 64 байта. Проверяются три
+гипотезы: VRAM 0, VRAM offset BAR3 и VRAM size-32MiB+offset.
+Это гипотезы для диагностики, а не формула трансляции physical BAR3.
+
+Каждая GPU-выборка читается через PRAMIN; окно восстанавливается перед
+повторным CPU-чтением тех же пикселей. Изменившиеся пиксели дают unstable,
+однотонные данные — inconclusive. Только совпадающие неоднородные выборки
+дают sample match. Совпадение не доказывает соответствие всего диапазона,
+активный scanout или владение VRAM. Регистры BAR mode и поверхность не
+изменяются; PRAMIN register восстанавливается даже при отказе чтения.
+
+Новый kernel-only framebuffer API читает до 16 DWORD из действующей Limine
+aperture с проверкой выравнивания и границ. Пользовательский framebuffer ABI
+не меняется. Host-тесты проверяют match/mismatch на последней выборке,
+flat/unstable, отказ каждого CPU/GPU-чтения, недопустимые диапазоны и
+частичный native mapping cleanup. Аппаратная проверка ещё требуется:
+нужны строки `FBMATCH` и `BARVM` из нового ISO.

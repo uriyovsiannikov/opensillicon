@@ -60,3 +60,25 @@ out:
 	}
 	return status;
 }
+
+
+enum nouveau_scanout_match nouveau_scanout_compare(const struct nouveau_scanout_reader *io,
+	uint64_t vram,uint64_t candidate,uint64_t span)
+{
+	if(!io || !io->cpu || !io->gpu || span<8192 || span>64U*1024U*1024U ||
+	    (span&3) || (candidate&3) || vram>(UINT64_C(1)<<40) ||
+	    candidate>=vram || span>vram-candidate) return NOUVEAU_SCANOUT_INVALID;
+	uint32_t before[16],after[16],gpu[16],first=0;
+	bool diverse=false;
+	for(unsigned i=0;i<128;i++) {
+		uint64_t offset=(((span-64)*i)/127)&~UINT64_C(3);
+		if(!io->cpu(io->context,offset,before,16) ||
+		    !io->gpu(io->context,candidate+offset,gpu,16) ||
+		    !io->cpu(io->context,offset,after,16)) return NOUVEAU_SCANOUT_IO_FAILED;
+		for(unsigned j=0;j<16;j++) if(before[j]!=after[j]) return NOUVEAU_SCANOUT_UNSTABLE;
+		for(unsigned j=0;j<16;j++) if(before[j]!=gpu[j]) return NOUVEAU_SCANOUT_MISMATCH;
+		if(!i) first=before[0];
+		for(unsigned j=0;j<16;j++) if(before[j]!=first) diverse=true;
+	}
+	return diverse?NOUVEAU_SCANOUT_SAMPLE_MATCH:NOUVEAU_SCANOUT_FLAT;
+}
