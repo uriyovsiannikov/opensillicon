@@ -583,9 +583,9 @@ Host-тест сверяет порядок всех стадий и все read
 `pll.c` переносит fractional path gt215_pll_calc, используемый
 `gf100_devinit_pll_set` через gm200 devinit GP107. Декодер v0x40 limits
 payload проверяет 14 байт, VCO/input ranges и M/N/P. Refclk должен быть явно
-получен из записи VBIOS; автоматического предположения 27 МГц нет.
-Поиск BIT C/PLL table и image-D translation для этой записи ещё не подключён;
-v0x50 и legacy PLL formats здесь не реализованы.
+получен из записи VBIOS либо идентифицированного crystal; автоматического
+предположения 27 МГц нет. BIT C/PLL table и image-D translation подключены
+ниже; v0x50 и legacy PLL formats здесь не реализованы.
 
 Арифметика расчёта 64-битная с проверкой divisors/ranges. Возвращаются M/N/P,
 encoded fractional N, расчётная частота и коэффициенты. План GF100 содержит
@@ -656,3 +656,35 @@ span, nested limits pointer, register base и limits ranges. Непровере�
 Host-тест сверяет причины для каждого класса ошибки и содержимое проблемных
 limits. Следующий аппаратный результат должен показать PLLPLAN либо эти
 строки, чтобы не подменять реальную причину предположением.
+
+## Аппаратный handoff перед загрузкой instance
+
+На GTX 1050 Ti подтверждены `VBIOS PLL status=parsed` и расчёт для
+148500 кГц: M=2 N=109 P=10 fraction=0x1000, refclk 27000 из VBIOS.
+Это расчёт, PLL не программировался.
+
+После успешного timing/PLL plan `engine_pci.c` выполняет короткий нативный
+цикл take/capabilities/restore. Все read-only leases снимка освобождаются
+до получения leases handoff. Проверяются 17 неактивных каналов; активный
+канал не останавливается. Выполняются firmware request/ack, маскирование
+прерываний с readback, копирование head/SOR capabilities в EVO mirrors,
+затем восстановление mirrors, масок и firmware request с readback.
+W1C handoff acknowledge не является восстанавливаемым состоянием.
+Request/ack bits должны быть сброшены после handoff; отсутствие interrupt
+handoff при активном request запрещает захват даже при ack=0.
+
+Записи разрешены только в точные masks/handoff/capability регистры;
+instance и channel controls отображаются read-only. PRAMIN/VRAM/PLL вообще
+не отображаются этим адаптером. Таймер проверяется до MMIO; ожидания
+ограничены временем и числом итераций. Отказы до изменения состояния
+освобождают leases; после изменения выполняется rollback. Невозможность
+подтвердить восстановление останавливает ядро с сохранёнными mappings.
+
+Журнал: `HANDOFF take=...`, `HANDOFF capabilities=...`, `HANDOFF restored`.
+Busy означает отсутствие захвата. Этот цикл ещё не разрешает загрузку
+произвольной VRAM: нужны отдельный контракт владения диапазоном и исключение
+firmware/scanout областей. Нативные upload/bind/channel start остаются
+отключены до аппаратной проверки handoff. Host-тест адаптера проверяет
+реальный take/capabilities/restore над моделью PCI mappings, все отказы
+map/address, 17 busy channels, неподвижный таймер и rollback при неверной
+capability. Сам аппаратный handoff этим тестом не подтверждён.

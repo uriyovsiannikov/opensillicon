@@ -316,7 +316,7 @@ $(BUILD_DIR)/nouveau_display.o: src/kernel/drivers/gpu/nouveau/display.c \
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/nouveau_display_pci.o: src/kernel/drivers/gpu/nouveau/display_pci.c \
-		src/include/kernel/nouveau_display.h src/include/kernel/nouveau_memory.h src/include/kernel/nouveau_vram.h src/include/kernel/framebuffer_device.h | $(BUILD_DIR)
+		src/include/kernel/nouveau_display.h src/include/kernel/nouveau_engine.h src/include/kernel/nouveau_memory.h src/include/kernel/nouveau_vram.h src/include/kernel/framebuffer_device.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/nouveau_memory.o: src/kernel/drivers/gpu/nouveau/memory.c \
@@ -349,6 +349,10 @@ $(BUILD_DIR)/nouveau_upload.o: src/kernel/drivers/gpu/nouveau/upload.c \
 
 $(BUILD_DIR)/nouveau_engine.o: src/kernel/drivers/gpu/nouveau/engine.c \
 		src/include/kernel/nouveau_engine.h src/include/kernel/nouveau_upload.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/nouveau_engine_pci.o: src/kernel/drivers/gpu/nouveau/engine_pci.c \
+		src/include/kernel/nouveau_engine.h src/include/kernel/timer.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/nouveau_supervisor.o: src/kernel/drivers/gpu/nouveau/supervisor.c \
@@ -487,7 +491,7 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 	$(BUILD_DIR)/nouveau_edid.o $(BUILD_DIR)/nouveau_ddc.o $(BUILD_DIR)/nouveau_ddc_pci.o \
 	$(BUILD_DIR)/nouveau_display.o $(BUILD_DIR)/nouveau_display_pci.o \
 	$(BUILD_DIR)/nouveau_memory.o $(BUILD_DIR)/nouveau_memory_dma.o \
-	$(BUILD_DIR)/nouveau_vram.o $(BUILD_DIR)/nouveau_vram_pci.o $(BUILD_DIR)/nouveau_vram_pool.o $(BUILD_DIR)/nouveau_channel.o $(BUILD_DIR)/nouveau_upload.o $(BUILD_DIR)/nouveau_engine.o $(BUILD_DIR)/nouveau_supervisor.o $(BUILD_DIR)/nouveau_pll.o \
+	$(BUILD_DIR)/nouveau_vram.o $(BUILD_DIR)/nouveau_vram_pci.o $(BUILD_DIR)/nouveau_vram_pool.o $(BUILD_DIR)/nouveau_channel.o $(BUILD_DIR)/nouveau_upload.o $(BUILD_DIR)/nouveau_engine.o $(BUILD_DIR)/nouveau_engine_pci.o $(BUILD_DIR)/nouveau_supervisor.o $(BUILD_DIR)/nouveau_pll.o \
 	$(BUILD_DIR)/dma_ring.o $(BUILD_DIR)/netbuf.o $(BUILD_DIR)/netdev.o \
 	$(BUILD_DIR)/udp_socket.o $(BUILD_DIR)/tcp_socket.o \
 	$(BUILD_DIR)/network_service.o \

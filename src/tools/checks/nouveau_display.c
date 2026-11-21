@@ -20,6 +20,8 @@ static struct nouveau_dcb_output output;
 static struct os_framebuffer_info fb;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.base=0xa3000000,.aperture_size=0x1000000};
+void nouveau_engine_probe_log(const struct pci_device_lease *c,const struct pci_bar_resource *b)
+{ assert(c==&claim&&b==&bar&&!maps&&pll_planned); }
 
 static void fixture(void)
 {

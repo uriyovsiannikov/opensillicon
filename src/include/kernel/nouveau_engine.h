@@ -2,6 +2,7 @@
 #ifndef KERNEL_NOUVEAU_ENGINE_H
 #define KERNEL_NOUVEAU_ENGINE_H
 #include "kernel/nouveau_upload.h"
+#include "arch/x86_64/pci.h"
 enum nouveau_engine_state {
 	NOUVEAU_ENGINE_EMPTY, NOUVEAU_ENGINE_QUIESCENT, NOUVEAU_ENGINE_BOUND,
 	NOUVEAU_ENGINE_QUARANTINED
@@ -45,4 +46,7 @@ enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *,struct no
  * transaction quarantined. Upload stays pinned until old instance read-back;
  * after unpin, upload rollback state still prevents premature free. */
 enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *);
+/* Native reversible handoff/capability probe. Does not bind an instance,
+ * upload VRAM, start a channel, submit commands or change display timing. */
+void nouveau_engine_probe_log(const struct pci_device_lease *,const struct pci_bar_resource *);
 #endif
