@@ -239,6 +239,9 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 		enum nouveau_engine_status status=nouveau_engine_unbind(e);
 		if(status!=NOUVEAU_ENGINE_OK) return status;
 	}
+	/* Unbind alone returns QUIESCENT; the larger restore remains ambiguous
+	 * until every capability/IRQ/firmware write has been verified. */
+	e->state=NOUVEAU_ENGINE_QUARANTINED;
 	uint32_t value;
 	if(e->caps_touched) {
 		for(unsigned i=0;i<e->cap_count;i++) {
