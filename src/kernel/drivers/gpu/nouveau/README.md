@@ -260,6 +260,19 @@ CPU ownership, отказы allocation/query, неверные DMA addresses, о
 и сохранение handles при cleanup failure. Display-тест покрывает последний
 head/вторую поверхность и отказ всех восьми read-only mappings.
 
+## Boot framebuffer и BAR1
+
+`BOOTFB` выводит kernel-only физический CPU-адрес framebuffer из Limine HHDM,
+размер, pitch и bpp. Под активным PCI claim проверяется размер BAR1 и полное
+вхождение boot framebuffer в его aperture. Отображение BAR1 не создаётся.
+Offset в BAR1 не считается физическим адресом VRAM: для Pascal нужна
+трансляция через GPU MMU. Пограничные spans/overflow проверяются host-тестом.
+
+Фото пользователя от 2026-11-21 подтвердило создание и освобождение CPU
+staging на GTX 1050 Ti (`HOST=0x3403`). У base channel 0 `ctrl=0x40000088`,
+`push=1`; у обеих surfaces DMA/offset/size/storage нулевые, params=0xe900.
+По этим полям адрес действующего GOP framebuffer ещё не определён.
+
 ## Следующие этапы для GP107
 
 1. Определить фактический UEFI scanout/base DMA context, реализовать

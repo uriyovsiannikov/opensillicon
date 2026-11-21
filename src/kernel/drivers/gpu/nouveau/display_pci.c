@@ -61,6 +61,29 @@ static const char *plan_status(enum nouveau_display_plan_status status)
 	return "unknown";
 }
 
+static void boot_framebuffer_log(const struct pci_device_lease *claim,
+	const struct os_framebuffer_info *fb)
+{
+	uint64_t physical,size,offset;
+	if(!framebuffer_device_boot_physical(&physical,&size)) {
+		klog("nouveau: BOOTFB physical metadata unavailable\n");return;
+	}
+	klog("nouveau: BOOTFB CPU physical=0x");hex(physical,16);
+	klog(" bytes=");klog_u64(size);klog(" pitch=");klog_u64(fb->pitch);
+	klog(" bpp=");klog_u64(fb->bits_per_pixel);klog("\n");
+	struct pci_bar_resource bar1;
+	if(!pci_bar_probe_size(claim,1,&bar1)) {
+		klog("nouveau: BOOTFB BAR1 sizing unavailable\n");return;
+	}
+	klog("nouveau: BOOTFB BAR1=0x");hex(bar1.base,16);
+	klog(" aperture=");klog_u64(bar1.aperture_size);
+	if(nouveau_framebuffer_bar_offset(&bar1,physical,size,&offset)) {
+		klog(" offset=0x");hex(offset,16);
+		klog(" (GPU MMU translation required)");
+	} else klog(" boot framebuffer outside this BAR1");
+	klog("\n");
+}
+
 void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar,const struct nouveau_dcb_output *output,
 	const struct nouveau_edid *edid)
@@ -128,6 +151,7 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	}
 	struct os_framebuffer_info fb;
 	if(!framebuffer_device_info(&fb)) { klog("nouveau: MODEPLAN framebuffer unavailable\n");goto out; }
+	boot_framebuffer_log(claim,&fb);
 	const struct nouveau_edid_mode *mode=NULL;
 	for(unsigned i=0;i<edid->mode_count;i++) if(edid->modes[i].detailed) {
 		if(mode==NULL || edid->modes[i].preferred) mode=&edid->modes[i];

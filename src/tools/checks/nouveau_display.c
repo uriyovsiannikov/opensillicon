@@ -80,6 +80,10 @@ bool pci_mmio_release(struct pci_mmio_lease *l)
 {
 	assert(l->generation==1&&maps>0);maps--;l->generation=0;return true;
 }
+bool framebuffer_device_boot_physical(uint64_t *base,uint64_t *size)
+{*base=0xb0100000;*size=fb.size;return framebuffer_available;}
+bool pci_bar_probe_size(const struct pci_device_lease *c,unsigned index,struct pci_bar_resource *b)
+{assert(c==&claim&&index==1);*b=(struct pci_bar_resource){.type=PCI_BAR_MEMORY64,.base=0xb0000000,.aperture_size=0x10000000};return true;}
 bool framebuffer_device_info(struct os_framebuffer_info *out){*out=fb;return framebuffer_available;}
 void klog(const char *s){(void)s;}
 void klog_u64(uint64_t v){(void)v;}

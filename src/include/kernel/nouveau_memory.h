@@ -11,6 +11,10 @@
 #define NOUVEAU_SURFACE_HANDLE 0xf0000001U
 #define NOUVEAU_NOTIFIER_HANDLE 0xf0000000U
 /* Total physical capacity, not the amount of available VRAM. */
+/* Relate a boot CPU physical span to a sized PCI aperture. This does not
+ * translate BAR1 virtual addresses through the GPU MMU. */
+bool nouveau_framebuffer_bar_offset(const struct pci_bar_resource *bar,
+	uint64_t physical, uint64_t size, uint64_t *offset);
 bool nouveau_gp102_vram_size(uint32_t reg, uint64_t *bytes);
 bool nouveau_vram_dma_object(uint32_t words[6], uint64_t start,
 	uint64_t limit, bool small_pages);

@@ -47,6 +47,17 @@ static void reset(void)
 int main(void)
 {
 	uint64_t vram=0;uint32_t words[6],off=0,reg=0;
+	struct pci_bar_resource bar={.type=PCI_BAR_MEMORY64,.base=0xb0000000,.aperture_size=0x10000000};
+	uint64_t offset=0;
+	assert(nouveau_framebuffer_bar_offset(&bar,0xb0100000,0x100000,&offset)&&offset==0x100000);
+	assert(nouveau_framebuffer_bar_offset(&bar,0xbfffff00,256,&offset));
+	assert(!nouveau_framebuffer_bar_offset(&bar,0xbfffff00,257,&offset));
+	assert(!nouveau_framebuffer_bar_offset(&bar,0xc0000000,1,&offset));
+	assert(!nouveau_framebuffer_bar_offset(&bar,0xafffffff,1,&offset));
+	assert(!nouveau_framebuffer_bar_offset(&bar,0xb0000000,0,&offset));
+	bar.aperture_size=0;assert(!nouveau_framebuffer_bar_offset(&bar,0xb0000000,1,&offset));
+	bar.base=UINT64_MAX-15;bar.aperture_size=32;
+	assert(!nouveau_framebuffer_bar_offset(&bar,bar.base,1,&offset));
 	assert(nouveau_gp102_vram_size(0x108,&vram)&&vram==UINT64_C(0x100000000));
 	assert(nouveau_gp102_vram_size(0x40000108,&vram)&&vram==UINT64_C(0xf0000000));
 	assert(!nouveau_gp102_vram_size(0,&vram)&&!vram);

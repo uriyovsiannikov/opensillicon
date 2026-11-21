@@ -24,6 +24,18 @@
  * subdev/fb/gp102.c. Native CPU staging, no Linux runtime dependencies. */
 #include "kernel/nouveau_memory.h"
 
+bool nouveau_framebuffer_bar_offset(const struct pci_bar_resource *bar,
+	uint64_t physical,uint64_t size,uint64_t *offset)
+{
+	if(!offset) return false;
+	*offset=0;
+	if(!bar || (bar->type!=PCI_BAR_MEMORY32 && bar->type!=PCI_BAR_MEMORY64) ||
+	    !bar->aperture_size || !size || bar->base>UINT64_MAX-bar->aperture_size ||
+	    physical<bar->base || physical-bar->base>=bar->aperture_size ||
+	    size>bar->aperture_size-(physical-bar->base)) return false;
+	*offset=physical-bar->base;return true;
+}
+
 bool nouveau_gp102_vram_size(uint32_t reg,uint64_t *bytes)
 {
 	if(bytes==NULL) return false;

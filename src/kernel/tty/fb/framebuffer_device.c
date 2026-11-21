@@ -65,6 +65,24 @@ framebuffer_device_info(struct os_framebuffer_info *info)
 	return true;
 }
 
+bool
+framebuffer_device_boot_physical(uint64_t *base, uint64_t *size)
+{
+	if (base == NULL || size == NULL)
+		return false;
+	*base = 0;
+	*size = 0;
+	if (active_framebuffer == NULL || active_framebuffer_size == 0)
+		return false;
+	uint64_t address = (uintptr_t)active_framebuffer->address;
+	uint64_t offset = vmm_hhdm_offset();
+	if (address < offset || address - offset > UINT64_MAX - active_framebuffer_size)
+		return false;
+	*base = address - offset;
+	*size = active_framebuffer_size;
+	return true;
+}
+
 int
 framebuffer_device_present(uint64_t user_address, size_t length)
 {

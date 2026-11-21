@@ -10,6 +10,9 @@
 
 bool framebuffer_device_init(const struct limine_framebuffer *framebuffer);
 bool framebuffer_device_info(struct os_framebuffer_info *info);
+/* Kernel-only boot metadata. Limine framebuffer.address uses the HHDM;
+ * this is a CPU physical aperture address, not a GPU VRAM address. */
+bool framebuffer_device_boot_physical(uint64_t *base, uint64_t *size);
 int framebuffer_device_present(uint64_t user_address, size_t length);
 int framebuffer_device_present_rect(const struct os_framebuffer_rect *rect);
 
