@@ -205,6 +205,9 @@ int main(void)
 	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_OK);
 	pll_fixture();rom[0x620]=0x50;
 	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_UNSUPPORTED);
+	pll_fixture();rom[0x708]=rom[0x70a]=rom[0x70c]=0;
+	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_OK);
+	assert(nouveau_pll_calculate(&r.vpll[0].limits,148500,&coefficients)&&coefficients.actual_khz==148500);
 	for(unsigned failure=0;failure<7;failure++) {
 		pll_fixture();
 		if(failure==0)wr32(rom+0x600,ROM_SIZE-2);
@@ -213,7 +216,7 @@ int main(void)
 		if(failure==3)wr16(rom+0x625,ROM_SIZE-10);
 		if(failure==4)wr32(rom+0x627,0xdeadbeef);
 		if(failure==5)rom[0x62f]=0x80; /* duplicate VPLL0 */
-		if(failure==6)rom[0x708]=0; /* divisor minimum zero */
+		if(failure==6)rom[0x709]=0; /* no usable M divisor */
 		assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_INVALID);
 		for(unsigned i=0;i<4;i++)assert(!r.vpll[i].valid);
 	}

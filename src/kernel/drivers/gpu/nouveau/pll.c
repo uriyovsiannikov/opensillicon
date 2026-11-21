@@ -78,8 +78,8 @@ static bool valid(const struct nouveau_pll_limits *l)
 	return l && l->ref_khz<=65535000 && l->vco_min_khz &&
 	    l->vco_max_khz>=l->vco_min_khz && l->vco_max_khz<=65535000 &&
 	    l->input_min_khz && l->input_max_khz>=l->input_min_khz &&
-	    l->input_max_khz<=65535000 && l->min_m && l->min_m<=l->max_m &&
-	    l->min_n && l->min_n<=l->max_n && l->min_p && l->min_p<=l->max_p;
+	    l->input_max_khz<=65535000 && l->max_m && l->min_m<=l->max_m &&
+	    l->min_n<=l->max_n && l->max_p && l->min_p<=l->max_p;
 }
 bool nouveau_pll_limits_v40(const uint8_t *payload,size_t size,uint32_t ref,
 	struct nouveau_pll_limits *limits)
@@ -134,7 +134,7 @@ bool nouveau_pll_plan(unsigned head,uint32_t reg,uint32_t control,
 	const struct nouveau_pll_coefficients *c,struct nouveau_pll_plan *plan)
 {
 	if(!c || !plan || head>3 || reg!=0x614100+head*0x800 || control==UINT32_MAX ||
-	    !c->m || !c->n || !c->p || !c->actual_khz ||
+	    !c->m || !c->p || !c->actual_khz ||
 	    c->coefficient_word!=((uint32_t)c->p<<16|((uint32_t)c->n<<8)|c->m) ||
 	    c->fraction_word!=((uint32_t)c->fraction<<16)) return false;
 	*plan=(struct nouveau_pll_plan){.writes={{reg+12,control|0x100},

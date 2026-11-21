@@ -29,6 +29,16 @@ int main(void)
 	for(unsigned i=0;i<14;i++)assert(!nouveau_pll_limits_v40(payload,i,27000,&l));
 	assert(nouveau_pll_limits_v40(payload,14,0,&l)&&!l.ref_khz);
 	assert(!nouveau_pll_calculate(&l,148500,&c));
+	uint8_t zero_minima[14];memcpy(zero_minima,payload,14);
+	zero_minima[8]=zero_minima[10]=zero_minima[12]=0;
+	assert(nouveau_pll_limits_v40(zero_minima,14,27000,&l));
+	assert(nouveau_pll_calculate(&l,148500,&c)&&c.m&&c.p&&c.actual_khz==148500);
+	assert(nouveau_pll_plan(0,0x614100,0,&c,&p));
+	l=(struct nouveau_pll_limits){.ref_khz=27000,.vco_min_khz=10000,.vco_max_khz=20000,
+	    .input_min_khz=1000,.input_max_khz=27000,.min_m=0,.max_m=32,.min_n=0,.max_n=255,.min_p=0,.max_p=63};
+	assert(nouveau_pll_calculate(&l,15000,&c)&&c.n==0&&c.actual_khz==15000);
+	assert(nouveau_pll_plan(0,0x614100,0,&c,&p));
+	zero_minima[9]=0;assert(!nouveau_pll_limits_v40(zero_minima,14,27000,&l));
 	for(unsigned i=0;i<20000;i++) {
 		uint8_t fuzz[14];for(unsigned j=0;j<14;j++)fuzz[j]=random32();
 		if(nouveau_pll_limits_v40(fuzz,14,27000,&l)&&nouveau_pll_calculate(&l,1+random32()%1000000,&c)) {
