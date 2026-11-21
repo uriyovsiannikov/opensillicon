@@ -62,6 +62,8 @@ bool nouveau_display_snapshot(nouveau_display_reader read, void *context,
 	if(read==NULL) return false;
 	READ(0x22448,s->head_count); READ(0x612004,s->capabilities);
 	READ(0x100ce0,s->vidmem);
+	READ(0x1704,s->bar1_instance); READ(0x1714,s->bar3_instance);
+	READ(0x1710,s->bar_status);
 	if(!s->head_count || s->head_count>NOUVEAU_DISPLAY_HEADS || s->capabilities==UINT32_MAX) return false;
 	s->head_mask=s->capabilities&15; s->sor_mask=(s->capabilities>>8)&255;
 	if(!s->head_mask || (s->head_mask&~((1U<<s->head_count)-1))) return false;

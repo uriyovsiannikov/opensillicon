@@ -38,6 +38,7 @@ struct nouveau_display_snapshot {
 	struct nouveau_head_snapshot heads[NOUVEAU_DISPLAY_HEADS];
 	struct nouveau_sor_snapshot sors[NOUVEAU_DISPLAY_SORS];
 	uint32_t vidmem;
+	uint32_t bar1_instance, bar3_instance, bar_status;
 	struct nouveau_base_snapshot base[NOUVEAU_DISPLAY_HEADS];
 };
 

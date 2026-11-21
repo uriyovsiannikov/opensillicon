@@ -8,7 +8,7 @@
 
 struct display_region { uint32_t offset, size; };
 static const struct display_region regions[] = {
-	{0x022000,0x1000},{0x100000,0x1000},{0x610000,0x2000},{0x612000,0x1000},
+	{0x001000,0x1000},{0x022000,0x1000},{0x100000,0x1000},{0x610000,0x2000},{0x612000,0x1000},
 	{0x616000,0x2000},{0x619000,0x1000},{0x640000,0x5000},{0x660000,0x5000}
 };
 #define REGION_COUNT (sizeof(regions)/sizeof(regions[0]))
@@ -72,17 +72,25 @@ static void boot_framebuffer_log(const struct pci_device_lease *claim,
 	klog("nouveau: BOOTFB CPU physical=0x");hex(physical,16);
 	klog(" bytes=");klog_u64(size);klog(" pitch=");klog_u64(fb->pitch);
 	klog(" bpp=");klog_u64(fb->bits_per_pixel);klog("\n");
-	struct pci_bar_resource bar1;
-	if(!pci_bar_probe_size(claim,1,&bar1)) {
-		klog("nouveau: BOOTFB BAR1 sizing unavailable\n");return;
+	/* GF100/GM107 BAR code uses PCI index 3 for the second GPU aperture
+	 * (called BAR2 by NVKM). Indices 2 and 4 are high halves of 64-bit BARs. */
+	const unsigned indices[]={1,3};
+	bool matched=false;
+	for(unsigned i=0;i<2;i++) {
+		unsigned index=indices[i];struct pci_bar_resource resource;
+		klog("nouveau: BOOTFB PCI BAR");klog_u64(index);
+		if(!pci_bar_probe_size(claim,index,&resource)) {
+			klog(" sizing unavailable\n");continue;
+		}
+		klog("=0x");hex(resource.base,16);
+		klog(" aperture=");klog_u64(resource.aperture_size);
+		if(nouveau_framebuffer_bar_offset(&resource,physical,size,&offset)) {
+			matched=true;klog(" contains boot framebuffer offset=0x");hex(offset,16);
+			klog(" (GPU MMU translation required)");
+		} else klog(" boot framebuffer outside aperture");
+		klog("\n");
 	}
-	klog("nouveau: BOOTFB BAR1=0x");hex(bar1.base,16);
-	klog(" aperture=");klog_u64(bar1.aperture_size);
-	if(nouveau_framebuffer_bar_offset(&bar1,physical,size,&offset)) {
-		klog(" offset=0x");hex(offset,16);
-		klog(" (GPU MMU translation required)");
-	} else klog(" boot framebuffer outside this BAR1");
-	klog("\n");
+	if(!matched) klog("nouveau: BOOTFB not contained in GPU PCI BAR1/BAR3\n");
 }
 
 void nouveau_display_probe_log(const struct pci_device_lease *claim,
@@ -116,6 +124,8 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 		klog(" total_bytes=");klog_u64(vram);
 	} else klog(" capacity unknown");
 	klog("\n");
+	klog("nouveau: BARMAP BAR1_CTX=0x");hex(s.bar1_instance,8);
+	klog(" BAR3_CTX=0x");hex(s.bar3_instance,8);klog(" status=0x");hex(s.bar_status,8);klog("\n");
 	klog("nouveau: DISP supervisor=0x");hex(s.supervisor,8);
 	klog(" enable=0x");hex(s.supervisor_enable,8);klog(" control=0x");hex(s.supervisor_control,8);
 	klog(" handoff=0x");hex(s.bios_handoff,8);klog(" intr=0x");hex(s.interrupt,8);klog("\n");

@@ -315,3 +315,18 @@ allocation, cleanup, исходное значение окна и неизме�
 Полный DRM/GEM/TTM/KMS, `/dev/dri`, ускорение 2D/3D, reclocking и управление
 питанием на этом этапе отсутствуют. Порядок выше — план переноса, а не
 утверждение о готовности этих подсистем.
+
+## GOP на второй PCI aperture
+
+Фото пользователя: CPU framebuffer `0xa1000000`, 8294400 байт, pitch 7680,
+32 bpp; BAR1 `0x90000000`, 256 МиБ, не содержит framebuffer. Display instance
+`0x610010=1` не соответствует VRAM instance NVKM (`...09`), поэтому чтение
+FWINST было пропущено. Состояние base surfaces по-прежнему нулевое.
+
+Проверяются обе PCI memory apertures GP107: BAR1 и BAR3. В NVKM
+`subdev/bar/gf100.c` вторая называется BAR2, но создаётся по PCI index 3;
+индексы 2/4 — старшие половины 64-битных BAR. Отказ sizing BAR1 не мешает
+проверке BAR3. Полный span framebuffer должен находиться внутри aperture.
+`BARMAP` читает, не меняя, BAR VM instance pointers 0x1704/0x1714 и status
+0x1710 по `gf100.c`/`gm107.c`. Даже совпадение BAR3 не доказывает прямую
+адресацию VRAM: для этого нужна проверка GPU page tables.

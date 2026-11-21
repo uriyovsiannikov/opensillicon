@@ -10,6 +10,9 @@
 static alignas(4) uint32_t regs[0x800000/4];
 static unsigned reads,fail_read,maps,map_calls,address_calls,fail_map,fail_address;
 static bool framebuffer_available=true;
+static uint64_t boot_physical=0xb0100000;
+static unsigned bar_probe_mask,fail_bar_probe;
+static bool bootfb_contained;
 static uint32_t xy(unsigned x,unsigned y){return x|(y<<16);}
 static uint32_t packet(unsigned method,unsigned count){return (count<<18)|method;}
 static struct nouveau_edid_mode mode;
@@ -23,6 +26,7 @@ static void fixture(void)
 	assert(maps==0);
 	memset(regs,0,sizeof(regs));reads=map_calls=address_calls=0;
 	fail_read=fail_map=fail_address=0;framebuffer_available=true;
+	boot_physical=0xb0100000;bar_probe_mask=fail_bar_probe=0;bootfb_contained=false;
 	mode=(struct nouveau_edid_mode){.width=1920,.height=1080,.clock_khz=148500,
 	    .refresh_millihz=60000,.preferred=true,.detailed=true,
 	    .hsync_start=2008,.hsync_end=2052,.htotal=2200,
@@ -32,6 +36,7 @@ static void fixture(void)
 	fb=(struct os_framebuffer_info){.width=1920,.height=1080,.pitch=7680,.size=7680*1080,
 	    .bits_per_pixel=32,.red_mask_size=8,.red_mask_shift=16,.green_mask_size=8,
 	    .green_mask_shift=8,.blue_mask_size=8,.blue_mask_shift=0};
+	regs[0x1704/4]=0x80002000;regs[0x1714/4]=0x80002001;regs[0x1710/4]=5;
 	regs[0x100ce0/4]=0x108;regs[0x22448/4]=4;regs[0x612004/4]=0x30f;
 	regs[0x610010/4]=0x10009;regs[0x610490/4]=0x01000013;
 	regs[0x611494/4]=0x123003;regs[0x611498/4]=0x10000;regs[0x61149c/4]=1;
@@ -84,11 +89,14 @@ void nouveau_firmware_instance_log(const struct pci_device_lease *c,
 	const struct pci_bar_resource *b,const struct nouveau_display_snapshot *s,uint64_t size)
 {assert(c==&claim&&b==&bar&&s->instance==0x10009&&size==UINT64_C(0x100000000));}
 bool framebuffer_device_boot_physical(uint64_t *base,uint64_t *size)
-{*base=0xb0100000;*size=fb.size;return framebuffer_available;}
+{*base=boot_physical;*size=fb.size;return framebuffer_available;}
 bool pci_bar_probe_size(const struct pci_device_lease *c,unsigned index,struct pci_bar_resource *b)
-{assert(c==&claim&&index==1);*b=(struct pci_bar_resource){.type=PCI_BAR_MEMORY64,.base=0xb0000000,.aperture_size=0x10000000};return true;}
+{assert(c==&claim&&(index==1||index==3));bar_probe_mask|=1U<<index;
+ if(index==fail_bar_probe)return false;
+ *b=(struct pci_bar_resource){.type=PCI_BAR_MEMORY64,.base=index==1?0xb0000000:0xc0000000,
+ .aperture_size=index==1?0x10000000:0x2000000};return true;}
 bool framebuffer_device_info(struct os_framebuffer_info *out){*out=fb;return framebuffer_available;}
-void klog(const char *s){(void)s;}
+void klog(const char *s){if(!strcmp(s," contains boot framebuffer offset=0x"))bootfb_contained=true;}
 void klog_u64(uint64_t v){(void)v;}
 _Noreturn void kernel_halt(void){abort();}
 
@@ -106,6 +114,7 @@ int main(void)
 	struct nouveau_display_snapshot s;
 	struct nouveau_display_plan p;
 	fixture();assert(nouveau_display_snapshot(read_reg,NULL,&s));
+	assert(s.bar1_instance==0x80002000&&s.bar3_instance==0x80002001&&s.bar_status==5);
 	assert(s.vidmem==0x108 && s.base[0].arm[0].offset_lo==0x123456 &&
 	    s.base[0].asy[0].offset_lo==0x654321 && s.base[3].arm[1].size==xy(1280,720) &&
 	    s.base[3].asy[1].params==0xcf00 && s.base[3].dma[1]==0xf0000001);
@@ -157,11 +166,23 @@ int main(void)
 	struct nouveau_edid edid={.mode_count=1};edid.modes[0]=mode;
 	uint32_t *copy=malloc(sizeof(regs));assert(copy);memcpy(copy,regs,sizeof(regs));
 	nouveau_display_probe_log(&claim,&bar,&output,&edid);
-	assert(!maps&&map_calls==8&&!memcmp(copy,regs,sizeof(regs)));
-	for(unsigned i=1;i<=8;i++){
+	assert(!maps&&map_calls==9&&!memcmp(copy,regs,sizeof(regs)));
+	assert(bar_probe_mask==10&&bootfb_contained);
+	for(unsigned i=1;i<=9;i++){
 		fixture();fail_map=i;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 		fixture();fail_address=i;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 	}
+	/* GTX 1050 Ti photo: BAR1 ends before GOP buffer; BAR3 contains it.
+	 * Failing BAR1 sizing must not skip the independent BAR3 probe. */
+	fixture();boot_physical=0xc1000000;
+	nouveau_display_probe_log(&claim,&bar,&output,&edid);
+	assert(bar_probe_mask==10&&bootfb_contained&&!maps);
+	fixture();boot_physical=0xc1000000;fail_bar_probe=1;
+	nouveau_display_probe_log(&claim,&bar,&output,&edid);
+	assert(bar_probe_mask==10&&bootfb_contained&&!maps);
+	fixture();boot_physical=0xc1ffffff;
+	nouveau_display_probe_log(&claim,&bar,&output,&edid);
+	assert(bar_probe_mask==10&&!bootfb_contained&&!maps);
 	free(copy);
 	fixture();framebuffer_available=false;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 	/* Fuzz public planner inputs; no queue submission or writes exist here. */

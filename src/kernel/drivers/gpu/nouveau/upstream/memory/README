@@ -6,3 +6,4 @@ usergf119: six-word VRAM DMA object.
 gp102, ramgp102: physical capacity and reserved ranges.
 HOST push encoding: upstream/display/nvkm_engine_disp_nv50.c nv50_disp_dmac_push.
 instmem nv50: slow PRAMIN read window transport, adapted with bounds and restore.
+bar gf100/gm107: PCI index 3 is NVKM BAR2; VM context and busy registers.
