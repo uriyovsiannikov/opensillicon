@@ -89,6 +89,7 @@ bool nouveau_display_snapshot(nouveau_display_reader read, void *context,
 		READ(0x616340+i*0x800,y); READ(0x616344+i*0x800,x);
 		s->heads[i].scan_x=x&65535; s->heads[i].scan_y=y&65535;
 		READ(0x6101d4+i*0x800,s->heads[i].supervisor_mask);
+		READ(0x61410c+i*0x800,s->pll_control[i]);
 		struct nouveau_base_snapshot *b=&s->base[i];
 		READ(0x6104a0+i*0x10,b->control); READ(0x6114a4+i*0x10,b->push);
 		READ(0x641084+i*0x1000,b->present);

@@ -129,7 +129,7 @@ void nouveau_ddc_probe_log(const struct pci_device_lease *claim,
 				if (m->preferred) klog(" preferred");
 				klog("\n");
 			}
-			if (display_enabled) nouveau_display_probe_log(claim,bar,o,&edid);
+			if (display_enabled) nouveau_display_probe_bios_log(claim,bar,o,&edid,bios);
 		}
 	}
 out:

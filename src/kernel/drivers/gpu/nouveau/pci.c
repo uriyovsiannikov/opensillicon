@@ -70,6 +70,7 @@ probe_internal(const struct pci_device_info *device,
 		klog("nouveau: GP107 VBIOS capture (PRAMIN, then PROM)\n");
 		result->bios_attempted = true;
 		result->bios_status = nouveau_bios_probe(&claim, &bar, &result->bios);
+		result->bios.crystal_khz=result->crystal_khz;
 		nouveau_bios_log(result->bios_status, &result->bios);
 		if (edid_enabled && result->bios_status == NOUVEAU_BIOS_OK)
 			nouveau_ddc_probe_log(&claim, &bar, &result->bios, display_enabled);
@@ -276,6 +277,15 @@ void nouveau_bios_log(enum nouveau_bios_status status,
 	}
 	if (status != NOUVEAU_BIOS_OK)
 		return;
+	klog("nouveau: VBIOS PLL table=0x");log_hex(r->pll_table_offset,5);
+	klog(" version=0x");log_hex(r->pll_version,2);klog(" status=");
+	switch(r->pll_status) {
+	case NOUVEAU_BIOS_PLL_ABSENT:klog("absent");break;
+	case NOUVEAU_BIOS_PLL_OK:klog("parsed");break;
+	case NOUVEAU_BIOS_PLL_UNSUPPORTED:klog("unsupported");break;
+	case NOUVEAU_BIOS_PLL_INVALID:klog("invalid");break;
+	}
+	klog("\n");
 	klog("nouveau: DCB v"); log_hex(r->dcb_version, 2);
 	klog(" outputs="); klog_u64(r->output_count);
 	klog(" connectors="); klog_u64(r->connector_count);

@@ -12,7 +12,7 @@ static unsigned reads,fail_read,maps,map_calls,address_calls,fail_map,fail_addre
 static bool framebuffer_available=true;
 static uint64_t boot_physical=0xb0100000;
 static unsigned bar_probe_mask,fail_bar_probe;
-static bool bootfb_contained;
+static bool bootfb_contained,pll_planned;
 static uint32_t xy(unsigned x,unsigned y){return x|(y<<16);}
 static uint32_t packet(unsigned method,unsigned count){return (count<<18)|method;}
 static struct nouveau_edid_mode mode;
@@ -26,7 +26,7 @@ static void fixture(void)
 	assert(maps==0);
 	memset(regs,0,sizeof(regs));reads=map_calls=address_calls=0;
 	fail_read=fail_map=fail_address=0;framebuffer_available=true;
-	boot_physical=0xb0100000;bar_probe_mask=fail_bar_probe=0;bootfb_contained=false;
+	boot_physical=0xb0100000;bar_probe_mask=fail_bar_probe=0;bootfb_contained=pll_planned=false;
 	mode=(struct nouveau_edid_mode){.width=1920,.height=1080,.clock_khz=148500,
 	    .refresh_millihz=60000,.preferred=true,.detailed=true,
 	    .hsync_start=2008,.hsync_end=2052,.htotal=2200,
@@ -36,6 +36,7 @@ static void fixture(void)
 	fb=(struct os_framebuffer_info){.width=1920,.height=1080,.pitch=7680,.size=7680*1080,
 	    .bits_per_pixel=32,.red_mask_size=8,.red_mask_shift=16,.green_mask_size=8,
 	    .green_mask_shift=8,.blue_mask_size=8,.blue_mask_shift=0};
+	regs[0x61410c/4]=0x20;regs[0x61590c/4]=0x80;
 	regs[0x1704/4]=0x80002000;regs[0x1714/4]=0x80002001;regs[0x1710/4]=5;
 	regs[0x100ce0/4]=0x108;regs[0x22448/4]=4;regs[0x612004/4]=0x30f;
 	regs[0x610010/4]=0x10009;regs[0x610490/4]=0x01000013;
@@ -102,7 +103,8 @@ bool pci_bar_probe_size(const struct pci_device_lease *c,unsigned index,struct p
  *b=(struct pci_bar_resource){.type=PCI_BAR_MEMORY64,.base=index==1?0xb0000000:0xc0000000,
  .aperture_size=index==1?0x10000000:0x2000000};return true;}
 bool framebuffer_device_info(struct os_framebuffer_info *out){*out=fb;return framebuffer_available;}
-void klog(const char *s){if(!strcmp(s," contains boot framebuffer offset=0x"))bootfb_contained=true;}
+void klog(const char *s){if(!strcmp(s," contains boot framebuffer offset=0x"))bootfb_contained=true;
+if(!strcmp(s,"nouveau: PLLPLAN coefficients built (not programmed) head="))pll_planned=true;}
 void klog_u64(uint64_t v){(void)v;}
 _Noreturn void kernel_halt(void){abort();}
 
@@ -120,6 +122,7 @@ int main(void)
 	struct nouveau_display_snapshot s;
 	struct nouveau_display_plan p;
 	fixture();assert(nouveau_display_snapshot(read_reg,NULL,&s));
+	assert(s.pll_control[0]==0x20&&s.pll_control[3]==0x80);
 	assert(s.bar1_instance==0x80002000&&s.bar3_instance==0x80002001&&s.bar_status==5);
 	assert(s.vidmem==0x108 && s.base[0].arm[0].offset_lo==0x123456 &&
 	    s.base[0].asy[0].offset_lo==0x654321 && s.base[3].arm[1].size==xy(1280,720) &&
@@ -189,9 +192,9 @@ int main(void)
 	struct nouveau_edid edid={.mode_count=1};edid.modes[0]=mode;
 	uint32_t *copy=malloc(sizeof(regs));assert(copy);memcpy(copy,regs,sizeof(regs));
 	nouveau_display_probe_log(&claim,&bar,&output,&edid);
-	assert(!maps&&map_calls==9&&!memcmp(copy,regs,sizeof(regs)));
+	assert(!maps&&map_calls==10&&!memcmp(copy,regs,sizeof(regs)));
 	assert(bar_probe_mask==10&&bootfb_contained);
-	for(unsigned i=1;i<=9;i++){
+	for(unsigned i=1;i<=10;i++){
 		fixture();fail_map=i;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 		fixture();fail_address=i;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 	}
@@ -206,6 +209,19 @@ int main(void)
 	fixture();boot_physical=0xc1ffffff;
 	nouveau_display_probe_log(&claim,&bar,&output,&edid);
 	assert(bar_probe_mask==10&&!bootfb_contained&&!maps);
+	fixture();
+	struct nouveau_bios_report bios={.pll_status=NOUVEAU_BIOS_PLL_OK,.crystal_khz=27000};
+	const uint8_t payload[]={0xf4,1,0xb8,0x0b,1,0,27,0,1,32,1,255,1,63};
+	assert(nouveau_pll_limits_v40(payload,14,0,&bios.vpll[0].limits));
+	bios.vpll[0].reg=0x614100;bios.vpll[0].valid=true;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);
+	assert(pll_planned&&!maps&&!memcmp(copy,regs,sizeof(regs)));
+	fixture();bios.crystal_khz=0;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);assert(!pll_planned&&!maps);
+	fixture();bios.vpll[0].limits.ref_khz=27000;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);assert(pll_planned&&!maps);
+	fixture();bios.vpll[0].reg=0xdeadbeef;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);assert(!pll_planned&&!maps);
 	free(copy);
 	fixture();framebuffer_available=false;nouveau_display_probe_log(&claim,&bar,&output,&edid);assert(!maps);
 	/* Fuzz public planner inputs; no queue submission or writes exist here. */

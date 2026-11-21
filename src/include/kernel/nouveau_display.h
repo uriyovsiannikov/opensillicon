@@ -37,7 +37,7 @@ struct nouveau_display_snapshot {
 	uint32_t route[4][2];
 	struct nouveau_head_snapshot heads[NOUVEAU_DISPLAY_HEADS];
 	struct nouveau_sor_snapshot sors[NOUVEAU_DISPLAY_SORS];
-	uint32_t vidmem;
+	uint32_t vidmem,pll_control[NOUVEAU_DISPLAY_HEADS];
 	uint32_t bar1_instance, bar3_instance, bar_status;
 	struct nouveau_base_snapshot base[NOUVEAU_DISPLAY_HEADS];
 };
@@ -68,6 +68,10 @@ enum nouveau_display_plan_status nouveau_display_plan(
 void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar, const struct nouveau_dcb_output *output,
 	const struct nouveau_edid *edid);
+void nouveau_display_probe_bios_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar, const struct nouveau_dcb_output *output,
+	const struct nouveau_edid *edid, const struct nouveau_bios_report *bios);
+
 #define NOUVEAU_SURFACE_PLAN_WORDS 9U
 struct nouveau_surface_plan { uint32_t words[NOUVEAU_SURFACE_PLAN_WORDS]; };
 /* CPU-only pitch/RGB surface methods. Address is relative to a VRAM context

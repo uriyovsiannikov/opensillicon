@@ -9,7 +9,7 @@
 struct display_region { uint32_t offset, size; };
 static const struct display_region regions[] = {
 	{0x001000,0x1000},{0x022000,0x1000},{0x100000,0x1000},{0x610000,0x2000},{0x612000,0x1000},
-	{0x616000,0x2000},{0x619000,0x1000},{0x640000,0x5000},{0x660000,0x5000}
+	{0x614000,0x2000},{0x616000,0x2000},{0x619000,0x1000},{0x640000,0x5000},{0x660000,0x5000}
 };
 #define REGION_COUNT (sizeof(regions)/sizeof(regions[0]))
 struct mapped_display {
@@ -97,9 +97,32 @@ static void boot_framebuffer_log(const struct pci_device_lease *claim,
 	if(!matched) klog("nouveau: BOOTFB not contained in GPU PCI BAR1/BAR3\n");
 }
 
-void nouveau_display_probe_log(const struct pci_device_lease *claim,
+static void pll_plan_log(const struct nouveau_display_snapshot *s,
+	const struct nouveau_display_plan *p,const struct nouveau_bios_report *bios)
+{
+	if(!bios || bios->pll_status!=NOUVEAU_BIOS_PLL_OK || !bios->vpll[p->head].valid) {
+		klog("nouveau: PLLPLAN selected head VBIOS limits unavailable\n");return;
+	}
+	const struct nouveau_bios_vpll *entry=&bios->vpll[p->head];
+	struct nouveau_pll_limits limits=entry->limits;
+	bool crystal=!limits.ref_khz;
+	if(crystal) limits.ref_khz=bios->crystal_khz;
+	if(!limits.ref_khz) {klog("nouveau: PLLPLAN hardware crystal required\n");return;}
+	struct nouveau_pll_coefficients c;struct nouveau_pll_plan plan;
+	if(!nouveau_pll_calculate(&limits,p->mode.clock_khz,&c) ||
+	    !nouveau_pll_plan(p->head,entry->reg,s->pll_control[p->head],&c,&plan)) {
+		klog("nouveau: PLLPLAN target/register outside supported VBIOS limits\n");return;
+	}
+	klog("nouveau: PLLPLAN coefficients built (not programmed) head=");klog_u64(p->head);
+	klog(" target_khz=");klog_u64(p->mode.clock_khz);klog(" calculated_khz=");klog_u64(c.actual_khz);
+	klog(" ref_khz=");klog_u64(limits.ref_khz);klog(crystal?" crystal":" VBIOS");
+	klog(" M=");klog_u64(c.m);klog(" N=");klog_u64(c.n);klog(" P=");klog_u64(c.p);
+	klog(" fraction=0x");hex(c.fraction,4);klog(" register=0x");hex(entry->reg,6);klog("\n");
+}
+
+void nouveau_display_probe_bios_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar,const struct nouveau_dcb_output *output,
-	const struct nouveau_edid *edid)
+	const struct nouveau_edid *edid,const struct nouveau_bios_report *bios)
 {
 	struct mapped_display map={0};
 	struct nouveau_display_snapshot s;
@@ -193,6 +216,7 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 		klog(" link=");klog_u64(p.link);klog(" dwords=");klog_u64(p.count);
 	}
 	klog("\n");
+	if(status==NOUVEAU_PLAN_OK) pll_plan_log(&s,&p,bios);
 	if(status==NOUVEAU_PLAN_OK && sample_candidate!=UINT64_MAX) {
 		struct nouveau_surface_plan surface;
 		if(nouveau_display_surface_plan(p.head,sample_candidate,vram,
@@ -247,4 +271,11 @@ out:
 	for(size_t i=REGION_COUNT;i>0;i--) if(map.leases[i-1].generation && !pci_mmio_release(&map.leases[i-1])) {
 		klog("nouveau: DISP MMIO cleanup failed\n");kernel_halt();
 	}
+}
+
+void nouveau_display_probe_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar,const struct nouveau_dcb_output *output,
+	const struct nouveau_edid *edid)
+{
+	nouveau_display_probe_bios_log(claim,bar,output,edid,NULL);
 }

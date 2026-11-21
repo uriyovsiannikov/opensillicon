@@ -617,3 +617,18 @@ refclk: caller обязан передать частоту из аппарат�
 а не константу. Host-тесты покрывают оба BIT C version, четыре VPLL,
 zero refclk, malformed/duplicate records, вложенные image-D pointers и
 ROM fuzz с BIT C в половине fixtures.
+
+В native probe PLL report передаётся из BIOS через DDC к display planner.
+Для выбранного head используется его VPLL entry и current control,
+прочитанный через новый read-only BAR0 region 0x614000..0x615fff.
+Если entry.refclk==0, применяется crystal_khz из уже выполненной аппаратной
+идентификации GPU/strap; источник явно отмечается `crystal` вместо `VBIOS`.
+При отсутствии частоты/entry, ошибочных limits или register base план не
+строится. `VBIOS PLL` показывает статус/offset/version таблицы, `PLLPLAN`
+показывает target/calculated kHz, refclk, M/N/P и fraction. Это CPU-план,
+регистры PLL не записываются, частота на железе не измеряется.
+
+Display host-тест проверяет crystal fallback, явный refclk, отсутствие refclk,
+неверный BIOS register, последний head PLL control и cleanup всех десяти
+read-only regions. Модель BAR целиком остаётся неизменной. Новые строки
+`VBIOS PLL` и `PLLPLAN` требуют проверки с настоящим VBIOS GTX 1050 Ti.
