@@ -102,6 +102,10 @@ static void recovered(struct model *m)
 int main(void)
 {
 	struct model m;setup(&m);
+	m.firmware=1;m.supervisor=0;
+	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+	assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_OK);
+	setup(&m);
 	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
 	unsigned reads=m.reads,writes=m.writes;
 	assert(m.engine.state==NOUVEAU_ENGINE_QUIESCENT&&!m.supervisor);

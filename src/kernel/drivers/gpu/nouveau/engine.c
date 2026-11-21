@@ -22,8 +22,8 @@
  * Authors: Ben Skeggs
  */
 /* GF119 firmware handoff and instance binding from NVKM v6.12, adapted
- * with snapshots, explicit rollback and pinned upload lifetime. No native
- * boot caller until supervisor/capability/PLL integration is complete. */
+ * with snapshots, explicit rollback and pinned upload lifetime. Native
+ * probe exercises only take/capabilities/restore, never instance binding. */
 #include "kernel/nouveau_engine.h"
 static const uint32_t masks[]={0x610090,0x6100a0,0x6100b0};
 static bool read32(const struct nouveau_engine_io *io,uint32_t reg,uint32_t *value)
@@ -75,10 +75,14 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 		if(!io->write32(io->context,0x6194e8,firmware&~1U)) return NOUVEAU_ENGINE_IO_FAILED;
 		status=wait_firmware(io);
 		if(status!=NOUVEAU_ENGINE_OK) return status;
-	} else if(firmware&2) {
+	} else if(firmware&3) {
 		/* Avoid assuming ownership from inconsistent request/ack state. */
 		return NOUVEAU_ENGINE_BUSY;
 	}
+	/* Ack alone is insufficient if firmware ignored the request-bit write. */
+	uint32_t released;
+	if(!read32(io,0x6194e8,&released)) return NOUVEAU_ENGINE_IO_FAILED;
+	if(released&3) return NOUVEAU_ENGINE_BUSY;
 	status=idle(io);
 	if(status!=NOUVEAU_ENGINE_OK) return status;
 	e->interrupts_touched=true;
