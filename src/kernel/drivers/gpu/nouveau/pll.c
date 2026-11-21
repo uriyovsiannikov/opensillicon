@@ -130,10 +130,14 @@ bool nouveau_pll_calculate(const struct nouveau_pll_limits *l,uint32_t target,
 	}
 	return false;
 }
+bool nouveau_pll_register_valid(unsigned head,uint32_t reg)
+{
+	return head<4 && (reg==0x614100+head*0x800 || reg==0x614140+head*0x800);
+}
 bool nouveau_pll_plan(unsigned head,uint32_t reg,uint32_t control,
 	const struct nouveau_pll_coefficients *c,struct nouveau_pll_plan *plan)
 {
-	if(!c || !plan || head>3 || reg!=0x614100+head*0x800 || control==UINT32_MAX ||
+	if(!c || !plan || !nouveau_pll_register_valid(head,reg) || control==UINT32_MAX ||
 	    !c->m || !c->p || !c->actual_khz ||
 	    c->coefficient_word!=((uint32_t)c->p<<16|((uint32_t)c->n<<8)|c->m) ||
 	    c->fraction_word!=((uint32_t)c->fraction<<16)) return false;

@@ -19,6 +19,14 @@ int main(void)
 	assert(nouveau_pll_plan(0,0x614100,0x20,&c,&p));
 	const struct nouveau_pll_write expected[]={{0x61410c,0x120},{0x614104,0x14db02},{0x614110,0x10000000}};
 	assert(!memcmp(p.writes,expected,sizeof(expected)));
+	for(unsigned head=0;head<4;head++) {
+		uint32_t reg=0x614140+head*0x800;
+		assert(nouveau_pll_plan(head,reg,0x42,&c,&p));
+		assert(p.writes[0].reg==reg+12&&p.writes[0].value==0x142);
+		assert(p.writes[1].reg==reg+4&&p.writes[2].reg==reg+16);
+		assert(!nouveau_pll_register_valid(head,reg+4));
+		assert(!nouveau_pll_register_valid(head,reg+0x800));
+	}
 	assert(nouveau_pll_plan(3,0x615900,0,&c,&p)&&p.writes[0].reg==0x61590c);
 	assert(!nouveau_pll_plan(4,0x616100,0,&c,&p));
 	assert(!nouveau_pll_plan(0,0xdeadbeef,0,&c,&p));

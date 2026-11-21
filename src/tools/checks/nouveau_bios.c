@@ -201,6 +201,21 @@ int main(void)
 	struct nouveau_pll_coefficients coefficients;
 	assert(nouveau_pll_calculate(&r.vpll[0].limits,148500,&coefficients)&&coefficients.actual_khz==148500);
 	assert(!nouveau_pll_calculate(&r.vpll[1].limits,148500,&coefficients));
+	/* GTX 1050 Ti boot photograph: v40, head0 +0x40 bank and actual
+	 * nested limits. Relocate only the pointer into the synthetic ROM. */
+	pll_fixture();
+	const uint8_t gp107_entry[]={0x80,0xfd,0x50,0x40,0x41,0x61,0,0x2a,3,0x1b,0};
+	const uint8_t gp107_limits[]={0x20,3,0x54,6,0x0c,0,0x1b,0,1,0xff,0x1c,0xff,1,0x1f};
+	memcpy(rom+0x624,gp107_entry,sizeof(gp107_entry));wr16(rom+0x625,0x700);
+	memcpy(rom+0x700,gp107_limits,sizeof(gp107_limits));
+	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK);
+	assert(r.pll_status==NOUVEAU_BIOS_PLL_OK&&r.vpll[0].reg==0x614140);
+	assert(nouveau_pll_calculate(&r.vpll[0].limits,148500,&coefficients));
+	assert(coefficients.actual_khz==148500);
+	struct nouveau_pll_plan gp107_plan;
+	assert(nouveau_pll_plan(0,r.vpll[0].reg,0,&coefficients,&gp107_plan));
+	assert(gp107_plan.writes[0].reg==0x61414c&&gp107_plan.writes[1].reg==0x614144&&
+	    gp107_plan.writes[2].reg==0x614150);
 	pll_fixture();rom[0x113]=1;wr16(rom+0x114,10);wr16(rom+0x608,0x620);
 	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_OK);
 	pll_fixture();rom[0x620]=0x50;

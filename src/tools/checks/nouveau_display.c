@@ -216,6 +216,15 @@ int main(void)
 	bios.vpll[0].reg=0x614100;bios.vpll[0].valid=true;
 	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);
 	assert(pll_planned&&!maps&&!memcmp(copy,regs,sizeof(regs)));
+	fixture();bios.vpll[0].reg=0x614140;
+	/* Reject the selected bank's invalid control even if legacy control is
+	 * readable; never silently preserve bits from the other PLL bank. */
+	regs[0x61414c/4]=UINT32_MAX;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);
+	assert(!pll_planned&&!maps);
+	fixture();regs[0x61414c/4]=0x40;regs[0x61410c/4]=UINT32_MAX;
+	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);
+	assert(pll_planned&&!maps);
 	fixture();bios.crystal_khz=0;
 	nouveau_display_probe_bios_log(&claim,&bar,&output,&edid,&bios);assert(!pll_planned&&!maps);
 	fixture();bios.vpll[0].limits.ref_khz=27000;

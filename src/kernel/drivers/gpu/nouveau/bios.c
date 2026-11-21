@@ -280,7 +280,7 @@ static void parse_pll(const struct bios_view *bios,struct nouveau_bios_report *r
 		if(parsed[head].valid) {r->pll_error=NOUVEAU_PLL_ERROR_DUPLICATE_TYPE;return;}
 		if(!address || !limits) {r->pll_error=NOUVEAU_PLL_ERROR_LIMITS_POINTER;return;}
 		for(unsigned j=0;j<14;j++)r->pll_limits_bytes[j]=limits[j];
-		if(rd32(record+3)!=0x614100+head*0x800) {r->pll_error=NOUVEAU_PLL_ERROR_REGISTER;return;}
+		if(!nouveau_pll_register_valid(head,rd32(record+3))) {r->pll_error=NOUVEAU_PLL_ERROR_REGISTER;return;}
 		if(!nouveau_pll_limits_v40(limits,14,(uint32_t)rd16(record+9)*1000,&parsed[head].limits)) {
 			r->pll_error=NOUVEAU_PLL_ERROR_LIMITS;return;
 		}

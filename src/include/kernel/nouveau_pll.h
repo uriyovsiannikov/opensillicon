@@ -24,6 +24,8 @@ bool nouveau_pll_calculate(const struct nouveau_pll_limits *,uint32_t target_khz
 	struct nouveau_pll_coefficients *);
 struct nouveau_pll_write { uint32_t reg,value; };
 struct nouveau_pll_plan { struct nouveau_pll_write writes[3]; };
+/* Known per-head VPLL banks; GP107 firmware also uses the +0x40 bank. */
+bool nouveau_pll_register_valid(unsigned head,uint32_t bios_register);
 /* CPU-only GF100 VPLL programming sequence used by GP107 devinit. Caller
  * supplies the register base validated from VBIOS and current control value.
  * This does NOT program/lock a PLL or demonstrate the resulting pixel clock. */
