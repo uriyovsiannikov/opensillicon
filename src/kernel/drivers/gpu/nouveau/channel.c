@@ -61,7 +61,7 @@ static enum nouveau_channel_status wait_clear(const struct nouveau_channel_io *i
 bool nouveau_channel_prepare(struct nouveau_channel *c,unsigned id,uint32_t push,uint32_t prepared_bytes)
 {
 	if(!c || c->state!=NOUVEAU_CHANNEL_EMPTY || c->resources_held || id>8 ||
-	    (push&15)!=3 || !prepared_bytes || (prepared_bytes&3) || prepared_bytes>4092) return false;
+	    (push&15)!=3 || (prepared_bytes&3) || prepared_bytes>4092) return false;
 	*c=(struct nouveau_channel){.state=NOUVEAU_CHANNEL_PREPARED,.id=id,.push=push,.prepared_bytes=prepared_bytes};
 	return true;
 }
@@ -69,7 +69,7 @@ enum nouveau_channel_status nouveau_channel_start(struct nouveau_channel *c,
 	const struct nouveau_channel_io *io)
 {
 	if(!c || !valid_io(io) || c->id>8 || c->state!=NOUVEAU_CHANNEL_PREPARED ||
-	    c->resources_held || (c->push&15)!=3 || !c->prepared_bytes ||
+	    c->resources_held || (c->push&15)!=3 ||
 	    (c->prepared_bytes&3) || c->prepared_bytes>4092) return NOUVEAU_CHANNEL_INVALID;
 	uint32_t ctrl=0x610490+c->id*16,old;uint64_t time;
 	if(!io->time_us(io->context,&time) || !io->read32(io->context,ctrl,&old) || old==UINT32_MAX)

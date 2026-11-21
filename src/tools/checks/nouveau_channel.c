@@ -75,6 +75,16 @@ static void cleanup(struct nouveau_channel *c,struct model *m)
 }
 int main(void)
 {
+	{
+		struct model m={.now=100};struct nouveau_channel_io io=io_for(&m);
+		struct nouveau_channel c={0};
+		assert(nouveau_channel_prepare(&c,0,0x123003,0));
+		assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_OK&&m.put==0);
+		assert(nouveau_channel_kick(&c,&io,0)==NOUVEAU_CHANNEL_INVALID);
+		assert(nouveau_channel_kick(&c,&io,4)==NOUVEAU_CHANNEL_INVALID);
+		assert(nouveau_channel_stop(&c,&io)==NOUVEAU_CHANNEL_OK);
+		assert(nouveau_channel_release(&c,&io)==NOUVEAU_CHANNEL_OK&&!m.held);
+	}
 	for(unsigned id=0;id<=8;id++) {
 		struct model m={.id=id,.now=100};struct nouveau_channel_io io=io_for(&m);
 		struct nouveau_channel c={0};
@@ -174,7 +184,7 @@ int main(void)
 	assert(nouveau_channel_stop(&c,&io)==NOUVEAU_CHANNEL_TIMEOUT&&c.resources_held);
 	cleanup(&c,&m);
 	struct nouveau_channel invalid={0};
-	assert(!nouveau_channel_prepare(&invalid,0,0x3403,0));
+	assert(!nouveau_channel_prepare(&invalid,0,0x3403,2));
 	assert(!nouveau_channel_prepare(&invalid,0,0x3403,133));
 	assert(!nouveau_channel_prepare(&invalid,0,0x3403,4096));
 	assert(nouveau_channel_prepare(&invalid,0,0x3403,4092));

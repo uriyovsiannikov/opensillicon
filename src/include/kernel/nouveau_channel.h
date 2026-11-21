@@ -32,7 +32,8 @@ struct nouveau_channel {
 	uint8_t id;
 	bool resources_held;
 };
-/* Does not perform IO. Zero-initialize first. HOST push must be 4KiB aligned. */
+/* Does not perform IO. Zero-initialize first. HOST push must be 4KiB aligned.
+ * prepared_bytes=0 permits an empty start/stop probe; all kicks reject. */
 bool nouveau_channel_prepare(struct nouveau_channel *,unsigned id,uint32_t push, uint32_t prepared_bytes);
 /* Requires an already inactive channel and an owning engine lifecycle.
  * Starts with PUT=0; this does not submit staged timing/surface methods.
@@ -52,4 +53,12 @@ enum nouveau_channel_status nouveau_channel_stop(struct nouveau_channel *,
 /* Release only after confirmed stop. Callback failure preserves ownership. */
 enum nouveau_channel_status nouveau_channel_release(struct nouveau_channel *,
 	const struct nouveau_channel_io *);
+struct pci_device_lease;
+struct pci_bar_resource;
+struct nouveau_engine;
+/* Native empty core start/stop; uploaded instance stays pinned throughout.
+ * Returns after restoring descriptors/PUT and known control request bits.
+ * Ambiguous stop/restore halts without releasing device-visible memory. */
+void nouveau_core_channel_probe_log(const struct pci_device_lease *,const struct pci_bar_resource *,
+	struct nouveau_engine *);
 #endif
