@@ -389,3 +389,14 @@ Host-тест сверяет точные DWORD для 1920x1080/7680-byte pitch
 последний head, RGB/BGR и отказы границ/формата. `SURFACEPLAN` означает
 только CPU-кодирование: оно не привязывает context, не выделяет поверхность,
 не отправляет UPDATE и не даёт владения участком VRAM.
+
+После единственного sample match surface methods добавляются к timing block
+в существующем HOST push buffer: 24+9=33 DWORD. Перед добавлением проверяются
+CPU ownership обоих DMA allocations, HOST descriptor, RAMHT handle core
+channel и точное содержимое VRAM surface DMA object. Повторное добавление
+запрещено; отказ до записи оставляет timing block и staged_words прежними.
+Notifier по-прежнему instance-relative, UPDATE/активация каналов отсутствуют.
+Оба буфера освобождаются в конце пробы. Тест сверяет весь добавленный блок,
+сохранение таймингов/нулевого хвоста, query/ownership/descriptor отказы.
+Аппаратный следующий результат: `SURFACEPLAN` и
+`MEM surface appended; staged_words=33 (CPU owned, not submitted)`.

@@ -12,7 +12,7 @@ bool nouveau_display_staging_release(struct nouveau_display_staging *s)
 	if(s->instance.generation) {
 		if(dma_free(s->instance)) s->instance=(struct dma_buffer){0};else ok=false;
 	}
-	if(ok) s->push_descriptor=0;
+	if(ok) { s->push_descriptor=0;s->staged_words=0;s->head=0; }
 	return ok;
 }
 
@@ -34,7 +34,7 @@ enum nouveau_staging_status nouveau_display_staging_create(uint64_t vram,
 	    p->core_class!=NOUVEAU_GP102_CORE_CLASS || p->count!=NOUVEAU_DISPLAY_PLAN_WORDS ||
 	    p->head>=4 || vram<0x150000 || vram>(UINT64_C(1)<<40) || (vram&255))
 		return NOUVEAU_STAGING_INVALID;
-	s->push_descriptor=0;
+	s->push_descriptor=0;s->staged_words=0;s->head=0;
 	if(!dma_identity_addressing_available()) return NOUVEAU_STAGING_UNAVAILABLE;
 	struct dma_buffer_info instance,push;
 	if(!dma_alloc(NOUVEAU_INSTANCE_SIZE,NOUVEAU_INSTANCE_SIZE,40,&s->instance) ||
@@ -46,8 +46,37 @@ enum nouveau_staging_status nouveau_display_staging_create(uint64_t vram,
 	for(unsigned i=0;i<p->count;i++) words[i]=p->words[i];
 	/* NV50 display push target HOST=3; this is not the instance target VRAM=9. */
 	s->push_descriptor=(uint32_t)(push.device_address>>8)|3;
+	s->staged_words=p->count;s->head=p->head;
 	return NOUVEAU_STAGING_OK;
 fail:
 	return nouveau_display_staging_release(s)?NOUVEAU_STAGING_ALLOCATION_FAILED:
 	    NOUVEAU_STAGING_CLEANUP_FAILED;
+}
+
+
+bool nouveau_display_staging_surface(struct nouveau_display_staging *s,
+	uint64_t candidate,uint64_t vram,const struct os_framebuffer_info *fb)
+{
+	if(!s || !s->instance.generation || !s->push.generation ||
+	    s->staged_words!=NOUVEAU_DISPLAY_PLAN_WORDS || s->head>=4) return false;
+	struct nouveau_surface_plan surface;
+	if(!nouveau_display_surface_plan(s->head,candidate,vram,NOUVEAU_SURFACE_HANDLE,
+	    fb,&surface)) return false;
+	struct dma_buffer_info instance,push;
+	if(!valid(s->instance,NOUVEAU_INSTANCE_SIZE,NOUVEAU_INSTANCE_SIZE,&instance) ||
+	    !valid(s->push,4096,4096,&push) ||
+	    s->push_descriptor!=((uint32_t)(push.device_address>>8)|3)) return false;
+	uint32_t offset;
+	uint32_t *image=instance.cpu_virtual_address;
+	if(!nouveau_ramht_lookup(image,0,NOUVEAU_SURFACE_HANDLE,&offset) ||
+	    offset!=NOUVEAU_SURFACE_OBJECT) return false;
+	/* Surface object must describe the same complete VRAM range. */
+	const uint32_t *obj=image+offset/4;
+	if(obj[0]!=9 || obj[1] || obj[2]!=(uint32_t)((vram-1)>>8) ||
+	    obj[3] || obj[4] || obj[5]) return false;
+	uint32_t *words=push.cpu_virtual_address;
+	for(unsigned i=0;i<NOUVEAU_SURFACE_PLAN_WORDS;i++)
+		words[s->staged_words+i]=surface.words[i];
+	s->staged_words+=NOUVEAU_SURFACE_PLAN_WORDS;
+	return true;
 }

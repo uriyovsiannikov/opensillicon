@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         ("nouveau_edid", ["edid.c", "ddc.c"]),
         ("nouveau_framebuffer", ["../../../tty/fb/framebuffer_device.c"]),
         ("nouveau_vram", ["memory.c", "vram.c", "vram_pci.c"]),
-        ("nouveau_memory", ["memory.c", "memory_dma.c"]),
+        ("nouveau_memory", ["memory.c", "memory_dma.c", "display.c"]),
         ("nouveau_display", ["display.c", "display_pci.c", "memory.c", "memory_dma.c"]),
     ]:
         exe = Path(tmp) / name

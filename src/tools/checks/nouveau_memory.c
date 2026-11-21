@@ -103,6 +103,27 @@ int main(void)
 	assert(s.push_descriptor==0x2103&&buffers[0].owner==DMA_OWNER_CPU&&buffers[1].owner==DMA_OWNER_CPU);
 	assert(!memcmp(buffers[1].cpu_virtual_address,plan.words,sizeof(plan.words)));
 	for(unsigned i=24;i<1024;i++)assert(((uint32_t *)buffers[1].cpu_virtual_address)[i]==0);
+	struct os_framebuffer_info fb={.width=1920,.height=1080,.pitch=7680,.size=7680*1080,
+	    .bits_per_pixel=32,.red_mask_size=8,.red_mask_shift=16,.green_mask_size=8,
+	    .green_mask_shift=8,.blue_mask_size=8,.blue_mask_shift=0};
+	assert(s.staged_words==24&&s.head==3);
+	uint32_t saved[1024];memcpy(saved,buffers[1].cpu_virtual_address,sizeof(saved));
+	assert(!nouveau_display_staging_surface(&s,1,vram,&fb));
+	assert(s.staged_words==24&&!memcmp(saved,buffers[1].cpu_virtual_address,sizeof(saved)));
+	fail_query=queries+1;
+	assert(!nouveau_display_staging_surface(&s,0,vram,&fb));fail_query=0;
+	assert(s.staged_words==24&&!memcmp(saved,buffers[1].cpu_virtual_address,sizeof(saved)));
+	corrupt_query=3;
+	assert(!nouveau_display_staging_surface(&s,0,vram,&fb));corrupt_query=0;
+	uint32_t *obj=(uint32_t *)buffers[0].cpu_virtual_address+0x1000/4;
+	obj[0]=0x49;assert(!nouveau_display_staging_surface(&s,0,vram,&fb));obj[0]=9;
+	assert(nouveau_display_staging_surface(&s,0,vram,&fb)&&s.staged_words==33);
+	assert(!memcmp(buffers[1].cpu_virtual_address,plan.words,sizeof(plan.words)));
+	const uint32_t expected_surface[]={0x40d60,0,0x100d68,0x04380780,
+	    0x01001e00,0xcf00,0xf0000001,0x40db0,0};
+	assert(!memcmp((uint32_t *)buffers[1].cpu_virtual_address+24,expected_surface,sizeof(expected_surface)));
+	for(unsigned i=33;i<1024;i++)assert(((uint32_t *)buffers[1].cpu_virtual_address)[i]==0);
+	assert(!nouveau_display_staging_surface(&s,0,vram,&fb));
 	assert(nouveau_display_staging_create(vram,&plan,&s)==NOUVEAU_STAGING_INVALID);
 	assert(nouveau_display_staging_release(&s)&&!s.instance.generation&&!s.push.generation);
 	assert(nouveau_display_staging_release(&s));

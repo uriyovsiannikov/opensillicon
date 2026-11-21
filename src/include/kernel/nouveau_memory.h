@@ -34,6 +34,8 @@ bool nouveau_instance_relocate(uint32_t *image, size_t size, uint64_t vram,
 struct nouveau_display_staging {
 	struct dma_buffer instance, push;
 	uint32_t push_descriptor;
+	uint16_t staged_words;
+	uint8_t head;
 };
 enum nouveau_staging_status {
 	NOUVEAU_STAGING_OK, NOUVEAU_STAGING_INVALID, NOUVEAU_STAGING_UNAVAILABLE,
@@ -43,5 +45,9 @@ enum nouveau_staging_status {
 enum nouveau_staging_status nouveau_display_staging_create(
 	uint64_t vram, const struct nouveau_display_plan *plan,
 	struct nouveau_display_staging *staging);
+/* Append a validated surface block to the existing CPU-owned timing buffer.
+ * No device ownership transfer or submission. Only one append is accepted. */
+bool nouveau_display_staging_surface(struct nouveau_display_staging *staging,
+	uint64_t candidate, uint64_t vram_size, const struct os_framebuffer_info *fb);
 bool nouveau_display_staging_release(struct nouveau_display_staging *staging);
 #endif

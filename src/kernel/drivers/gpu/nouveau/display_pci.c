@@ -212,6 +212,12 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 		if(result==NOUVEAU_STAGING_OK) {
 			klog("nouveau: MEM CPU staging: instance=65536 RAMHT=4096 notifier=4096 push=4096 HOST=0x");
 			hex(staging.push_descriptor,8);klog(" (not bound)\n");
+			if(sample_candidate!=UINT64_MAX) {
+				if(nouveau_display_staging_surface(&staging,sample_candidate,vram,&fb)) {
+					klog("nouveau: MEM surface appended; staged_words=");
+					klog_u64(staging.staged_words);klog(" (CPU owned, not submitted)\n");
+				} else klog("nouveau: MEM surface append rejected; timing buffer retained\n");
+			}
 			if(!nouveau_display_staging_release(&staging)) {
 				klog("nouveau: MEM staging release failed\n");kernel_halt();
 			}
