@@ -340,3 +340,12 @@ bit 30 разрешён только для второй aperture (halve). Не�
 Формат page tables (legacy или Pascal VER2) пока не предполагается.
 Тесты покрывают BARVM при display instance=1, disabled/unknown formats,
 halve, недопустимый диапазон и partial mapping/allocation cleanup.
+
+Фото подтвердило PCI BAR3 `0xa0000000`, 32 МиБ, framebuffer offset 16 МиБ;
+BAR1 context=0, BAR3 context=0x40000000. В опубликованном NVIDIA GM107
+`dev_bus.h` бит 31 — MODE (0 physical / 1 virtual), бит 30 — DEBUG_CYA.
+Поэтому ранняя надпись disabled/unsupported была неточной: это physical
+mode без VM instance. Эти регистры не следует интерпретировать как PDB.
+Источник: NVIDIA open-gpu-kernel-modules tag 570.124.04,
+`src/common/inc/swref/published/maxwell/gm107/dev_bus.h`;
+`kern_bus_gm107.c` также описывает физический bootstrap BAR2.

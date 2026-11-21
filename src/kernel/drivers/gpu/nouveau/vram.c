@@ -21,7 +21,6 @@
  *
  * Authors: Ben Skeggs
  */
-#define nv50_instmem(p) container_of((p), struct nv50_instmem, base)
 /* Native bounded read transport adapted from Linux v6.12
  * nvkm/subdev/instmem/nv50.c nv50_instobj_rd32_slow. */
 #include "kernel/nouveau_vram.h"

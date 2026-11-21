@@ -106,8 +106,13 @@ void nouveau_firmware_bar_log(const struct pci_device_lease *claim,
 	klog("nouveau: BARVM PCI=");klog_u64(pci_index);klog(" context=0x");hex(reg,8);
 	/* gf100_bar_bar1_init/bar2_init: enable bit 31, optional BAR2 halve
 	 * bit 30, 40-bit VRAM instance address >>12. Do not guess reserved bits. */
-	if(!(reg&0x80000000U) || (reg&0x30000000U) || (pci_index==1 && (reg&0x40000000U))) {
-		klog(" disabled/unsupported context\n");return;
+	if(!(reg&0x80000000U)) {
+		if(!(reg&0x3fffffffU)) klog(" physical mode (no VM instance)\n");
+		else klog(" physical mode; unsupported target/pointer fields\n");
+		return;
+	}
+	if((reg&0x30000000U) || (pci_index==1 && (reg&0x40000000U))) {
+		klog(" unsupported virtual target/flags\n");return;
 	}
 	uint64_t base=(uint64_t)(reg&0x0fffffffU)<<12;
 	if(!size || size>(UINT64_C(1)<<40) || base>=size || 4096>size-base) {
