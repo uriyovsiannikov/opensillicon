@@ -91,6 +91,13 @@ enum nouveau_bios_pll_status {
 	NOUVEAU_BIOS_PLL_ABSENT, NOUVEAU_BIOS_PLL_OK,
 	NOUVEAU_BIOS_PLL_UNSUPPORTED, NOUVEAU_BIOS_PLL_INVALID
 };
+enum nouveau_bios_pll_error {
+	NOUVEAU_PLL_ERROR_NONE, NOUVEAU_PLL_ERROR_DUPLICATE_C,
+	NOUVEAU_PLL_ERROR_BIT_PAYLOAD, NOUVEAU_PLL_ERROR_TABLE_HEADER,
+	NOUVEAU_PLL_ERROR_TABLE_SPAN, NOUVEAU_PLL_ERROR_DUPLICATE_TYPE,
+	NOUVEAU_PLL_ERROR_LIMITS_POINTER, NOUVEAU_PLL_ERROR_REGISTER,
+	NOUVEAU_PLL_ERROR_LIMITS
+};
 struct nouveau_bios_vpll {
 	uint32_t reg;
 	struct nouveau_pll_limits limits;
@@ -101,6 +108,9 @@ struct nouveau_bios_report {
 	uint32_t pll_table_offset,crystal_khz;
 	uint8_t pll_version;
 	enum nouveau_bios_pll_status pll_status;
+	enum nouveau_bios_pll_error pll_error;
+	uint32_t pll_record_offset;
+	uint8_t pll_header[4],pll_record[11],pll_limits_bytes[14];
 	struct nouveau_bios_vpll vpll[4];
 	uint16_t vendor, device, dcb_offset, connector_offset;
 	uint8_t image_count, dcb_version, dcb_entries, output_count;

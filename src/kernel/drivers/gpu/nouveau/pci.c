@@ -286,6 +286,19 @@ void nouveau_bios_log(enum nouveau_bios_status status,
 	case NOUVEAU_BIOS_PLL_INVALID:klog("invalid");break;
 	}
 	klog("\n");
+	if(r->pll_status==NOUVEAU_BIOS_PLL_INVALID) {
+		static const char *const reasons[]={"none","duplicate BIT C","BIT payload",
+		    "table header","table span","duplicate VPLL type","limits pointer","register base","limits range"};
+		klog("nouveau: VBIOS PLL invalid reason=");
+		klog((unsigned)r->pll_error<sizeof(reasons)/sizeof(reasons[0])?reasons[r->pll_error]:"unknown");
+		klog(" record=0x");log_hex(r->pll_record_offset,5);klog("\n");
+		klog("nouveau: VBIOS PLL header=");
+		for(unsigned i=0;i<4;i++){log_hex(r->pll_header[i],2);klog(" ");}klog("\n");
+		klog("nouveau: VBIOS PLL entry=");
+		for(unsigned i=0;i<11;i++){log_hex(r->pll_record[i],2);klog(" ");}klog("\n");
+		klog("nouveau: VBIOS PLL limits=");
+		for(unsigned i=0;i<14;i++){log_hex(r->pll_limits_bytes[i],2);klog(" ");}klog("\n");
+	}
 	klog("nouveau: DCB v"); log_hex(r->dcb_version, 2);
 	klog(" outputs="); klog_u64(r->output_count);
 	klog(" connectors="); klog_u64(r->connector_count);

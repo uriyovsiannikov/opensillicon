@@ -244,25 +244,27 @@ static void parse_pll(const struct bios_view *bios,struct nouveau_bios_report *r
 	const uint8_t *entry)
 {
 	if(r->pll_status!=NOUVEAU_BIOS_PLL_ABSENT) {
-		r->pll_status=NOUVEAU_BIOS_PLL_INVALID;
+		r->pll_status=NOUVEAU_BIOS_PLL_INVALID;r->pll_error=NOUVEAU_PLL_ERROR_DUPLICATE_C;
 		for(unsigned i=0;i<4;i++)r->vpll[i].valid=false;
 		return;
 	}
-	r->pll_status=NOUVEAU_BIOS_PLL_INVALID;
+	r->pll_status=NOUVEAU_BIOS_PLL_INVALID;r->pll_error=NOUVEAU_PLL_ERROR_BIT_PAYLOAD;
 	uint16_t length=rd16(entry+2),offset=rd16(entry+4);
 	const uint8_t *payload=pointer(bios,offset,length);
 	if(!offset || !payload) return;
 	uint32_t table;
 	if(entry[1]==1 && length>=10)table=rd16(payload+8);
 	else if(entry[1]==2 && length>=4)table=rd32(payload);
-	else {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
-	if(!table) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
-	r->pll_table_offset=table;
+	else {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;r->pll_error=NOUVEAU_PLL_ERROR_NONE;return;}
+	if(!table) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;r->pll_error=NOUVEAU_PLL_ERROR_NONE;return;}
+	r->pll_table_offset=table;r->pll_error=NOUVEAU_PLL_ERROR_TABLE_HEADER;
 	const uint8_t *header=pointer(bios,table,4);
 	if(!header) return;
 	r->pll_version=header[0];
-	if(header[0]!=0x40) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
+	for(unsigned i=0;i<4;i++)r->pll_header[i]=header[i];
+	if(header[0]!=0x40) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;r->pll_error=NOUVEAU_PLL_ERROR_NONE;return;}
 	if(header[1]<4 || header[2]<11 || !header[3]) return;
+	r->pll_error=NOUVEAU_PLL_ERROR_TABLE_SPAN;
 	const uint8_t *all=pointer(bios,table,(size_t)header[1]+(size_t)header[2]*header[3]);
 	if(!all) return;
 	struct nouveau_bios_vpll parsed[4]={{0}};
@@ -272,12 +274,20 @@ static void parse_pll(const struct bios_view *bios,struct nouveau_bios_report *r
 		unsigned head=record[0]-0x80;
 		uint16_t address=rd16(record+1);
 		const uint8_t *limits=pointer(bios,address,14);
-		if(parsed[head].valid || !address || !limits || rd32(record+3)!=0x614100+head*0x800 ||
-		    !nouveau_pll_limits_v40(limits,14,(uint32_t)rd16(record+9)*1000,&parsed[head].limits)) return;
+		r->pll_record_offset=table+header[1]+i*header[2];
+		for(unsigned j=0;j<11;j++)r->pll_record[j]=record[j];
+		for(unsigned j=0;j<14;j++)r->pll_limits_bytes[j]=0;
+		if(parsed[head].valid) {r->pll_error=NOUVEAU_PLL_ERROR_DUPLICATE_TYPE;return;}
+		if(!address || !limits) {r->pll_error=NOUVEAU_PLL_ERROR_LIMITS_POINTER;return;}
+		for(unsigned j=0;j<14;j++)r->pll_limits_bytes[j]=limits[j];
+		if(rd32(record+3)!=0x614100+head*0x800) {r->pll_error=NOUVEAU_PLL_ERROR_REGISTER;return;}
+		if(!nouveau_pll_limits_v40(limits,14,(uint32_t)rd16(record+9)*1000,&parsed[head].limits)) {
+			r->pll_error=NOUVEAU_PLL_ERROR_LIMITS;return;
+		}
 		parsed[head].reg=rd32(record+3);parsed[head].valid=true;
 	}
 	for(unsigned i=0;i<4;i++)r->vpll[i]=parsed[i];
-	r->pll_status=NOUVEAU_BIOS_PLL_OK;
+	r->pll_status=NOUVEAU_BIOS_PLL_OK;r->pll_error=NOUVEAU_PLL_ERROR_NONE;
 }
 
 static bool parse_bit(const struct bios_view *bios, struct nouveau_bios_report *r)

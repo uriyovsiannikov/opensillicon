@@ -218,6 +218,13 @@ int main(void)
 		if(failure==5)rom[0x62f]=0x80; /* duplicate VPLL0 */
 		if(failure==6)rom[0x709]=0; /* no usable M divisor */
 		assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_INVALID);
+		const enum nouveau_bios_pll_error expected[]={NOUVEAU_PLL_ERROR_TABLE_HEADER,
+		    NOUVEAU_PLL_ERROR_TABLE_HEADER,NOUVEAU_PLL_ERROR_TABLE_HEADER,
+		    NOUVEAU_PLL_ERROR_LIMITS_POINTER,NOUVEAU_PLL_ERROR_REGISTER,
+		    NOUVEAU_PLL_ERROR_DUPLICATE_TYPE,NOUVEAU_PLL_ERROR_LIMITS};
+		assert(r.pll_error==expected[failure]);
+		if(failure>=3)assert(r.pll_record[0]>=0x80&&r.pll_record_offset>=0x624);
+		if(failure==6)assert(r.pll_limits_bytes[9]==0);
 		for(unsigned i=0;i<4;i++)assert(!r.vpll[i].valid);
 	}
 	pll_fixture();rom[0x10a]=3;memcpy(rom+0x118,rom+0x112,6);
