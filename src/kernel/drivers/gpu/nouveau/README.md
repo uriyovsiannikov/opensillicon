@@ -417,3 +417,28 @@ pool не отключает прошивку и не передаёт влад�
 аппаратного lifecycle загружать данные по выбранному адресу нельзя.
 Тест проверяет scanout/VGA/VBIOS exclusions, overlap, alignment, exhaustion,
 неизменность при invalid init, stale handles и 240000 случайных allocations.
+
+## План размещения instance и notifier
+
+`nouveau_display_staging_place` выделяет в range pool логический диапазон
+64 КиБ / alignment 64 КиБ и кодирует в CPU-образе абсолютный VRAM notifier
+(start=placement+0xf000, limit=placement+0xffff). Подготавливается значение
+instance register; оно никуда не записывается. Проверяются CPU ownership
+обоих DMA allocations и поверхность DMA context полного диапазона VRAM.
+При ошибке до relocation CPU-образ не меняется, после неудачи allocation
+диапазон освобождается. Повторное размещение запрещено.
+
+Проба использует консервативные дополнительные исключения: первые 64 МиБ
+(загрузочная поверхность и наблюдавшиеся firmware workspace/VBIOS pointers)
+и последние 16 МиБ. Для 4-ГиБ GP107 логический instance начинается с
+0x04000000, register=0x00040009, notifier=0x0400f000..0x0400ffff.
+`VRAMPLAN` явно обозначает логический план без upload/hardware ownership.
+Этот план нельзя принимать за карту всех allocations прошивки.
+
+Range handle живёт вместе с staging: release сначала освобождает CPU DMA
+buffers и только потом снимает логический резерв. Если освобождение любого
+буфера не удалось, placement handle сохраняется до повторного cleanup.
+Тесты сверяют relocation DWORD/register, отказы query, запрет повторного
+размещения и сохранение/снятие резерва при частичном release failure.
+Фото предыдущего этапа подтвердило `SURFACEPLAN` и `staged_words=33` на
+GTX 1050 Ti; новый VRAMPLAN пока проверен только host-тестами.

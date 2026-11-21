@@ -17,8 +17,8 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         ("nouveau_framebuffer", ["../../../tty/fb/framebuffer_device.c"]),
         ("nouveau_vram_pool", ["vram_pool.c"]),
         ("nouveau_vram", ["memory.c", "vram.c", "vram_pci.c"]),
-        ("nouveau_memory", ["memory.c", "memory_dma.c", "display.c"]),
-        ("nouveau_display", ["display.c", "display_pci.c", "memory.c", "memory_dma.c"]),
+        ("nouveau_memory", ["memory.c", "memory_dma.c", "display.c", "vram_pool.c"]),
+        ("nouveau_display", ["display.c", "display_pci.c", "memory.c", "memory_dma.c", "vram_pool.c"]),
     ]:
         exe = Path(tmp) / name
         subprocess.run(shlex.split(os.environ.get("CC", "gcc")) + [

@@ -124,8 +124,22 @@ int main(void)
 	assert(!memcmp((uint32_t *)buffers[1].cpu_virtual_address+24,expected_surface,sizeof(expected_surface)));
 	for(unsigned i=33;i<1024;i++)assert(((uint32_t *)buffers[1].cpu_virtual_address)[i]==0);
 	assert(!nouveau_display_staging_surface(&s,0,vram,&fb));
+	struct nouveau_vram_pool pool={0};
+	struct nouveau_vram_range reserved={0,0x4000000};
+	assert(nouveau_vram_pool_init(&pool,vram,&reserved,1));
+	fail_query=queries+2;
+	assert(!nouveau_display_staging_place(&s,&pool)&&!s.placement.generation);fail_query=0;
+	assert(nouveau_display_staging_place(&s,&pool));
+	struct nouveau_vram_range placed;
+	assert(nouveau_vram_pool_query(s.placement,&placed)&&placed.start==0x4000000&&placed.size==65536);
+	assert(s.planned_instance==0x40009);
+	const uint32_t *notifier=(const uint32_t *)buffers[0].cpu_virtual_address+0x1020/4;
+	assert(notifier[0]==0x49&&notifier[1]==0x400f0&&notifier[2]==0x400ff);
+	assert(!nouveau_display_staging_place(&s,&pool));
+	struct nouveau_vram_allocation old_placement=s.placement;
 	assert(nouveau_display_staging_create(vram,&plan,&s)==NOUVEAU_STAGING_INVALID);
 	assert(nouveau_display_staging_release(&s)&&!s.instance.generation&&!s.push.generation);
+	assert(!nouveau_vram_pool_query(old_placement,&placed)&&!s.planned_instance);
 	assert(nouveau_display_staging_release(&s));
 	for(unsigned i=1;i<=2;i++){
 		reset();fail_alloc=i;
@@ -144,7 +158,11 @@ int main(void)
 	assert(s.instance.generation&&!s.push.generation);fail_free=0;
 	assert(nouveau_display_staging_release(&s));reset();
 	assert(nouveau_display_staging_create(vram,&plan,&s)==NOUVEAU_STAGING_OK);
+	assert(nouveau_display_staging_place(&s,&pool));
+	old_placement=s.placement;
 	fail_free=2;assert(!nouveau_display_staging_release(&s)&&s.push.generation&&!s.instance.generation);
-	fail_free=0;assert(nouveau_display_staging_release(&s));reset();
+	assert(nouveau_vram_pool_query(old_placement,&placed));
+	fail_free=0;assert(nouveau_display_staging_release(&s));
+	assert(!nouveau_vram_pool_query(old_placement,&placed));reset();
 	puts("NOUVEAU_MEMORY_PASS: GP102 capacity, GF119 DMA golden words, RAMHT collisions/wrap/full, VRAM relocation guards, DMA lifecycle/rollback");
 }

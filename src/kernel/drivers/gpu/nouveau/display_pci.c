@@ -205,6 +205,15 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	}
 	if(status==NOUVEAU_PLAN_OK && vram) {
 		struct nouveau_display_staging staging={0};
+		/* Conservative planning exclusions. They do not establish that the
+		 * remaining VRAM is free of firmware state. No upload follows. */
+		struct nouveau_vram_pool pool={0};
+		struct nouveau_vram_range exclusions[2]={{0,0x4000000},{0,0x1000000}};
+		bool pool_ready=false;
+		if(vram>0x5000000) {
+			exclusions[1].start=vram-0x1000000;
+			pool_ready=nouveau_vram_pool_init(&pool,vram,exclusions,2);
+		}
 		enum nouveau_staging_status result=nouveau_display_staging_create(vram,&p,&staging);
 		if(result==NOUVEAU_STAGING_CLEANUP_FAILED) {
 			klog("nouveau: MEM staging cleanup failed\n");kernel_halt();
@@ -218,6 +227,13 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 					klog_u64(staging.staged_words);klog(" (CPU owned, not submitted)\n");
 				} else klog("nouveau: MEM surface append rejected; timing buffer retained\n");
 			}
+			if(pool_ready && nouveau_display_staging_place(&staging,&pool)) {
+				struct nouveau_vram_range range;
+				if(!nouveau_vram_pool_query(staging.placement,&range)) kernel_halt();
+				klog("nouveau: VRAMPLAN logical instance=0x");hex(range.start,10);
+				klog(" bytes=");klog_u64(range.size);klog(" register=0x");hex(staging.planned_instance,8);
+				klog(" (CPU image relocated; no upload/ownership)\n");
+			} else klog("nouveau: VRAMPLAN placement unavailable\n");
 			if(!nouveau_display_staging_release(&staging)) {
 				klog("nouveau: MEM staging release failed\n");kernel_halt();
 			}

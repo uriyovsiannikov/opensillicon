@@ -3,6 +3,7 @@
 #define KERNEL_NOUVEAU_MEMORY_H
 #include "kernel/nouveau_display.h"
 #include "kernel/dma.h"
+#include "kernel/nouveau_vram_pool.h"
 #define NOUVEAU_INSTANCE_SIZE 0x10000U
 #define NOUVEAU_RAMHT_SLOTS 512U
 #define NOUVEAU_SURFACE_OBJECT 0x1000U
@@ -27,13 +28,16 @@ bool nouveau_ramht_lookup(const uint32_t *image, unsigned channel,
  * explicitly relocated into a caller-owned VRAM allocation. */
 bool nouveau_instance_prepare(uint32_t *image, size_t size, uint64_t vram,
 	unsigned head);
-/* Caller must OWN this VRAM range; range validation does not allocate VRAM.
+/* Encode a CPU image for a VRAM placement. Range validation does not
+ * establish hardware ownership: caller must own the range BEFORE UPLOAD.
  * Never pass a host physical/DMA address here. */
 bool nouveau_instance_relocate(uint32_t *image, size_t size, uint64_t vram,
 	uint64_t owned_vram_base, size_t owned_size, uint32_t *instance_register);
 struct nouveau_display_staging {
 	struct dma_buffer instance, push;
 	uint32_t push_descriptor;
+	struct nouveau_vram_allocation placement;
+	uint32_t planned_instance;
 	uint16_t staged_words;
 	uint8_t head;
 };
@@ -49,5 +53,9 @@ enum nouveau_staging_status nouveau_display_staging_create(
  * No device ownership transfer or submission. Only one append is accepted. */
 bool nouveau_display_staging_surface(struct nouveau_display_staging *staging,
 	uint64_t candidate, uint64_t vram_size, const struct os_framebuffer_info *fb);
+/* Reserve a logical range and relocate the CPU image only. This never
+ * grants physical VRAM ownership, uploads bytes or binds an instance. */
+bool nouveau_display_staging_place(struct nouveau_display_staging *staging,
+	struct nouveau_vram_pool *pool);
 bool nouveau_display_staging_release(struct nouveau_display_staging *staging);
 #endif
