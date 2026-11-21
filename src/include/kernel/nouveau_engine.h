@@ -37,6 +37,11 @@ struct nouveau_engine {
  * channel. Performs GF119 firmware request/ack and masks interrupts.
  * W1C supervisor acknowledgement cannot be recreated during rollback. */
 enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *,const struct nouveau_engine_io *);
+/* GF119 core fini for an already disabled firmware core only. Requires
+ * allocation/connect/PUT disabled and every other channel idle. Reasserts
+ * the disabled requests and waits for activity to drain; never restarts or
+ * changes descriptors/PUT/instance. Caller owns PCI throughout. */
+enum nouveau_engine_status nouveau_engine_drain_disabled_core(const struct nouveau_engine_io *);
 /* Copy GP102 head/SOR capabilities to EVO mirrors with snapshots/readback.
  * Required before bind. GP102 has no DAC engine; no legacy DAC writes. */
 enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *);

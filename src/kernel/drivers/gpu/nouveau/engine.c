@@ -58,6 +58,39 @@ static enum nouveau_engine_status wait_firmware(const struct nouveau_engine_io *
 	}
 	return NOUVEAU_ENGINE_TIMEOUT;
 }
+enum nouveau_engine_status nouveau_engine_drain_disabled_core(const struct nouveau_engine_io *io)
+{
+	if(!io || !io->read32 || !io->write32 || !io->time_us || !io->delay_us)
+		return NOUVEAU_ENGINE_INVALID;
+	uint32_t core,value;uint64_t start,previous,now;
+	if(!io->time_us(io->context,&start) || !read32(io,0x610490,&core))
+		return NOUVEAU_ENGINE_IO_FAILED;
+	if(core&0x80000013) return NOUVEAU_ENGINE_BUSY;
+	for(unsigned i=1;i<17;i++) {
+		if(!read32(io,0x610490+i*16,&value)) return NOUVEAU_ENGINE_IO_FAILED;
+		if(value&0x801e0003) return NOUVEAU_ENGINE_BUSY;
+	}
+	if(!(core&0x001e0000)) return NOUVEAU_ENGINE_OK;
+	/* Recheck immediately before the GF119 core fini requests. Only write
+	 * fields that were already disabled: no active firmware queue is stolen. */
+	for(unsigned step=0;step<2;step++) {
+		if(!read32(io,0x610490,&value)) return NOUVEAU_ENGINE_IO_FAILED;
+		if(value&0x80000013) return NOUVEAU_ENGINE_BUSY;
+		if(!io->write32(io->context,0x610490,value&~(step?3U:0x10U)))
+			return NOUVEAU_ENGINE_IO_FAILED;
+	}
+	previous=start;
+	for(unsigned i=0;i<20001;i++) {
+		if(!read32(io,0x610490,&value)) return NOUVEAU_ENGINE_IO_FAILED;
+		if(value&0x80000013) return NOUVEAU_ENGINE_BUSY;
+		if(!(value&0x001e0000)) return NOUVEAU_ENGINE_OK;
+		if(!io->time_us(io->context,&now) || now<previous) return NOUVEAU_ENGINE_IO_FAILED;
+		if(now-start>=2000000 || i==20000) return NOUVEAU_ENGINE_TIMEOUT;
+		previous=now;
+		if(!io->delay_us(io->context,100)) return NOUVEAU_ENGINE_IO_FAILED;
+	}
+	return NOUVEAU_ENGINE_TIMEOUT;
+}
 enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const struct nouveau_engine_io *io)
 {
 	if(!e || e->state!=NOUVEAU_ENGINE_EMPTY || e->snapshot_valid || !io ||

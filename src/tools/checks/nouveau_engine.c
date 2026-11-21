@@ -45,6 +45,10 @@ static bool write32(void *ctx,uint32_t reg,uint32_t value)
 {
 	struct model *m=ctx;m->writes++;
 	if(cap_index(reg,false)>=0)m->caps[cap_index(reg,false)]=value;
+	else if(reg==0x610490) {
+		assert(!(value&0x80000013));
+		m->controls[0]=m->stuck?value:value&~0x001e0000U;
+	}
 	else if(reg==0x610010) {
 		assert(value==1||m->upload.state==NOUVEAU_UPLOAD_PINNED);m->instance=value;
 	}else if(reg==0x6194e8) {
@@ -102,6 +106,29 @@ static void recovered(struct model *m)
 int main(void)
 {
 	struct model m;setup(&m);
+	m.controls[0]=0x48070088;
+	assert(nouveau_engine_drain_disabled_core(&m.io)==NOUVEAU_ENGINE_OK);
+	assert(m.writes==2&&m.controls[0]==0x48010088);
+	unsigned drain_reads=m.reads;
+	for(unsigned type=0;type<2;type++)for(unsigned i=1;i<=(type?2:drain_reads);i++) {
+		setup(&m);m.controls[0]=0x48070088;
+		if(type)m.fail_write=i;else m.fail_read=i;
+		assert(nouveau_engine_drain_disabled_core(&m.io)==NOUVEAU_ENGINE_IO_FAILED);
+	}
+	for(unsigned id=0;id<17;id++) {
+		setup(&m);m.controls[0]=0x48070088;m.controls[id]|=1;
+		assert(nouveau_engine_drain_disabled_core(&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+	}
+	for(unsigned bit=0;bit<3;bit++) {
+		setup(&m);m.controls[0]=0x48070088|(bit==0?0x10:bit==1?2:0x80000000U);
+		assert(nouveau_engine_drain_disabled_core(&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
+	}
+	for(unsigned mode=0;mode<3;mode++) {
+		setup(&m);m.controls[0]=0x48070088;m.stuck=true;m.stalled=mode==1;m.backward=mode==2;
+		assert(nouveau_engine_drain_disabled_core(&m.io)==(mode==2?NOUVEAU_ENGINE_IO_FAILED:NOUVEAU_ENGINE_TIMEOUT));
+		assert(m.writes==2&&m.delays<=20000);
+	}
+	setup(&m);
 	m.firmware=1;m.supervisor=0;
 	assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_BUSY&&!m.writes);
 	assert(m.engine.blocked_reg==0x6194e8&&m.engine.blocked_value==1&&m.engine.blocked_mask==3);
