@@ -6,10 +6,11 @@
 #include "kernel/timer.h"
 
 struct region { uint32_t base,size; bool writable; };
-/* No instance/channel/PLL/PRAMIN mappings are writable in this probe. */
+/* Only core control permits reasserting an already disabled stop request;
+ * no instance/descriptors/PUT/PLL/PRAMIN mappings are writable here. */
 static const struct region regions[]={
 	{0x22448,4,false},{0x612004,4,false},{0x610010,4,false},
-	{0x610490,0x104,false},{0x616000,0x2000,false},{0x61c000,0x4000,false},
+	{0x610490,4,true},{0x6104a0,0xf4,false},{0x616000,0x2000,false},{0x61c000,0x4000,false},
 	{0x610090,4,true},{0x6100a0,4,true},{0x6100ac,4,true},{0x6100b0,4,true},
 	{0x6194e8,4,true},
 	{0x6101b4,12,true},{0x6109b4,12,true},{0x6111b4,12,true},{0x6119b4,12,true},
@@ -45,7 +46,7 @@ static bool capability_register(uint32_t reg)
 static bool write32(void *ctx,uint32_t reg,uint32_t value)
 {
 	/* Restrict writes even inside larger leases used by strided mirrors. */
-	if(reg!=0x610090 && reg!=0x6100a0 && reg!=0x6100ac && reg!=0x6100b0 &&
+	if(reg!=0x610490 && reg!=0x610090 && reg!=0x6100a0 && reg!=0x6100ac && reg!=0x6100b0 &&
 	    reg!=0x6194e8 && !capability_register(reg)) return false;
 	volatile uint32_t *p=locate(ctx,reg,true);
 	if(!p) return false;
@@ -73,7 +74,7 @@ static const char *status_name(enum nouveau_engine_status status)
 	case NOUVEAU_ENGINE_INVALID:return "invalid";
 	case NOUVEAU_ENGINE_BUSY:return "channels/firmware busy";
 	case NOUVEAU_ENGINE_IO_FAILED:return "register IO failed";
-	case NOUVEAU_ENGINE_TIMEOUT:return "firmware timeout";
+	case NOUVEAU_ENGINE_TIMEOUT:return "timeout";
 	}
 	return "unknown";
 }
@@ -114,6 +115,13 @@ void nouveau_engine_probe_log(const struct pci_device_lease *claim,const struct 
 		m.addresses[i]=address;
 	}
 	enum nouveau_engine_status status=nouveau_engine_take(&engine,&io);
+	if(status==NOUVEAU_ENGINE_BUSY && !engine.snapshot_valid &&
+	    engine.blocked_reg==0x610490 && !(engine.blocked_value&0x80000013)) {
+		blocker_log(&engine);
+		status=nouveau_engine_drain_disabled_core(&io);
+		klog("nouveau: HANDOFF disabled core drain=");klog(status_name(status));klog("\n");
+		if(status==NOUVEAU_ENGINE_OK) status=nouveau_engine_take(&engine,&io);
+	}
 	klog("nouveau: HANDOFF take=");klog(status_name(status));klog("\n");
 	if(status==NOUVEAU_ENGINE_BUSY) blocker_log(&engine);
 	if(status==NOUVEAU_ENGINE_OK) {

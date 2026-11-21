@@ -38,7 +38,7 @@ static bool map(const struct pci_device_lease *c,const struct pci_bar_resource *
 	 * writable. Mirrors use exact DWORD or 12-byte leases. */
 	if(write) {
 		assert(off!=0x610010&&off<0x700000);
-		assert(!(off<=0x610490&&off+size>0x610490));
+		assert(!(off<=0x610490&&off+size>0x610490) || (off==0x610490&&size==4));
 		assert(size==4||size==12);
 	}
 	if(calls==fail_map)return false;
@@ -79,7 +79,7 @@ int main(void)
 {
 	fixture();nouveau_engine_probe_log(&claim,&bar);
 	assert(taken&&caps&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
-	unsigned total=calls;assert(total==23);
+	unsigned total=calls;assert(total==24);
 	for(unsigned kind=0;kind<2;kind++)for(unsigned i=1;i<=total;i++) {
 		fixture();if(kind)fail_address=i;else fail_map=i;
 		nouveau_engine_probe_log(&claim,&bar);
@@ -97,6 +97,13 @@ int main(void)
 	}
 	fixture();stalled=true;nouveau_engine_probe_log(&claim,&bar);
 	assert(!calls&&!taken&&!maps);
+	/* Real GP107 photograph: requests already off, activity stuck at 3.
+	 * Plain RAM cannot emulate drain completion: require bounded timeout,
+	 * retain the observed value, and never run capabilities or bind. */
+	fixture();regs[0x610490/4]=0x48070088;memcpy(saved,regs,sizeof(regs));
+	nouveau_engine_probe_log(&claim,&bar);
+	assert(!taken&&!caps&&!restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));
+	assert(strstr(log_text,"HANDOFF disabled core drain=timeout"));
 	fixture();regs[0x6194e8/4]=1;memcpy(saved,regs,sizeof(regs));
 	nouveau_engine_probe_log(&claim,&bar);
 	assert(busy&&!taken&&restored&&!maps&&!memcmp(saved,regs,sizeof(regs)));

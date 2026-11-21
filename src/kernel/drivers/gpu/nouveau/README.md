@@ -674,7 +674,9 @@ Request/ack bits должны быть сброшены после handoff; от
 handoff при активном request запрещает захват даже при ack=0.
 
 Записи разрешены только в точные masks/handoff/capability регистры;
-instance и channel controls отображаются read-only. PRAMIN/VRAM/PLL вообще
+instance и channel controls, кроме core control, отображаются read-only.
+Core control имеет отдельный DWORD lease для описанного ниже drain.
+PRAMIN/VRAM/PLL вообще
 не отображаются этим адаптером. Таймер проверяется до MMIO; ожидания
 ограничены временем и числом итераций. Отказы до изменения состояния
 освобождают leases; после изменения выполняется rollback. Невозможность
@@ -694,3 +696,24 @@ firmware/scanout областей. Нативные upload/bind/channel start о
 реальный take/capabilities/restore над моделью PCI mappings, все отказы
 map/address, 17 busy channels, неподвижный таймер и rollback при неверной
 capability. Сам аппаратный handoff этим тестом не подтверждён.
+
+На GTX 1050 Ti диагностика выявила blocker core0: 0x610490=0x48070088,
+pending=0x00060000. Allocation/connect/PUT requests (bits 0,1,4) и init busy
+(bit31) выключены, но activity[20:17] ненулевая. Проверка idle сохраняется.
+Добавлен ограниченный GF119 core fini только для этого класса состояний:
+до записи проверяются выключенные requests core и idle остальных 16
+каналов; затем requests повторно проверяются и записываются с очисткой
+bit4 и bits0..1, как в upstream gf119_disp_core_fini. Уже включённый канал
+никогда не останавливается этим путём. Descriptors, PUT, timing, instance
+не изменяются; status fields не восстанавливаются сырым snapshot.
+Ожидание сброса activity ограничено 2 секундами и 20001 чтением.
+
+После успеха `HANDOFF disabled core drain=ok` повторяется обычный take,
+который заново проверяет все каналы и firmware. При timeout/IO/busy
+захват не продолжается. Повторная запись выключенных requests ещё не
+подтверждена на железе: возможно, потребуется полный firmware teardown,
+но ослабление маски activity не считается корректной заменой.
+Host-регрессия использует точное значение с фотографии, покрывает оба
+write failures, все read failures, busy других каналов, enabled core,
+stalled/backward clock и неизменность VRAM/instance/PUT. Модель нативного
+адаптера дополнительно проверяет bounded timeout при stuck status.
