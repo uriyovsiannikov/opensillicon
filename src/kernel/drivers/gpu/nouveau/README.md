@@ -522,3 +522,28 @@ callbacks канала: подготовленный image остаётся за
 restore, сверка исходных bytes и освобождение range. Потеря реального
 ownership при release также удерживает pin до восстановления владельца.
 Это host-модель цепочки, не native engine handoff и не hardware validation.
+
+## GF119 firmware handoff и привязка instance
+
+`engine.c` переносит request/ack handoff и display instance binding из
+`gf119_disp_init`. До изменений проверяются все 17 GP102 channel controls:
+активный/ожидающий канал даёт BUSY без записей. Сохраняются instance,
+firmware control и три interrupt masks. При pending supervisor bit 0x100
+выполняются W1C acknowledgement и снятие firmware request bit; ожидание
+ack ограничено 2 секундами/20001 чтением. Все IRQ остаются выключенными:
+supervisor/PLL ещё не интегрированы.
+
+Bind принимает только проверенный upload 64 КиБ с alignment 64 КиБ,
+закрепляет его ДО потенциально неудачной записи 0x610010 и сверяет read-back.
+Restore требует inactive channels, возвращает старый instance с read-back,
+снимает pin и восстанавливает исходные VRAM bytes. Только после успешного
+rollback возвращаются IRQ masks и firmware request bit. Если rollback не
+удался, память удерживается в quarantine, прошивке управление не возвращается.
+W1C status acknowledgement необратим: старое pending event не воспроизводится.
+Это не полное восстановление всех внутренних состояний firmware.
+
+Host-тест проверяет полный handoff/bind/restore, каждый take read/write failure,
+failed bind с side effect, busy channel всех 17 номеров, stuck/stalled/backward
+clock, отказ VRAM rollback и retry. Нативная boot probe этот API пока не
+вызывает: capability copying, IRQ/supervisor/PLL и физический adapter остаются
+незавершённой частью engine integration.
