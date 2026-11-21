@@ -847,3 +847,14 @@ child тест с stuck activity подтверждает halt с device-owned D
 instance и неизменённым порядком rollback. Channel unit-тесты продолжают
 покрывать каждый read/write failure и timeout, а также запрет kick пустого
 буфера. Сам аппаратный start/stop пока не подтверждён, modeset не выполняется.
+
+Первая аппаратная попытка была отклонена до выделения push/запуска канала
+общей проверкой `bound instance/HOST DMA unavailable`; прежние instance,
+VRAM и PRAMIN восстановлены. Эта строка не доказывает недоступность DMA:
+в неё также попадали engine tracking, pin и аппаратные firmware/instance
+проверки. Общая причина заменена на `CORECHANNEL blocked reason=...` с
+reg/observed/expected из отвергающего чтения (без повторного чтения,
+подменяющего данные). Отдельно выводится HOST DMA identity unavailable.
+Тест покрывает все классы допуска, точные firmware/instance mismatch
+значения и отсутствие alloc/map/write на отклонённом пути. До аппаратного
+результата точная причина отказа core-канала остаётся неизвестной.

@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "kernel/nouveau_engine.h"
+#include "kernel/nouveau_channel.h"
 #include "kernel/nouveau_memory.h"
 #include "kernel/dma.h"
 #include "arch/x86_64/pci_resource.h"
@@ -21,6 +22,13 @@ static enum dma_owner dma_owner;
 static uint32_t push_words[1024];
 static const struct dma_buffer dma_handle={.generation=100,.slot=0};
 static bool expect_stop_failure;
+static uint32_t bound_fail_reg;
+static bool bound_read(void *ctx,uint32_t reg,uint32_t *value)
+{(void)ctx;if(reg==bound_fail_reg)return false;*value=regs[reg/4];return true;}
+static bool bound_write(void *ctx,uint32_t reg,uint32_t value)
+{(void)ctx;(void)reg;(void)value;assert(0);return false;}
+static bool bound_time(void *ctx,uint64_t *value){(void)ctx;*value=0;return true;}
+static bool bound_delay(void *ctx,unsigned value){(void)ctx;(void)value;return true;}
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.aperture_size=0x1000000};
 static void fixture(void)
@@ -252,5 +260,32 @@ unsigned total=calls;assert(total==26);
 	}
 	int child_status;assert(waitpid(child,&child_status,0)==child);
 	assert(WIFEXITED(child_status)&&WEXITSTATUS(child_status)==73);
+	/* Distinguish initial software/transport/MMIO/DMA rejection without any
+	 * allocation, mapping or device writes. Observed data is the rejecting read. */
+	for(unsigned test=0;test<11;test++) {
+		fixture();dma_available=false;bound_fail_reg=0;regs[0x610010/4]=0x40009;
+		struct nouveau_upload u={.state=NOUVEAU_UPLOAD_PINNED,.address=0x4000000};
+		struct nouveau_engine_io io={NULL,bound_read,bound_write,bound_time,bound_delay};
+		struct nouveau_engine e={.state=NOUVEAU_ENGINE_BOUND,.snapshot_valid=true,.caps_ready=true,
+		    .instance_touched=true,.instance=&u,.io=&io};
+		if(test==0)e.snapshot_valid=false;
+		if(test==1)e.caps_ready=false;
+		if(test==2)e.io=NULL;
+		if(test==3)e.state=NOUVEAU_ENGINE_QUIESCENT;
+		if(test==4)e.instance_touched=false;
+		if(test==5)u.state=NOUVEAU_UPLOAD_VERIFIED;
+		if(test==6)bound_fail_reg=0x6194e8;
+		if(test==7)regs[0x6194e8/4]=3;
+		if(test==8)bound_fail_reg=0x610010;
+		if(test==9)regs[0x610010/4]=1;
+		nouveau_core_channel_probe_log(&claim,&bar,&e);
+		const char *reasons[]={"engine snapshot/capabilities unavailable","engine snapshot/capabilities unavailable",
+		    "engine transport unavailable","engine not bound","bound instance tracking unavailable",
+		    "instance not pinned","firmware register read failed","firmware request/ack active",
+		    "instance register read failed","instance register mismatch","HOST DMA identity unavailable"};
+		assert(strstr(log_text,reasons[test])&&!calls&&!alloc_calls&&!dma_live);
+		if(test==7)assert(strstr(log_text,"reg=0x006194e8 observed=0x00000003 expected=0x00000000"));
+		if(test==9)assert(strstr(log_text,"reg=0x00610010 observed=0x00000001 expected=0x00040009"));
+	}
 	puts("NOUVEAU_ENGINE_PCI_PASS: native upload/bind, empty core start/stop, PUT=0, DMA ownership, descriptor restoration, VRAM/PRAMIN rollback, map/heap/DMA failures; no method submission");
 }

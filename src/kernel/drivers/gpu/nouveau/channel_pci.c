@@ -20,16 +20,34 @@ static void hex32(uint32_t value)
 	for(unsigned i=0;i<8;i++)text[i]=digits[(value>>((7-i)*4))&15];
 	text[8]=0;klog(text);
 }
+struct bound_check { const char *reason;uint32_t reg,value,expected; };
+static bool check_bound(struct core_probe *p,struct bound_check *report)
+{
+	struct nouveau_engine *e=p->engine;uint32_t value=0;
+	*report=(struct bound_check){.reason="engine snapshot/capabilities unavailable"};
+	if(!e || !e->snapshot_valid || !e->caps_ready)return false;
+	report->reason="engine transport unavailable";
+	if(!e->io || !e->io->read32 || !e->io->write32 || !e->io->time_us || !e->io->delay_us)return false;
+	*report=(struct bound_check){"engine not bound",0,e->state,NOUVEAU_ENGINE_BOUND};
+	if(e->state!=NOUVEAU_ENGINE_BOUND)return false;
+	*report=(struct bound_check){.reason="bound instance tracking unavailable"};
+	if(!e->instance_touched || !e->instance)return false;
+	*report=(struct bound_check){"instance not pinned",0,e->instance->state,NOUVEAU_UPLOAD_PINNED};
+	if(e->instance->state!=NOUVEAU_UPLOAD_PINNED)return false;
+	*report=(struct bound_check){.reason="firmware register read failed",.reg=0x6194e8};
+	if(!e->io->read32(e->io->context,0x6194e8,&value))return false;
+	report->value=value;report->reason="firmware request/ack active";
+	if(value==UINT32_MAX || (value&3))return false;
+	*report=(struct bound_check){.reason="instance register read failed",.reg=0x610010,
+	    .expected=(uint32_t)(e->instance->address>>8)|9};
+	if(!e->io->read32(e->io->context,0x610010,&value))return false;
+	report->value=value;report->reason="instance register mismatch";
+	return value==report->expected;
+}
 static bool engine_bound(struct core_probe *p)
 {
-	struct nouveau_engine *e=p->engine;uint32_t value;
-	return e && e->snapshot_valid && e->caps_ready && e->io && e->io->read32 &&
-	    e->io->write32 && e->io->time_us && e->io->delay_us &&
-	    e->state==NOUVEAU_ENGINE_BOUND && e->instance_touched && e->instance &&
-	    e->instance->state==NOUVEAU_UPLOAD_PINNED &&
-	    e->io->read32(e->io->context,0x6194e8,&value) && value!=UINT32_MAX && !(value&3) &&
-	    e->io->read32(e->io->context,0x610010,&value) &&
-	    value==((uint32_t)(e->instance->address>>8)|9);
+	struct bound_check report;
+	return check_bound(p,&report);
 }
 static bool read_reg(void *ctx,uint32_t reg,uint32_t *value)
 {
@@ -98,8 +116,14 @@ void nouveau_core_channel_probe_log(const struct pci_device_lease *claim,
 	struct core_probe p={.engine=engine};struct pci_mmio_lease leases[2]={{0}};
 	struct nouveau_channel channel={0};
 	struct nouveau_channel_io io={&p,read_reg,write_reg,time_us,delay_us,acquire,release};
-	if(!engine_bound(&p) || !dma_identity_addressing_available()) {
-		klog("nouveau: CORECHANNEL bound instance/HOST DMA unavailable\n");return;
+	struct bound_check report;
+	if(!check_bound(&p,&report)) {
+		klog("nouveau: CORECHANNEL blocked reason=");klog(report.reason);
+		klog(" reg=0x");hex32(report.reg);klog(" observed=0x");hex32(report.value);
+		klog(" expected=0x");hex32(report.expected);klog("\n");return;
+	}
+	if(!dma_identity_addressing_available()) {
+		klog("nouveau: CORECHANNEL HOST DMA identity unavailable\n");return;
 	}
 	if(!dma_alloc(4096,4096,40,&p.push)) {
 		klog("nouveau: CORECHANNEL push allocation unavailable\n");return;
