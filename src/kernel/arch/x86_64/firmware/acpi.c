@@ -4,6 +4,7 @@
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/spinlock.h"
+#include "kernel/smp.h"
 #include "kernel/timer.h"
 #include "kernel/vmm.h"
 #include "acpi.h"

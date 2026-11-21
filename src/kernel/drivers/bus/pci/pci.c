@@ -393,6 +393,14 @@ pci_config_write_unlocked(uint16_t segment, uint8_t bus, uint8_t device,
 	if ((!command_write && !rng_bar_write && !bar_write) ||
 	    !config_valid(device, function, offset, width))
 		return false;
+	/* Match the read path: firmware may advertise an MCFG window that
+	 * cannot be mapped under the current boot memory contract. Segment
+	 * zero's conventional registers remain accessible through CF8/CFC. */
+	if (region != NULL && !map_ecam_bus(region, bus)) {
+		if (segment != 0 || offset >= 256)
+			return false;
+		region = NULL;
+	}
 	if (width == 16) {
 		if (region != NULL) {
 			uint64_t address;

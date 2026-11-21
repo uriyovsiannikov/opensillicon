@@ -768,6 +768,8 @@ virtio_rng_probe_done:
 	klog_flush_boot_log();
 	tty_boot_splash_end();
 	fd_console_framebuffer_enable(true);
+	if (!tty_keyboard_available())
+		usb_host_input_diagnostics();
 	{
 		uint64_t status = process_run_path("/sbin/init", true);
 
