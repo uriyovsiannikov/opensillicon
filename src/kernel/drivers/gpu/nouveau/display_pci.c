@@ -164,6 +164,8 @@ void nouveau_display_probe_log(const struct pci_device_lease *claim,
 	if(!framebuffer_device_info(&fb)) { klog("nouveau: MODEPLAN framebuffer unavailable\n");goto out; }
 	boot_framebuffer_log(claim,&fb);
 	nouveau_firmware_instance_log(claim,bar,&s,vram);
+	nouveau_firmware_bar_log(claim,bar,1,s.bar1_instance,vram);
+	nouveau_firmware_bar_log(claim,bar,3,s.bar3_instance,vram);
 	const struct nouveau_edid_mode *mode=NULL;
 	for(unsigned i=0;i<edid->mode_count;i++) if(edid->modes[i].detailed) {
 		if(mode==NULL || edid->modes[i].preferred) mode=&edid->modes[i];

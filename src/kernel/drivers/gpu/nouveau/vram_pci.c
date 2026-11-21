@@ -41,17 +41,14 @@ static void context_log(const uint32_t *image,unsigned channel,uint32_t handle,u
 	} else klog(" unsupported DMA object");
 	klog("\n");
 }
-void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
-	const struct pci_bar_resource *bar,const struct nouveau_display_snapshot *s,uint64_t size)
+
+/* Map/read/restore/unmap before allowing the caller to parse firmware data. */
+static uint32_t *firmware_read(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar,uint64_t size,uint64_t base,size_t length)
 {
-	uint64_t base=(uint64_t)(s->instance&0xffffff00U)<<8;
-	/* Display instance register format programmed by gf119_disp_init. A
-	 * non-VRAM or differently aligned firmware layout must not be guessed. */
-	if((s->instance&255)!=9 || !size || base>=size || NOUVEAU_INSTANCE_SIZE>size-base) {
-		klog("nouveau: FWINST unknown/absent VRAM instance register=0x");hex(s->instance,8);klog("\n");return;
-	}
 	struct pci_mmio_lease leases[2]={{0}};
 	struct pramin_mapping mapping={0};uint32_t *image=NULL;
+	bool captured=false;
 	volatile void *address;
 	if(!pci_mmio_map(claim,bar,0x1700,4,&leases[0]) ||
 	    !pci_mmio_lease_address(&leases[0],&address)) goto out;
@@ -59,16 +56,39 @@ void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
 	if(!pci_mmio_map_readonly(claim,bar,0x700000,0x100000,&leases[1]) ||
 	    !pci_mmio_lease_address(&leases[1],&address)) goto out;
 	mapping.aperture=address;
-	image=kheap_alloc(NOUVEAU_INSTANCE_SIZE);
+	image=kheap_alloc(length);
 	if(!image) goto out;
 	struct nouveau_pramin_io io={.context=&mapping,.read32=read32,.write32=write32};
-	enum nouveau_vram_status status=nouveau_vram_read(&io,size,base,image,NOUVEAU_INSTANCE_SIZE);
+	enum nouveau_vram_status status=nouveau_vram_read(&io,size,base,image,length);
 	if(status==NOUVEAU_VRAM_RESTORE_FAILED) {
-		klog("nouveau: FWINST PRAMIN restore failed\n");kernel_halt();
+		klog("nouveau: firmware PRAMIN restore failed\n");kernel_halt();
 	}
-	if(status!=NOUVEAU_VRAM_OK) {
-		klog("nouveau: FWINST capture failed\n");goto out;
+	captured=status==NOUVEAU_VRAM_OK;
+out:
+	for(unsigned i=2;i>0;i--) if(leases[i-1].generation && !pci_mmio_release(&leases[i-1])) {
+		klog("nouveau: firmware MMIO release failed\n");kernel_halt();
 	}
+	if(image && !captured) {
+		if(!kheap_free(image)) {klog("nouveau: firmware snapshot release failed\n");kernel_halt();}
+		image=NULL;
+	}
+	return image;
+}
+static void firmware_free(uint32_t *image)
+{
+	if(!kheap_free(image)) {klog("nouveau: firmware snapshot release failed\n");kernel_halt();}
+}
+
+void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar,const struct nouveau_display_snapshot *s,uint64_t size)
+{
+	uint64_t base=(uint64_t)(s->instance&0xffffff00U)<<8;
+	/* Display instance register format programmed by gf119_disp_init. */
+	if((s->instance&255)!=9 || !size || base>=size || NOUVEAU_INSTANCE_SIZE>size-base) {
+		klog("nouveau: FWINST unknown/absent VRAM instance register=0x");hex(s->instance,8);klog("\n");return;
+	}
+	uint32_t *image=firmware_read(claim,bar,size,base,NOUVEAU_INSTANCE_SIZE);
+	if(!image) {klog("nouveau: FWINST capture unavailable\n");return;}
 	klog("nouveau: FWINST captured base=0x");hex(base,10);
 	klog(" bytes=65536; PRAMIN restored; header=");
 	for(unsigned i=0;i<4;i++) {hex(image[i],8);klog(i==3?"\n":" ");}
@@ -76,11 +96,31 @@ void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
 		context_log(image,0,s->heads[i].arm.dma,size);
 		for(unsigned j=0;j<2;j++) context_log(image,i+1,s->base[i].dma[j],size);
 	}
-out:
-	if(!image) klog("nouveau: FWINST mapping/allocation unavailable\n");
-	/* Free only after nouveau_vram_read has restored the GPU window. */
-	if(image && !kheap_free(image)) {klog("nouveau: FWINST snapshot release failed\n");kernel_halt();}
-	for(unsigned i=2;i>0;i--) if(leases[i-1].generation && !pci_mmio_release(&leases[i-1])) {
-		klog("nouveau: FWINST MMIO release failed\n");kernel_halt();
+	firmware_free(image);
+}
+
+void nouveau_firmware_bar_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar,unsigned pci_index,uint32_t reg,uint64_t size)
+{
+	if(pci_index!=1 && pci_index!=3) return;
+	klog("nouveau: BARVM PCI=");klog_u64(pci_index);klog(" context=0x");hex(reg,8);
+	/* gf100_bar_bar1_init/bar2_init: enable bit 31, optional BAR2 halve
+	 * bit 30, 40-bit VRAM instance address >>12. Do not guess reserved bits. */
+	if(!(reg&0x80000000U) || (reg&0x30000000U) || (pci_index==1 && (reg&0x40000000U))) {
+		klog(" disabled/unsupported context\n");return;
 	}
+	uint64_t base=(uint64_t)(reg&0x0fffffffU)<<12;
+	if(!size || size>(UINT64_C(1)<<40) || base>=size || 4096>size-base) {
+		klog(" VRAM range invalid\n");return;
+	}
+	uint32_t *image=firmware_read(claim,bar,size,base,4096);
+	if(!image) {klog(" capture unavailable\n");return;}
+	/* gf100_vmm_join_: instance +200 is the PDB descriptor, +208 is
+	 * inclusive virtual address limit. gp100 adds VER2 and page flags.
+	 * Report raw descriptors; do not assume the firmware selected VER2. */
+	uint64_t pdb=(uint64_t)image[0x200/4]|((uint64_t)image[0x204/4]<<32);
+	uint64_t limit=(uint64_t)image[0x208/4]|((uint64_t)image[0x20c/4]<<32);
+	klog(" instance=0x");hex(base,10);klog(" pdb_raw=0x");hex(pdb,16);
+	klog(" va_limit=0x");hex(limit,16);klog("; PRAMIN restored\n");
+	firmware_free(image);
 }

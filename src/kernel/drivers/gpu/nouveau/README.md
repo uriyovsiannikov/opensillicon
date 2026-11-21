@@ -330,3 +330,13 @@ FWINST было пропущено. Состояние base surfaces по-пре
 `BARMAP` читает, не меняя, BAR VM instance pointers 0x1704/0x1714 и status
 0x1710 по `gf100.c`/`gm107.c`. Даже совпадение BAR3 не доказывает прямую
 адресацию VRAM: для этого нужна проверка GPU page tables.
+
+`BARVM` исследует VM instance BAR1/BAR3 отдельно от display instance. По
+известному формату gf100_bar включённый регистр задаёт 4-КиБ VRAM instance;
+bit 30 разрешён только для второй aperture (halve). Неизвестные верхние bits
+и выход за VRAM запрещают чтение. После восстановления PRAMIN журнал
+показывает raw PDB descriptor по instance+0x200 и VA limit по +0x208 из
+`gf100_vmm_join_`. Эти данные ещё не являются переводом адреса framebuffer.
+Формат page tables (legacy или Pascal VER2) пока не предполагается.
+Тесты покрывают BARVM при display instance=1, disabled/unknown formats,
+halve, недопустимый диапазон и partial mapping/allocation cleanup.

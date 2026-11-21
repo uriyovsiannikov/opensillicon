@@ -20,4 +20,8 @@ enum nouveau_vram_status nouveau_vram_read(const struct nouveau_pramin_io *io,
 void nouveau_firmware_instance_log(const struct pci_device_lease *claim,
 	const struct pci_bar_resource *bar, const struct nouveau_display_snapshot *snapshot,
 	uint64_t vram_size);
+/* BAR VM instances have a separate lifecycle and layout from display RAMHT. */
+void nouveau_firmware_bar_log(const struct pci_device_lease *claim,
+	const struct pci_bar_resource *bar, unsigned pci_index,
+	uint32_t context_register, uint64_t vram_size);
 #endif

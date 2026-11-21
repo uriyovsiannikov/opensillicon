@@ -23,7 +23,7 @@ static bool write_model(void *context,uint32_t reg,uint32_t value)
 static uint32_t aperture[0x100000/4],control;
 static unsigned maps,map_calls,address_calls,fail_map,fail_address,allocations;
 static bool fail_alloc;
-static unsigned decoded_contexts;
+static unsigned decoded_contexts,decoded_bar_pdbs;
 static const struct pci_device_lease claim={.generation=1};
 static const struct pci_bar_resource bar={.type=PCI_BAR_MEMORY32,.base=0xa3000000,.aperture_size=0x1000000};
 static bool map_common(const struct pci_device_lease *c,const struct pci_bar_resource *b,
@@ -52,19 +52,19 @@ bool pci_mmio_release(struct pci_mmio_lease *lease)
 {assert(lease->generation&&maps);lease->generation=0;maps--;return true;}
 void *kheap_alloc(size_t size)
 {
-	assert(size==NOUVEAU_INSTANCE_SIZE&&control==0x200);
+	assert((size==NOUVEAU_INSTANCE_SIZE||size==4096)&&control==0x200);
 	if(fail_alloc)return NULL;
 	void *p=malloc(size);assert(p);allocations++;return p;
 }
 bool kheap_free(void *p)
-{assert(allocations==1&&control==0x200);allocations--;free(p);return true;}
-void klog(const char *s){if(!strcmp(s," VRAM start=0x"))decoded_contexts++;}
+{assert(allocations==1&&!maps&&control==0x200);allocations--;free(p);return true;}
+void klog(const char *s){if(!strcmp(s," VRAM start=0x"))decoded_contexts++;if(!strcmp(s,"0000000011223c00"))decoded_bar_pdbs++;}
 void klog_u64(uint64_t value){(void)value;}
 _Noreturn void kernel_halt(void){abort();}
 static void reset(void)
 {
 	assert(!maps&&!allocations);control=0x200;
-	map_calls=address_calls=fail_map=fail_address=decoded_contexts=0;fail_alloc=false;
+	map_calls=address_calls=fail_map=fail_address=decoded_contexts=decoded_bar_pdbs=0;fail_alloc=false;
 }
 int main(void)
 {
@@ -123,5 +123,26 @@ int main(void)
 	reset();fail_alloc=true;nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));assert(control==0x200&&!maps&&!allocations);
 	reset();s.instance=0;nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));assert(!map_calls);
 	s.instance=0x10009;nouveau_firmware_instance_log(&claim,&bar,&s,0x100000);assert(!map_calls);
+	/* BAR VM context capture is independent from display instance=1. */
+	aperture[0x200/4]=0x11223c00;aperture[0x204/4]=0;
+	aperture[0x208/4]=0x1ffffff;aperture[0x20c/4]=0;
+	s.instance=1;reset();
+	nouveau_firmware_instance_log(&claim,&bar,&s,UINT64_C(0x100000000));assert(!map_calls);
+	nouveau_firmware_bar_log(&claim,&bar,3,0x80001000,UINT64_C(0x100000000));
+	assert(map_calls==2&&!maps&&!allocations&&control==0x200&&decoded_bar_pdbs==1);
+	reset();nouveau_firmware_bar_log(&claim,&bar,3,0xc0001000,UINT64_C(0x100000000));
+	assert(map_calls==2&&!maps&&!allocations&&control==0x200&&decoded_bar_pdbs==1);
+	for(unsigned i=1;i<=2;i++) {
+		reset();fail_map=i;nouveau_firmware_bar_log(&claim,&bar,1,0x80001000,UINT64_C(0x100000000));
+		assert(!maps&&!allocations&&control==0x200);
+		reset();fail_address=i;nouveau_firmware_bar_log(&claim,&bar,3,0x80001000,UINT64_C(0x100000000));
+		assert(!maps&&!allocations&&control==0x200);
+	}
+	reset();fail_alloc=true;nouveau_firmware_bar_log(&claim,&bar,3,0x80001000,UINT64_C(0x100000000));
+	assert(!maps&&!allocations&&control==0x200);
+	reset();nouveau_firmware_bar_log(&claim,&bar,1,1,UINT64_C(0x100000000));assert(!map_calls);
+	nouveau_firmware_bar_log(&claim,&bar,1,0xc0001000,UINT64_C(0x100000000));assert(!map_calls);
+	nouveau_firmware_bar_log(&claim,&bar,3,0xb0001000,UINT64_C(0x100000000));assert(!map_calls);
+	nouveau_firmware_bar_log(&claim,&bar,3,0x80001000,0x100000);assert(!map_calls);
 	puts("NOUVEAU_VRAM_PASS: PRAMIN window crossing, 40-bit bounds, every IO failure, restore verification, native readonly aperture and partial lease cleanup");
 }
