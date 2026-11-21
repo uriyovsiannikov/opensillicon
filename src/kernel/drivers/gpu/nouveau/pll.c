@@ -75,7 +75,7 @@ static bool valid(const struct nouveau_pll_limits *l)
 {
 	/* All clock quantities are kHz; reject bounds exceeding the BIOS
 	 * 16-bit MHz encoding as well as zero divisors and reversed limits. */
-	return l && l->ref_khz && l->ref_khz<=65535000 && l->vco_min_khz &&
+	return l && l->ref_khz<=65535000 && l->vco_min_khz &&
 	    l->vco_max_khz>=l->vco_min_khz && l->vco_max_khz<=65535000 &&
 	    l->input_min_khz && l->input_max_khz>=l->input_min_khz &&
 	    l->input_max_khz<=65535000 && l->min_m && l->min_m<=l->max_m &&
@@ -98,7 +98,7 @@ bool nouveau_pll_calculate(const struct nouveau_pll_limits *l,uint32_t target,
 {
 	if(!result) return false;
 	*result=(struct nouveau_pll_coefficients){0};
-	if(!valid(l) || !target || target>l->vco_max_khz) return false;
+	if(!valid(l) || !l->ref_khz || !target || target>l->vco_max_khz) return false;
 	uint32_t p=l->vco_max_khz/target;
 	if(p>l->max_p)p=l->max_p;
 	if(p<l->min_p)p=l->min_p;

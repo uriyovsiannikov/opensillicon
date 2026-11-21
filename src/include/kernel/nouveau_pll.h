@@ -15,7 +15,8 @@ struct nouveau_pll_coefficients {
 };
 /* Decode v0x40 limits payload (14 bytes), with the refclk from its parent
  * entry. Caller must resolve/validate VBIOS pointers and select VPLL type.
- * No implicit crystal fallback: missing refclk is rejected. */
+ * Zero refclk denotes the VBIOS crystal fallback request; decoding permits
+ * it, but calculate rejects it until caller supplies the identified crystal. */
 bool nouveau_pll_limits_v40(const uint8_t *payload,size_t size,uint32_t ref_khz,
 	struct nouveau_pll_limits *limits);
 /* Fractional VPLL path of gt215_pll_calc, using checked 64-bit arithmetic. */

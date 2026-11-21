@@ -71,6 +71,20 @@ static void fixture(void)
 	fail_alloc = false;
 }
 
+static void pll_fixture(void)
+{
+	fixture();rom[0x10a]=2;
+	rom[0x112]='C';rom[0x113]=2;wr16(rom+0x114,4);wr16(rom+0x116,0x600);
+	wr32(rom+0x600,0x620);rom[0x620]=0x40;rom[0x621]=4;rom[0x622]=11;rom[0x623]=4;
+	const uint8_t limits[]={0xf4,1,0xb8,0x0b,1,0,27,0,1,32,1,255,1,63};
+	for(unsigned i=0;i<4;i++) {
+		uint8_t *record=rom+0x624+i*11;
+		record[0]=0x80+i;wr16(record+1,0x700+i*16);wr32(record+3,0x614100+i*0x800);
+		wr16(record+9,i==1?0:27);memcpy(rom+0x700+i*16,limits,14);
+	}
+	checksum(rom,ROM_SIZE);
+}
+
 static bool map_common(uint64_t off, size_t size, bool writable,
 	struct pci_mmio_lease *lease)
 {
@@ -179,6 +193,41 @@ int main(void)
 	assert(r.connectors[1].type == 0x46 && r.connectors[1].location == 1);
 	assert(r.connectors[1].hpd == 0x1b && r.connectors[1].dp == 2);
 	assert(r.connectors[1].di == 5 && r.connectors[1].sr == 1 && r.connectors[1].lcdid == 1);
+	assert(r.pll_status==NOUVEAU_BIOS_PLL_ABSENT);
+	pll_fixture();assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK);
+	assert(r.pll_status==NOUVEAU_BIOS_PLL_OK&&r.pll_version==0x40&&r.pll_table_offset==0x620);
+	for(unsigned i=0;i<4;i++)assert(r.vpll[i].valid&&r.vpll[i].reg==0x614100+i*0x800);
+	assert(r.vpll[0].limits.ref_khz==27000&&!r.vpll[1].limits.ref_khz);
+	struct nouveau_pll_coefficients coefficients;
+	assert(nouveau_pll_calculate(&r.vpll[0].limits,148500,&coefficients)&&coefficients.actual_khz==148500);
+	assert(!nouveau_pll_calculate(&r.vpll[1].limits,148500,&coefficients));
+	pll_fixture();rom[0x113]=1;wr16(rom+0x114,10);wr16(rom+0x608,0x620);
+	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_OK);
+	pll_fixture();rom[0x620]=0x50;
+	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_UNSUPPORTED);
+	for(unsigned failure=0;failure<7;failure++) {
+		pll_fixture();
+		if(failure==0)wr32(rom+0x600,ROM_SIZE-2);
+		if(failure==1)rom[0x621]=3;
+		if(failure==2)rom[0x622]=10;
+		if(failure==3)wr16(rom+0x625,ROM_SIZE-10);
+		if(failure==4)wr32(rom+0x627,0xdeadbeef);
+		if(failure==5)rom[0x62f]=0x80; /* duplicate VPLL0 */
+		if(failure==6)rom[0x708]=0; /* divisor minimum zero */
+		assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_INVALID);
+		for(unsigned i=0;i<4;i++)assert(!r.vpll[i].valid);
+	}
+	pll_fixture();rom[0x10a]=3;memcpy(rom+0x118,rom+0x112,6);
+	assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_INVALID);
+	/* Table and all nested limits pointers translated through image-D. */
+	pll_fixture();rom[0x55]=0;
+	image(rom+ROM_SIZE,4096,3,false);image(rom+ROM_SIZE+4096,ROM_SIZE,0xe0,true);
+	uint8_t *extension=rom+ROM_SIZE+4096;
+	memcpy(extension+0x620,rom+0x620,0x120);wr32(rom+0x600,ROM_SIZE+0x620);
+	for(unsigned i=0;i<4;i++)wr16(extension+0x625+i*11,ROM_SIZE+0x700+i*16);
+	assert(nouveau_bios_parse(rom,ROM_SIZE*2+4096,&r)==NOUVEAU_BIOS_OK&&r.pll_status==NOUVEAU_BIOS_PLL_OK);
+	assert(r.vpll[3].valid&&r.vpll[3].limits.ref_khz==27000);
+	fixture();assert(nouveau_bios_parse(rom,ROM_SIZE,&r)==NOUVEAU_BIOS_OK);
 	/* CCB index is not the register channel number. */
 	wr16(rom + 0x304,0x500);
 	rom[0x500]=0x41; rom[0x501]=4; rom[0x502]=8; rom[0x503]=4;
@@ -378,7 +427,7 @@ int main(void)
 	for (unsigned i = 0; i < 12000; i++) {
 		size_t size = random32() % (ROM_SIZE + 1);
 		uint8_t *fuzz = malloc(size ? size : 1); assert(fuzz);
-		fixture(); memcpy(fuzz, rom, size);
+		if(i&1)pll_fixture();else fixture(); memcpy(fuzz, rom, size);
 		for (unsigned n = 0; n < 8 && size; n++)
 			fuzz[random32() % size] = (uint8_t)random32();
 		(void)nouveau_bios_parse(fuzz, size, &r);

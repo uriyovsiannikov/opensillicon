@@ -599,3 +599,21 @@ M=2 N=219 P=20 fractional=4096, слова 0x0014db02/0x10000000.
 Это не считанные limits GTX 1050 Ti. Проверяются неправильные размеры,
 частоты, адреса регистров и 20000 мутаций limits. Исходники и лицензии
 Linux v6.12 сохранены в upstream/pll с SHA256.
+
+## BIT C и VPLL из VBIOS
+
+`bios.c` находит BIT C v1 (pointer+8) / v2 (32-bit pointer+0), разбирает
+PLL table v0x40 и записи типов 0x80..0x83. Header/entry lengths, полный span,
+14-байтные вложенные limits и register base каждого head проверяются.
+Все указатели используют существующую logical image-D translation и только
+полностью захваченный ROM prefix. Повторный BIT C или VPLL type запрещён.
+Результат публикуется только после успешного разбора всей PLL-таблицы.
+Неизвестный формат/невалидная PLL-таблица не ломает иначе рабочие DCB/EDID,
+но отключает PLL planning. BIT pointer errors по-прежнему общая BIT error.
+
+Нулевой refclk разрешён в декодированных limits как предусмотренный NVKM
+fallback на device crystal. Сам calculate по-прежнему требует ненулевой
+refclk: caller обязан передать частоту из аппаратной идентификации карты,
+а не константу. Host-тесты покрывают оба BIT C version, четыре VPLL,
+zero refclk, malformed/duplicate records, вложенные image-D pointers и
+ROM fuzz с BIT C в половине fixtures.

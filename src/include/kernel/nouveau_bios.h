@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "arch/x86_64/pci_resource.h"
+#include "kernel/nouveau_pll.h"
 
 #define NOUVEAU_BIOS_LIMIT 0x100000U
 #define NOUVEAU_BIOS_MAX_IMAGES 64U
@@ -86,8 +87,21 @@ enum nouveau_bios_source {
 	NOUVEAU_BIOS_SOURCE_PROM
 };
 
+enum nouveau_bios_pll_status {
+	NOUVEAU_BIOS_PLL_ABSENT, NOUVEAU_BIOS_PLL_OK,
+	NOUVEAU_BIOS_PLL_UNSUPPORTED, NOUVEAU_BIOS_PLL_INVALID
+};
+struct nouveau_bios_vpll {
+	uint32_t reg;
+	struct nouveau_pll_limits limits;
+	bool valid;
+};
 struct nouveau_bios_report {
 	uint32_t rom_size, image0_size, imaged_addr, bit_offset, bmp_offset;
+	uint32_t pll_table_offset,crystal_khz;
+	uint8_t pll_version;
+	enum nouveau_bios_pll_status pll_status;
+	struct nouveau_bios_vpll vpll[4];
 	uint16_t vendor, device, dcb_offset, connector_offset;
 	uint8_t image_count, dcb_version, dcb_entries, output_count;
 	uint8_t connector_version, connector_count, version[5];

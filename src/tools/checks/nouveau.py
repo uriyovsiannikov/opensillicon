@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
                  if os.environ.get("NOUVEAU_SANITIZE") == "1" else [])
     for name, sources in [
         ("nouveau", ["device.c", "pci.c"]),
-        ("nouveau_bios", ["bios.c", "bios_shadow.c"]),
+        ("nouveau_bios", ["bios.c", "bios_shadow.c", "pll.c"]),
         ("nouveau_edid", ["edid.c", "ddc.c"]),
         ("nouveau_framebuffer", ["../../../tty/fb/framebuffer_device.c"]),
         ("nouveau_pll", ["pll.c"]),

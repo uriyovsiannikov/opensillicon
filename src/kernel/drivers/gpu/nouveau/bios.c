@@ -1,4 +1,27 @@
 /*
+ * Copyright 2005-2006 Erik Waling
+ * Copyright 2006 Stephane Marchesin
+ * Copyright 2007-2009 Stuart Bennett
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+ * OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+/*
  * Copyright 2012 Red Hat Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -215,6 +238,48 @@ static uint32_t find(const uint8_t *data, size_t size, const uint8_t *needle,
 	return 0;
 }
 
+/* BIT C and PLL limits v40, adapted from NVKM bios/pll.c. Optional table
+ * errors disable PLL planning, not otherwise usable VBIOS/DCB/EDID. */
+static void parse_pll(const struct bios_view *bios,struct nouveau_bios_report *r,
+	const uint8_t *entry)
+{
+	if(r->pll_status!=NOUVEAU_BIOS_PLL_ABSENT) {
+		r->pll_status=NOUVEAU_BIOS_PLL_INVALID;
+		for(unsigned i=0;i<4;i++)r->vpll[i].valid=false;
+		return;
+	}
+	r->pll_status=NOUVEAU_BIOS_PLL_INVALID;
+	uint16_t length=rd16(entry+2),offset=rd16(entry+4);
+	const uint8_t *payload=pointer(bios,offset,length);
+	if(!offset || !payload) return;
+	uint32_t table;
+	if(entry[1]==1 && length>=10)table=rd16(payload+8);
+	else if(entry[1]==2 && length>=4)table=rd32(payload);
+	else {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
+	if(!table) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
+	r->pll_table_offset=table;
+	const uint8_t *header=pointer(bios,table,4);
+	if(!header) return;
+	r->pll_version=header[0];
+	if(header[0]!=0x40) {r->pll_status=NOUVEAU_BIOS_PLL_UNSUPPORTED;return;}
+	if(header[1]<4 || header[2]<11 || !header[3]) return;
+	const uint8_t *all=pointer(bios,table,(size_t)header[1]+(size_t)header[2]*header[3]);
+	if(!all) return;
+	struct nouveau_bios_vpll parsed[4]={{0}};
+	for(unsigned i=0;i<header[3];i++) {
+		const uint8_t *record=all+header[1]+i*header[2];
+		if(record[0]<0x80 || record[0]>0x83) continue;
+		unsigned head=record[0]-0x80;
+		uint16_t address=rd16(record+1);
+		const uint8_t *limits=pointer(bios,address,14);
+		if(parsed[head].valid || !address || !limits || rd32(record+3)!=0x614100+head*0x800 ||
+		    !nouveau_pll_limits_v40(limits,14,(uint32_t)rd16(record+9)*1000,&parsed[head].limits)) return;
+		parsed[head].reg=rd32(record+3);parsed[head].valid=true;
+	}
+	for(unsigned i=0;i<4;i++)r->vpll[i]=parsed[i];
+	r->pll_status=NOUVEAU_BIOS_PLL_OK;
+}
+
 static bool parse_bit(const struct bios_view *bios, struct nouveau_bios_report *r)
 {
 	if (r->bit_offset == 0)
@@ -230,6 +295,7 @@ static bool parse_bit(const struct bios_view *bios, struct nouveau_bios_report *
 		uint16_t length = rd16(entry + 2), offset = rd16(entry + 4);
 		if (length != 0 && (offset == 0 || pointer(bios, offset, length) == NULL))
 			return false;
+		if (entry[0] == 'C') parse_pll(bios,r,entry);
 		if (entry[0] == 'i') {
 			const uint8_t *v = pointer(bios, offset, length);
 			if (length < 4 || v == NULL)

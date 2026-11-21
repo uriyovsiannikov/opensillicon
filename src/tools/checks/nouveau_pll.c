@@ -27,7 +27,8 @@ int main(void)
 	assert(!nouveau_pll_calculate(&l,UINT32_MAX,&c));
 	assert(!nouveau_pll_calculate(&l,1,&c));
 	for(unsigned i=0;i<14;i++)assert(!nouveau_pll_limits_v40(payload,i,27000,&l));
-	assert(!nouveau_pll_limits_v40(payload,14,0,&l));
+	assert(nouveau_pll_limits_v40(payload,14,0,&l)&&!l.ref_khz);
+	assert(!nouveau_pll_calculate(&l,148500,&c));
 	for(unsigned i=0;i<20000;i++) {
 		uint8_t fuzz[14];for(unsigned j=0;j<14;j++)fuzz[j]=random32();
 		if(nouveau_pll_limits_v40(fuzz,14,27000,&l)&&nouveau_pll_calculate(&l,1+random32()%1000000,&c)) {
