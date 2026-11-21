@@ -514,3 +514,11 @@ upload transaction. Host-тест объединяет транзакцию и P
 восстановление окна. Native adapter обязан считать PRAMIN_RESTORE_FAILED
 фатальной ошибкой транспорта, а не понижать её до обычного отказа чтения.
 Новый write API из boot probe не вызывается.
+
+Интеграционный `nouveau_lifecycle.c` связывает upload pin/unpin с resource
+callbacks канала: подготовленный image остаётся закреплённым при каждом
+отказе start-write, ambiguous PUT и stop timeout. Пока channel держит
+ресурс, restore/finish запрещены. После verified stop/release выполняются
+restore, сверка исходных bytes и освобождение range. Потеря реального
+ownership при release также удерживает pin до восстановления владельца.
+Это host-модель цепочки, не native engine handoff и не hardware validation.
