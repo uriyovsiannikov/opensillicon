@@ -202,6 +202,25 @@ enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *e,struct n
 	    !read32(e->io,0x610010,&value) || value!=reg) return NOUVEAU_ENGINE_IO_FAILED;
 	e->state=NOUVEAU_ENGINE_BOUND;return NOUVEAU_ENGINE_OK;
 }
+enum nouveau_engine_status nouveau_engine_unbind(struct nouveau_engine *e)
+{
+	if(!e || !e->snapshot_valid || !e->io || !e->instance ||
+	    (e->state!=NOUVEAU_ENGINE_BOUND && e->state!=NOUVEAU_ENGINE_QUARANTINED))
+		return NOUVEAU_ENGINE_INVALID;
+	e->state=NOUVEAU_ENGINE_QUARANTINED;
+	enum nouveau_engine_status status=idle(e,e->io);
+	if(status!=NOUVEAU_ENGINE_OK) return status;
+	uint32_t value;
+	if(e->instance_touched) {
+		if(!e->io->write32(e->io->context,0x610010,e->saved_instance) ||
+		    !read32(e->io,0x610010,&value) || value!=e->saved_instance) return NOUVEAU_ENGINE_IO_FAILED;
+		if(!nouveau_upload_unpin(e->instance)) return NOUVEAU_ENGINE_INVALID;
+		e->instance_touched=false;
+	}
+	if(nouveau_upload_restore(e->instance)!=NOUVEAU_UPLOAD_OK) return NOUVEAU_ENGINE_IO_FAILED;
+	e->instance=NULL;e->state=NOUVEAU_ENGINE_QUIESCENT;
+	return NOUVEAU_ENGINE_OK;
+}
 enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 {
 	if(!e || e->state==NOUVEAU_ENGINE_EMPTY || !e->snapshot_valid || !e->io)
@@ -214,19 +233,13 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 		enum nouveau_engine_status status=idle(e,e->io);
 		if(status!=NOUVEAU_ENGINE_OK) return status;
 	}
-	uint32_t value;
-	if(e->instance_touched) {
-		if(!e->io->write32(e->io->context,0x610010,e->saved_instance) ||
-		    !read32(e->io,0x610010,&value) || value!=e->saved_instance) return NOUVEAU_ENGINE_IO_FAILED;
-		if(!e->instance || !nouveau_upload_unpin(e->instance)) return NOUVEAU_ENGINE_INVALID;
-		e->instance_touched=false;
-	}
 	/* Restore VRAM while driver ownership still holds, BEFORE handing the
 	 * firmware request bit back. A rollback failure remains retryable. */
 	if(e->instance) {
-		if(nouveau_upload_restore(e->instance)!=NOUVEAU_UPLOAD_OK) return NOUVEAU_ENGINE_IO_FAILED;
-		e->instance=NULL;
+		enum nouveau_engine_status status=nouveau_engine_unbind(e);
+		if(status!=NOUVEAU_ENGINE_OK) return status;
 	}
+	uint32_t value;
 	if(e->caps_touched) {
 		for(unsigned i=0;i<e->cap_count;i++) {
 			if(!e->io->write32(e->io->context,e->caps[i].reg,e->caps[i].saved) ||

@@ -167,6 +167,15 @@ int main(void)
 	upload(&m);assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
 	assert(m.instance==0x409&&m.upload.state==NOUVEAU_UPLOAD_PINNED);
 	assert(!nouveau_upload_finish(&m.upload));
+	/* Unbind restores VRAM but keeps firmware held and capability snapshots
+	 * alive, so the caller can restore PRAMIN before returning ownership. */
+	assert(nouveau_engine_unbind(&m.engine)==NOUVEAU_ENGINE_OK);
+	assert(m.instance==1&&m.upload.state==NOUVEAU_UPLOAD_RESTORED&&!m.engine.instance);
+	assert(m.engine.state==NOUVEAU_ENGINE_QUIESCENT&&m.engine.caps_ready&&!(m.firmware&3));
+	assert(nouveau_engine_unbind(&m.engine)==NOUVEAU_ENGINE_INVALID);
+	recovered(&m);assert(nouveau_upload_finish(&m.upload));
+	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
 	m.controls[8]=3;assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_BUSY);
 	assert(m.upload.state==NOUVEAU_UPLOAD_PINNED);m.controls[8]=0;
 	m.fail_memory=true;

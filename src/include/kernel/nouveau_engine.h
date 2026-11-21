@@ -52,6 +52,10 @@ enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *);
  * Requires successful capability preparation. Does not start channels,
  * enable IRQs or submit UPDATE. */
 enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *,struct nouveau_upload *);
+/* Restore old instance/readback, then unpin and restore uploaded VRAM.
+ * Keep firmware held and capabilities/IRQ snapshots intact for later restore.
+ * Failure keeps the engine/upload quarantined and retryable. */
+enum nouveau_engine_status nouveau_engine_unbind(struct nouveau_engine *);
 /* Requires ALL channels inactive when driver resources/mirrors/IRQs changed.
  * Firmware-only failed handoff restores request even if its core stays busy.
  * Restore instance/readback before unpin,
