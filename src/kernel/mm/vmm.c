@@ -417,7 +417,7 @@ vmm_map_page(struct address_space *space, uint64_t virtual_address,
 	    virtual_address >= USER_END))
 		return false;
 	if ((flags & VMM_PRIVATE) != 0 &&
-	    ((flags & (VMM_USER | VMM_EXEC)) != VMM_USER ||
+	    ((flags & VMM_USER) == 0 ||
 	    virtual_address < PRIVATE_MAP_USABLE_START ||
 	    virtual_address >= PRIVATE_MAP_USABLE_END))
 		return false;
@@ -1043,6 +1043,8 @@ vmm_private_unmap(struct address_space *space, uint64_t base,
 			expected_flags |= PTE_USER;
 		if ((protection & VMM_PROT_WRITE) != 0)
 			expected_flags |= PTE_WRITE;
+		if ((protection & VMM_PROT_EXEC) != 0)
+			expected_flags &= ~PTE_NX;
 		entry = leaf_table[leaf_index];
 		if ((entry & (PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_PRIVATE |
 		    PTE_NX | PTE_SHARED)) != expected_flags ||
@@ -1107,8 +1109,6 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 	bool active_on_any_cpu;
 	uint64_t lock_flags;
 
-	if ((protection & VMM_PROT_EXEC) != 0)
-		return -EOPNOTSUPP;
 	if (!vmm_private_protection_valid(protection))
 		return -EINVAL;
 	if (!initialized || !private_space_owned_here(space) ||
@@ -1152,6 +1152,8 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 			expected_flags |= PTE_USER;
 		if ((current & VMM_PROT_WRITE) != 0)
 			expected_flags |= PTE_WRITE;
+		if ((current & VMM_PROT_EXEC) != 0)
+			expected_flags &= ~PTE_NX;
 		entry = leaf_table[leaf_index];
 		if ((entry & (PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_PRIVATE |
 		    PTE_NX | PTE_SHARED)) != expected_flags ||
@@ -1173,11 +1175,13 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 			kernel_halt();
 		}
 		entry = leaf_table[leaf_index] &
-		    ~(PTE_USER | PTE_WRITE);
+		    ~(PTE_USER | PTE_WRITE | PTE_NX);
 		if (protection != VMM_PROT_NONE)
 			entry |= PTE_USER;
 		if ((protection & VMM_PROT_WRITE) != 0)
 			entry |= PTE_WRITE;
+		if ((protection & VMM_PROT_EXEC) == 0)
+			entry |= PTE_NX;
 		leaf_table[leaf_index] = entry;
 		mapping->page_protections[first_page + i] = (uint8_t)protection;
 		if (current_active_space() == space)
@@ -1469,6 +1473,8 @@ validate_private_leaf_tree(const struct address_space *space,
 				expected_flags |= PTE_USER;
 			if ((protection & VMM_PROT_WRITE) != 0)
 				expected_flags |= PTE_WRITE;
+			if ((protection & VMM_PROT_EXEC) != 0)
+				expected_flags &= ~PTE_NX;
 			if ((entry & (PTE_PRESENT | PTE_PRIVATE | PTE_NX | PTE_USER |
 			    PTE_WRITE | PTE_SHARED)) != expected_flags ||
 			    expected_physical != (entry & PTE_ADDRESS))
@@ -1531,6 +1537,8 @@ validate_private_mappings(const struct address_space *space)
 				expected_flags |= PTE_USER;
 			if ((protection & VMM_PROT_WRITE) != 0)
 				expected_flags |= PTE_WRITE;
+			if ((protection & VMM_PROT_EXEC) != 0)
+				expected_flags &= ~PTE_NX;
 			if ((entry & (PTE_PRESENT | PTE_USER | PTE_WRITE | PTE_PRIVATE |
 			    PTE_NX | PTE_SHARED)) != expected_flags ||
 			    (entry & PTE_ADDRESS) != mapping->physical_pages[page_index])
@@ -2030,7 +2038,7 @@ clone_user_tables(const struct address_space *source, uint64_t table_physical,
 				    !vmm_private_protection_valid(protection) ||
 				    (entry & (PTE_WRITE | PTE_NX | PTE_SHARED)) !=
 				    (((protection & VMM_PROT_WRITE) != 0 ? PTE_WRITE : 0) |
-				    PTE_NX) ||
+				    ((protection & VMM_PROT_EXEC) != 0 ? 0 : PTE_NX)) ||
 				    (((entry & PTE_USER) != 0) !=
 				    (protection != VMM_PROT_NONE)))
 					return false;
@@ -2250,6 +2258,8 @@ private_mapping_set_clone(const struct private_mapping *source,
 				expected_flags |= PTE_USER;
 			if ((protection & VMM_PROT_WRITE) != 0)
 				expected_flags |= PTE_WRITE;
+			if ((protection & VMM_PROT_EXEC) != 0)
+				expected_flags &= ~PTE_NX;
 			if ((entry & (PTE_PRESENT | PTE_PRIVATE | PTE_USER | PTE_WRITE |
 			    PTE_NX)) != expected_flags) {
 				(void)kheap_free(copy->page_protections);

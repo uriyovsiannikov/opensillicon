@@ -12,6 +12,8 @@
 #include "abi/process_info.h"
 
 #define PROCESS_EXEC_ARG_MAX 16U
+#define PROCESS_EXEC_ENV_MAX 64U
+#define PROCESS_EXEC_ENV_BYTES_MAX 8192U
 #define PROCESS_EXEC_ARG_BYTES_MAX 2048U
 #define PROCESS_SNAPSHOT_MAX 128U
 
@@ -103,6 +105,9 @@ struct interrupt_frame *process_exec(struct interrupt_frame *frame,
 	uint64_t *error);
 struct interrupt_frame *process_exec_path(struct interrupt_frame *frame,
 	const char *path, uint64_t *error);
+struct interrupt_frame *process_exec_path_env(struct interrupt_frame *frame,
+    const char *path, size_t argc, const char *const argv[],
+    size_t envc, const char *const envp[], uint64_t *error);
 struct interrupt_frame *process_exec_path_argv(struct interrupt_frame *frame,
 	const char *path, size_t argc, const char *const argv[], uint64_t *error);
 struct interrupt_frame *process_sigreturn(struct interrupt_frame *frame,

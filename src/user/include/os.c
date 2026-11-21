@@ -83,6 +83,11 @@ long u_exec_path(const char *path) { return syscall3(SYSCALL_EXEC_PATH, (uintptr
 long u_exec_path_argv(const char *path, size_t argc,
 	const char *const argv[])
 { return syscall3(SYSCALL_EXEC_PATH_ARGV, (uintptr_t)path, argc, (uintptr_t)argv); }
+long u_exec_path_env(const char *path,size_t argc,const char *const argv[],const char *const envp[])
+{
+    long result=syscall4(SYSCALL_EXECVE,(uintptr_t)path,argc,(uintptr_t)argv,(uintptr_t)envp);
+    return result==-78 ? u_exec_path_argv(path,argc,argv) : result;
+}
 long u_waitpid(uint64_t pid, uint8_t *status)
 { return u_waitpid_options(pid, status, 0); }
 long u_waitpid_options(uint64_t pid, uint8_t *status, uint64_t options)

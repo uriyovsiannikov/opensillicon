@@ -35,11 +35,19 @@ static const char *const internal_commands[] = {
 	"help", "cd", "exit", "history"
 };
 
+static const char *const default_environment[]={"TERM=xterm",NULL};
+static const char *const *shell_environment=default_environment;
+static uint64_t startup_auxv(const uint64_t *stack) {
+    uint64_t index=stack[0]+2;
+    for(unsigned n=0;n<=64;n++,index++)if(!stack[index])return index+1;
+    return 0;
+}
+
 static int
 initialize_shell_tls(const uint64_t *startup_stack)
 {
-	uint64_t argc = startup_stack[0];
-	uint64_t auxv = argc + 3;
+	uint64_t auxv = startup_auxv(startup_stack);
+    if(!auxv)return 0;
 	const struct shell_startup_phdr *headers =
 		(const struct shell_startup_phdr *)(uintptr_t)startup_stack[auxv + 1];
 	const struct shell_startup_phdr *tls = 0;
@@ -352,7 +360,7 @@ command_external(size_t argc, const char *const argv[], int background,
 		goto resume_editor;
 	}
 	if (child == 0) {
-		(void)u_exec_path_argv(path, argc, argv);
+		(void)u_exec_path_env(path, argc, argv, shell_environment);
 		print_error("exec", path);
 		u_exit(127);
 	}
@@ -846,7 +854,7 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 	if (argc > ARGUMENT_CAPACITY || argv == NULL || startup_stack == 0 ||
 	    startup_stack[0] != argc || argv != (char **)(startup_stack + 1) ||
 	    (argc == 1 && (argv[0] == NULL || argv[0][0] == '\0')) ||
-	    argv[argc] != NULL || startup_stack[argc + 2] != 0 ||
+	    argv[argc] != NULL || !startup_auxv(startup_stack) ||
 	    ((uintptr_t)startup_stack & 15U) != 0) {
 		u_puts("OpenSillicon shell: invalid exec arguments (argc ");
 		u_put_u64(argc);
@@ -855,7 +863,8 @@ user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
 		u_puts(")\n");
 		u_exit(1);
 	}
-	auxv = argc + 3;
+	auxv = startup_auxv(startup_stack);
+    if(startup_stack[argc+2])shell_environment=(const char *const *)(startup_stack+argc+2);
 	if (startup_stack[auxv] != 3 ||
 	    startup_stack[auxv + 2] != 4 ||
 	    startup_stack[auxv + 3] != sizeof(*phdr) ||

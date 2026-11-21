@@ -1,6 +1,7 @@
 #include "syscall_internal.h"
 
 #include "kernel/process.h"
+#include "kernel/heap.h"
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
 
@@ -223,6 +224,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			frame = process_exec_path(frame, path, &error);
 		}
 		break;
+	case SYSCALL_EXECVE:
 	case SYSCALL_EXEC_PATH_ARGV:
 		{
 			char path[VFS_PATH_MAX];
@@ -279,8 +281,28 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 					break;
 				}
 			}
-			frame = process_exec_path_argv(frame, path, (size_t)argc,
-			    arguments, &error);
+            if(number==SYSCALL_EXECVE) {
+                const char *env[PROCESS_EXEC_ENV_MAX];
+                char *storage=kheap_alloc(PROCESS_EXEC_ENV_BYTES_MAX);
+                size_t envc=0,used_env=0;
+                int env_error=0;
+                if(!storage){syscall_error(frame,ERRNO_ENOMEM);break;}
+                while(frame->r10) {
+                    uint64_t address;
+                    if(frame->r10>UINT64_MAX-envc*sizeof(address) ||
+                        !vmm_copy_from_user(vmm_active_address_space(),&address,
+                            frame->r10+envc*sizeof(address),sizeof(address))) {env_error=ERRNO_EFAULT;break;}
+                    if(!address)break;
+                    if(envc==PROCESS_EXEC_ENV_MAX || used_env==PROCESS_EXEC_ENV_BYTES_MAX) {env_error=ERRNO_E2BIG;break;}
+                    int rc=copy_user_string(address,storage+used_env,PROCESS_EXEC_ENV_BYTES_MAX-used_env);
+                    if(rc) {env_error=rc==-(int)ERRNO_ENAMETOOLONG ? (int)ERRNO_E2BIG : -rc;break;}
+                    env[envc++]=storage+used_env;
+                    while(storage[used_env++]);
+                }
+                if(env_error)syscall_error(frame,(uint64_t)env_error);
+                else frame=process_exec_path_env(frame,path,(size_t)argc,arguments,envc,env,&error);
+                (void)kheap_free(storage);
+            } else frame=process_exec_path_argv(frame,path,(size_t)argc,arguments,&error);
 		}
 		break;
 	case SYSCALL_WAITPID:

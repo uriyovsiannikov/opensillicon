@@ -6,6 +6,7 @@ _start:
     mov (%rsp), %rdi
     lea 8(%rsp), %rsi
     lea 16(%rsp,%rdi,8), %rdx
+    mov %rdx, environ(%rip)
     and $-16, %rsp
     call main
     mov %eax, %edi

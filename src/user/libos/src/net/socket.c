@@ -9,6 +9,7 @@
 
 #include "abi/syscall.h"
 #include "internal.h"
+#include "dns.h"
 
 #define DNS_PACKET_MAX 512U
 #define DNS_PORT 53U
@@ -157,33 +158,6 @@ dns_encode_name(const char *name, uint8_t *packet, size_t capacity,
 }
 
 static int
-dns_skip_name(const uint8_t *packet, size_t length, size_t *offset)
-{
-	size_t cursor = *offset;
-	for (;;) {
-		uint8_t label;
-		if (cursor >= length)
-			return 0;
-		label = packet[cursor++];
-		if (label == 0) {
-			*offset = cursor;
-			return 1;
-		}
-		if ((label & 0xc0U) == 0xc0U) {
-			if (cursor >= length ||
-			    ((((size_t)(label & 0x3fU) << 8) | packet[cursor]) >= length))
-				return 0;
-			*offset = cursor + 1U;
-			return 1;
-		}
-		if ((label & 0xc0U) != 0 || label > 63U ||
-		    label > length - cursor)
-			return 0;
-		cursor += label;
-	}
-}
-
-static int
 dns_lookup_a(const char *name, uint8_t addresses[DNS_ANSWER_LIMIT][4],
 	size_t *address_count)
 {
@@ -251,25 +225,10 @@ dns_lookup_a(const char *name, uint8_t addresses[DNS_ANSWER_LIMIT][4],
 		    dns_read_u16(response + offset + 2U) != 1)
 			return EAI_AGAIN;
 		offset += 4U;
-		for (uint16_t answer = 0, count = dns_read_u16(response + 6);
-		    answer < count; answer++) {
-			uint16_t type, class_value, data_length;
-			if (!dns_skip_name(response, (size_t)result, &offset) ||
-			    offset > (size_t)result || (size_t)result - offset < 10U)
-				return EAI_AGAIN;
-			type = dns_read_u16(response + offset);
-			class_value = dns_read_u16(response + offset + 2U);
-			data_length = dns_read_u16(response + offset + 8U);
-			offset += 10U;
-			if (data_length > (size_t)result - offset)
-				return EAI_AGAIN;
-			if (type == 1 && class_value == 1 && data_length == 4 &&
-			    *address_count < DNS_ANSWER_LIMIT) {
-				memcpy(addresses[*address_count], response + offset, 4);
-				(*address_count)++;
-			}
-			offset += data_length;
-		}
+		if (!__libos_dns_answers(response, (size_t)result, offset,
+		    dns_read_u16(response + 6), encoded_name, encoded_length,
+		    addresses, DNS_ANSWER_LIMIT, address_count))
+			return EAI_AGAIN;
 	}
 	return *address_count == 0 ? EAI_NONAME : 0;
 }

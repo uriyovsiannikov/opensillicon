@@ -55,7 +55,8 @@ vmm_private_protection_valid(unsigned int protection)
 {
 	return protection == VMM_PROT_NONE || protection == VMM_PROT_READ ||
 	    protection == VMM_PROT_WRITE ||
-	    protection == (VMM_PROT_READ | VMM_PROT_WRITE);
+	    protection == (VMM_PROT_READ | VMM_PROT_WRITE) ||
+	    protection == (VMM_PROT_READ | VMM_PROT_EXEC);
 }
 
 static inline bool

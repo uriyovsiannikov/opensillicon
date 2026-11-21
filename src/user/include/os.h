@@ -136,6 +136,8 @@ long u_network_dns_server(uint8_t address[4]);
 long u_icmp_echo(struct u_icmp_echo_request *request);
 long u_fork(void);
 long u_exec_path(const char *path);
+long u_exec_path_env(const char *path, size_t argc,
+    const char *const argv[], const char *const envp[]);
 long u_exec_path_argv(const char *path, size_t argc,
 	const char *const argv[]);
 long u_waitpid(uint64_t pid, uint8_t *status);

@@ -137,9 +137,10 @@ socket_read(void *context, uint64_t offset, void *buffer, size_t length,
 		return result;
 	}
 	size_t amount = state->count < length ? state->count : length;
-	for (size_t i = 0; i < amount; i++)
-		((uint8_t *)buffer)[i] = state->bytes[(state->head + i) %
-		    UNIX_SOCKET_BUFFER_SIZE];
+	size_t first = UNIX_SOCKET_BUFFER_SIZE - state->head;
+	if (first > amount) first = amount;
+	memcpy(buffer, state->bytes + state->head, first);
+	memcpy((uint8_t *)buffer + first, state->bytes, amount - first);
 	state->head = (state->head + amount) % UNIX_SOCKET_BUFFER_SIZE;
 	state->count -= amount;
 	*read_length = amount;
@@ -187,9 +188,10 @@ socket_write(void *context, uint64_t offset, const void *buffer,
 	if (amount > length)
 		amount = length;
 	size_t tail = (peer->head + peer->count) % UNIX_SOCKET_BUFFER_SIZE;
-	for (size_t i = 0; i < amount; i++)
-		peer->bytes[(tail + i) % UNIX_SOCKET_BUFFER_SIZE] =
-		    ((const uint8_t *)buffer)[i];
+	size_t first = UNIX_SOCKET_BUFFER_SIZE - tail;
+	if (first > amount) first = amount;
+	memcpy(peer->bytes + tail, buffer, first);
+	memcpy(peer->bytes, (const uint8_t *)buffer + first, amount - first);
 	peer->count += amount;
 	*write_length = amount;
 	process_wake_channel(&peer->read_wait);

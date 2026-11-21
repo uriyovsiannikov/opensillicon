@@ -1,5 +1,6 @@
 #include <poll.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/select.h>
 
 int

@@ -92,7 +92,7 @@ LIBOS_SRC_DIR := src/user/libos/src
 # because archive member order matters when linking against a static library.
 LIBOS_SOURCES := \
 	text/iconv fs/mount crt/syscall proc/unistd proc/mman text/string \
-	fs/stat stdlib/allocator fs/dirent io/stdio net/socket io/select io/uio \
+	fs/stat stdlib/allocator fs/dirent io/stdio net/socket net/dns io/select io/uio \
 	io/fcntl io/pipe io/pty io/termios time/time time/strftime io/poll \
 	proc/signal io/ioctl proc/uname proc/env math/math stdlib/random \
 	stdlib/stdlib proc/passwd io/termcap text/regex fs/path stdlib/getopt \

@@ -1,3 +1,4 @@
+#include "kernel/hda_audio.h"
 #include <stdint.h>
 
 #include "abi/syscall.h"
@@ -1016,6 +1017,7 @@ schedule_from(struct process *after)
 				(void)network_service_request(NETWORK_SERVICE_POLL_RX);
 				(void)network_service_run(NETWORK_SERVICE_MAX_EVENTS, NULL);
 				usb_host_poll();
+				hda_audio_poll();
 				continue;
 			}
 		}
@@ -1052,12 +1054,13 @@ initialize_user_frame(struct interrupt_frame *frame, uint64_t entry,
 
 static bool
 build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
-	uint64_t *stack_pointer, size_t argc, const char *const argv[])
+	uint64_t *stack_pointer, size_t argc, const char *const argv[],
+    size_t envc, const char *const envp[])
 {
 	volatile uint64_t *stack;
 	volatile uint8_t *stack_bytes;
 	uint64_t top = PROCESS_STACK_TOP;
-	uint64_t words[PROCESS_EXEC_ARG_MAX + 17U];
+	uint64_t words[PROCESS_EXEC_ARG_MAX + PROCESS_EXEC_ENV_MAX + 17U];
 	uint64_t byte_count;
 	uint64_t rsp;
 	uint64_t offset;
@@ -1067,7 +1070,8 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 	uint64_t i;
 
 	if (image == NULL || stack_pointer == NULL || argc > PROCESS_EXEC_ARG_MAX ||
-	    (argc != 0 && argv == NULL) ||
+	    (argc != 0 && argv == NULL) || envc > PROCESS_EXEC_ENV_MAX ||
+        (envc != 0 && envp == NULL) ||
 	    image->plan.program_header_address == 0 ||
 	    image->plan.program_header_entry_size != 56 ||
 	    image->plan.program_header_count == 0 ||
@@ -1079,12 +1083,20 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 			return false;
 		while (length <= PROCESS_EXEC_ARG_BYTES_MAX && argv[i][length] != '\0')
 			length++;
-		if (length > PROCESS_EXEC_ARG_BYTES_MAX ||
+		if (length >= PROCESS_EXEC_ARG_BYTES_MAX ||
 		    string_bytes > PROCESS_EXEC_ARG_BYTES_MAX - length - 1)
 			return false;
 		string_bytes += length + 1;
 	}
-	byte_count = (argc + 17U) * sizeof(uint64_t);
+    for(i=0;i<envc;i++) {
+        size_t length=0;
+        if(!envp[i])return false;
+        while(length<PROCESS_EXEC_ENV_BYTES_MAX && envp[i][length])length++;
+        if(length==PROCESS_EXEC_ENV_BYTES_MAX ||
+            string_bytes+length+1>PROCESS_EXEC_ARG_BYTES_MAX+PROCESS_EXEC_ENV_BYTES_MAX)return false;
+        string_bytes+=length+1;
+    }
+	byte_count = (argc + envc + 17U) * sizeof(uint64_t);
 	if (byte_count > PROCESS_STACK_SIZE ||
 	    string_bytes > PROCESS_STACK_SIZE - byte_count - 15)
 		return false;
@@ -1099,7 +1111,7 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 	offset = (rsp - PROCESS_STACK_PAGE) / sizeof(uint64_t);
 	if ((rsp - PROCESS_STACK_PAGE) % sizeof(uint64_t) != 0 ||
 	    offset > PROCESS_STACK_SIZE / sizeof(uint64_t) ||
-	    argc + 17U >
+	    argc + envc + 17U >
 	    PROCESS_STACK_SIZE / sizeof(uint64_t) - offset)
 		return false;
 	words[0] = argc;
@@ -1117,22 +1129,27 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 		string_cursor += j;
 	}
 	words[1 + argc] = 0;
-	words[2 + argc] = 0;
-	words[3 + argc] = AUXV_AT_PHDR;
-	words[4 + argc] = image->plan.program_header_address;
-	words[5 + argc] = AUXV_AT_PHENT;
-	words[6 + argc] = image->plan.program_header_entry_size;
-	words[7 + argc] = AUXV_AT_PHNUM;
-	words[8 + argc] = image->plan.program_header_count;
-	words[9 + argc] = AUXV_AT_PAGESZ;
-	words[10 + argc] = 4096;
-	words[11 + argc] = AUXV_AT_ENTRY;
-	words[12 + argc] = image->entry;
-	words[13 + argc] = AUXV_AT_BASE;
-	words[14 + argc] = 0;
-	words[15 + argc] = AUXV_AT_NULL;
-	words[16 + argc] = 0;
-	for (i = 0; i < argc + 17U; i++)
+    for(i=0;i<envc;i++) {
+        size_t j=0;words[2+argc+i]=string_cursor;
+        do {stack_bytes[string_cursor-PROCESS_STACK_PAGE+j]=(uint8_t)envp[i][j];}while(envp[i][j++]);
+        string_cursor+=j;
+    }
+	words[2 + argc + envc] = 0;
+	words[3 + argc + envc] = AUXV_AT_PHDR;
+	words[4 + argc + envc] = image->plan.program_header_address;
+	words[5 + argc + envc] = AUXV_AT_PHENT;
+	words[6 + argc + envc] = image->plan.program_header_entry_size;
+	words[7 + argc + envc] = AUXV_AT_PHNUM;
+	words[8 + argc + envc] = image->plan.program_header_count;
+	words[9 + argc + envc] = AUXV_AT_PAGESZ;
+	words[10 + argc + envc] = 4096;
+	words[11 + argc + envc] = AUXV_AT_ENTRY;
+	words[12 + argc + envc] = image->entry;
+	words[13 + argc + envc] = AUXV_AT_BASE;
+	words[14 + argc + envc] = 0;
+	words[15 + argc + envc] = AUXV_AT_NULL;
+	words[16 + argc + envc] = 0;
+	for (i = 0; i < argc + envc + 17U; i++)
 		stack[offset + i] = words[i];
 	*stack_pointer = rsp;
 	return true;
@@ -1140,7 +1157,8 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 
 static bool
 map_process_stack(struct elf_loaded_image *image, bool startup_stack,
-	uint64_t *stack_pointer, size_t argc, const char *const argv[])
+	uint64_t *stack_pointer, size_t argc, const char *const argv[],
+    size_t envc, const char *const envp[])
 {
 	uint64_t physical;
 	uint64_t initial_stack = PROCESS_STACK_TOP;
@@ -1162,7 +1180,7 @@ map_process_stack(struct elf_loaded_image *image, bool startup_stack,
 	for (i = 0; i < PROCESS_STACK_SIZE; i++)
 		stack[i] = 0;
 	if (startup_stack &&
-	    !build_initial_stack(image, physical, &initial_stack, argc, argv)) {
+	    !build_initial_stack(image, physical, &initial_stack, argc, argv, envc, envp)) {
 		(void)pmm_free_contiguous(physical, PROCESS_STACK_PAGE_COUNT);
 		return false;
 	}
@@ -1977,7 +1995,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	fd_table_init_standard(&root->descriptors);
 
 	if (!map_process_stack(root->loaded_image, startup_stack,
-	    &root->initial_user_stack, 0, NULL)) {
+	    &root->initial_user_stack, 0, NULL, 0, NULL)) {
 		release_process(root);
 		return UINT64_MAX;
 	}
@@ -2292,7 +2310,8 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 static struct interrupt_frame *
 replace_process_image(struct interrupt_frame *frame, const void *image,
 	size_t image_size, uint64_t invalid_elf_error, uint64_t *error,
-	size_t argc, const char *const argv[], const char *name,
+	size_t argc, const char *const argv[], size_t envc,
+    const char *const envp[], const char *name,
 	const struct os_credentials *exec_credentials)
 {
 	struct process *process = current_process;
@@ -2318,7 +2337,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 		*error = invalid_elf_error;
 		return frame;
 	}
-	if (!map_process_stack(replacement, true, &stack_top, argc, argv)) {
+	if (!map_process_stack(replacement, true, &stack_top, argc, argv, envc, envp)) {
 		release_loaded_image(replacement);
 		*error = PROCESS_ERROR_ENOMEM;
 		return frame;
@@ -2420,14 +2439,14 @@ process_exec(struct interrupt_frame *frame, uint64_t *error)
 		return frame;
 	}
 	result = replace_process_image(frame, image_copy, (size_t)image_size,
-	    PROCESS_ERROR_EINVAL, error, 0, NULL, "elf", NULL);
+	    PROCESS_ERROR_EINVAL, error, 0, NULL, 0, NULL, "elf", NULL);
 	(void)kheap_free(image_copy);
 	return result;
 }
 
 struct interrupt_frame *
-process_exec_path_argv(struct interrupt_frame *frame, const char *path,
-	size_t argc, const char *const argv[], uint64_t *error)
+process_exec_path_env(struct interrupt_frame *frame, const char *path,
+	size_t argc, const char *const argv[], size_t envc, const char *const envp[], uint64_t *error)
 {
 	size_t image_size;
 	struct vnode *executable = NULL;
@@ -2473,9 +2492,16 @@ process_exec_path_argv(struct interrupt_frame *frame, const char *path,
 		return frame;
 	}
 	result = replace_process_image(frame, image, image_size,
-	    PROCESS_ERROR_ENOEXEC, error, argc, argv, canonical, &credentials);
+	    PROCESS_ERROR_ENOEXEC, error, argc, argv, envc, envp, canonical, &credentials);
 	(void)kheap_free(image);
 	return result;
+}
+
+struct interrupt_frame *
+process_exec_path_argv(struct interrupt_frame *frame,const char *path,
+    size_t argc,const char *const argv[],uint64_t *error)
+{
+    return process_exec_path_env(frame,path,argc,argv,0,NULL,error);
 }
 
 struct interrupt_frame *

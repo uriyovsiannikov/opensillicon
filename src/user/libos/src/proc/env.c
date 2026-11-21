@@ -5,11 +5,12 @@
 static char *empty_environment[] = { 0 };
 char **environ = empty_environment;
 
-/* Exec currently starts processes with an empty environment vector. */
+/* Legacy launchers can still supply an empty environment. */
 char *
 getenv(const char *name)
 {
 	static char default_display[] = ":0";
+	static char default_term[] = "xterm";
 	size_t length;
 	if (name == NULL || name[0] == '\0' || strchr(name, '=') != NULL)
 		return NULL;
@@ -20,6 +21,7 @@ getenv(const char *name)
 			return environ[i] + length + 1;
 	if (strcmp(name, "DISPLAY") == 0)
 		return default_display;
+	if (strcmp(name, "TERM") == 0) return default_term;
 	return 0;
 }
 

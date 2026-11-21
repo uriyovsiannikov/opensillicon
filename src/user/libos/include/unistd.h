@@ -71,6 +71,8 @@ int setresuid(uid_t, uid_t, uid_t);
 int setresgid(gid_t, gid_t, gid_t);
 pid_t fork(void);
 pid_t waitpid(pid_t, int *, int);
+extern char **environ;
+int execve(const char *, char *const [], char *const []);
 int execv(const char *, char *const []);
 int execl(const char *, const char *, ...);
 void _exit(int) __attribute__((noreturn));

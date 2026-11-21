@@ -57,7 +57,7 @@ syscall_select(struct interrupt_frame *frame)
 	int ready_count = 0;
 	bool has_timeout = frame->r8 != 0;
 	bool poll_terminal = false;
-	if (nfds > FD_TABLE_CAPACITY) {
+	if (nfds > OS_FD_SETSIZE) {
 		process_select_deadline_clear();
 		syscall_error(frame, EINVAL);
 		return frame;

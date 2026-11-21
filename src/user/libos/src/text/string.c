@@ -3,10 +3,50 @@
 #include <string.h>
 #include <wchar.h>
 #include <wctype.h>
-void *memcpy(void*d,const void*s,size_t n){unsigned char*a=d;const unsigned char*b=s;while(n--)*a++=*b++;return d;}
-void *memmove(void*d,const void*s,size_t n){unsigned char*a=d;const unsigned char*b=s;if(a<b)while(n--)*a++=*b++;else {a+=n;b+=n;while(n--)*--a=*--b;}return d;}
-void *memset(void*d,int c,size_t n){unsigned char*a=d;while(n--)*a++=(unsigned char)c;return d;}
-int memcmp(const void*a,const void*b,size_t n){const unsigned char*x=a,*y=b;while(n--){if(*x!=*y)return *x<*y?-1:1;x++;y++;}return 0;}
+/* x86-64 string operations avoid byte-at-a-time copies without using SIMD. */
+void *memcpy(void *destination, const void *source, size_t length)
+{
+    void *result = destination;
+    size_t words = length / 8, tail = length % 8;
+    __asm__ volatile ("rep movsq" : "+D"(destination), "+S"(source), "+c"(words) : : "memory");
+    __asm__ volatile ("rep movsb" : "+D"(destination), "+S"(source), "+c"(tail) : : "memory");
+    return result;
+}
+void *memmove(void *destination, const void *source, size_t length)
+{
+    unsigned char *d = destination;
+    const unsigned char *s = source;
+    if (d == s || length == 0) return destination;
+    if ((unsigned long)d < (unsigned long)s || (unsigned long)d - (unsigned long)s >= length)
+        return memcpy(destination, source, length);
+    d += length; s += length;
+    while (length--) *--d = *--s;
+    return destination;
+}
+void *memset(void *destination, int value, size_t length)
+{
+    void *result = destination;
+    unsigned long pattern = (unsigned char)value;
+    pattern *= 0x0101010101010101UL;
+    size_t words = length / 8, tail = length % 8;
+    __asm__ volatile ("rep stosq" : "+D"(destination), "+c"(words) : "a"(pattern) : "memory");
+    __asm__ volatile ("rep stosb" : "+D"(destination), "+c"(tail) : "a"(pattern) : "memory");
+    return result;
+}
+int memcmp(const void *first, const void *second, size_t length)
+{
+    typedef unsigned long word __attribute__((__may_alias__, __aligned__(1)));
+    const unsigned char *a = first, *b = second;
+    while (length >= sizeof(word)) {
+        if (*(const word *)a != *(const word *)b) break;
+        a += sizeof(word); b += sizeof(word); length -= sizeof(word);
+    }
+    while (length--) {
+        if (*a != *b) return *a < *b ? -1 : 1;
+        ++a; ++b;
+    }
+    return 0;
+}
 void *memchr(const void*p,int c,size_t n){const unsigned char*s=p;while(n--){if(*s==(unsigned char)c)return (void*)s;s++;}return 0;}
 size_t strlen(const char*s){size_t n=0;while(s[n])n++;return n;}
 size_t strnlen(const char*s,size_t n){size_t i=0;while(i<n&&s[i])i++;return i;}
