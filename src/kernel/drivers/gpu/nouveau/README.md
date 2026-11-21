@@ -468,3 +468,13 @@ Host-тест сверяет полный init protocol, все 9 channel IDs, c
 каждый read/write/time отказ, failed writes с side effect, retry/quarantine,
 resource-release failure и timeout/stalled/backward clock. Реальное
 железо ещё не выполняло этот код; потребуется integration с engine lifecycle.
+
+`nouveau_channel_kick` добавляет явную публикацию PUT для immutable push
+buffer. Prepared byte count фиксируется до acquire; PUT может только
+расти, быть кратным 4 и не превышать подготовленные байты или 4092.
+Ring wrap и редактирование CPU при device ownership не поддержаны.
+Doorbell write и read-back проверяются: ошибка делает исполнение
+неопределённым и оставляет quarantine, повторная отправка запрещается.
+Тесты проверяют 33-DWORD block / PUT=132, границы prepared span, duplicate/
+backward/misaligned PUT, отказ write/read, read-back mismatch и последующую
+остановку. Этот API может исполнять методы GPU и в boot probe не вызывается.

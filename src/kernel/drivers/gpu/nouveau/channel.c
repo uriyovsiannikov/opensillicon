@@ -58,18 +58,19 @@ static enum nouveau_channel_status wait_clear(const struct nouveau_channel_io *i
 	/* Covers a stalled clock or a callback that does not actually delay. */
 	return NOUVEAU_CHANNEL_TIMEOUT;
 }
-bool nouveau_channel_prepare(struct nouveau_channel *c,unsigned id,uint32_t push)
+bool nouveau_channel_prepare(struct nouveau_channel *c,unsigned id,uint32_t push,uint32_t prepared_bytes)
 {
 	if(!c || c->state!=NOUVEAU_CHANNEL_EMPTY || c->resources_held || id>8 ||
-	    (push&15)!=3) return false;
-	*c=(struct nouveau_channel){.state=NOUVEAU_CHANNEL_PREPARED,.id=id,.push=push};
+	    (push&15)!=3 || !prepared_bytes || (prepared_bytes&3) || prepared_bytes>4092) return false;
+	*c=(struct nouveau_channel){.state=NOUVEAU_CHANNEL_PREPARED,.id=id,.push=push,.prepared_bytes=prepared_bytes};
 	return true;
 }
 enum nouveau_channel_status nouveau_channel_start(struct nouveau_channel *c,
 	const struct nouveau_channel_io *io)
 {
 	if(!c || !valid_io(io) || c->id>8 || c->state!=NOUVEAU_CHANNEL_PREPARED ||
-	    c->resources_held || (c->push&15)!=3) return NOUVEAU_CHANNEL_INVALID;
+	    c->resources_held || (c->push&15)!=3 || !c->prepared_bytes ||
+	    (c->prepared_bytes&3) || c->prepared_bytes>4092) return NOUVEAU_CHANNEL_INVALID;
 	uint32_t ctrl=0x610490+c->id*16,old;uint64_t time;
 	if(!io->time_us(io->context,&time) || !io->read32(io->context,ctrl,&old) || old==UINT32_MAX)
 		return NOUVEAU_CHANNEL_IO_FAILED;
@@ -87,9 +88,25 @@ enum nouveau_channel_status nouveau_channel_start(struct nouveau_channel *c,
 	    !io->write32(io->context,ctrl,c->id?0x13:0x01000013))
 		return NOUVEAU_CHANNEL_IO_FAILED;
 	enum nouveau_channel_status status=wait_clear(io,ctrl,0x80000000);
-	if(status==NOUVEAU_CHANNEL_OK) c->state=NOUVEAU_CHANNEL_RUNNING;
+	if(status==NOUVEAU_CHANNEL_OK) { c->state=NOUVEAU_CHANNEL_RUNNING;c->saved_put=0; }
 	return status;
 }
+enum nouveau_channel_status nouveau_channel_kick(struct nouveau_channel *c,
+	const struct nouveau_channel_io *io,uint32_t put)
+{
+	if(!c || !valid_io(io) || c->id>8 || c->state!=NOUVEAU_CHANNEL_RUNNING ||
+	    !c->resources_held || (put&3) || put>4092 || put>c->prepared_bytes || put<=c->saved_put)
+		return NOUVEAU_CHANNEL_INVALID;
+	uint32_t reg=0x640000+c->id*0x1000,value;
+	/* All methods were immutable and DMA-published by acquire before init.
+	 * Mark ambiguous execution before writing the doorbell. */
+	c->state=NOUVEAU_CHANNEL_QUARANTINED;
+	if(!io->write32(io->context,reg,put) || !io->read32(io->context,reg,&value) ||
+	    value!=put) return NOUVEAU_CHANNEL_IO_FAILED;
+	c->saved_put=put;c->state=NOUVEAU_CHANNEL_RUNNING;
+	return NOUVEAU_CHANNEL_OK;
+}
+
 enum nouveau_channel_status nouveau_channel_stop(struct nouveau_channel *c,
 	const struct nouveau_channel_io *io)
 {

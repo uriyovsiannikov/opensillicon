@@ -9,7 +9,7 @@ struct model {
 	unsigned acquired,released;
 	uint32_t ctrl,put;
 	uint64_t now;
-	bool held,fail_acquire,fail_release,init_busy,stop_busy,stalled,backward,disconnected;
+	bool held,fail_acquire,fail_release,init_busy,stop_busy,stalled,backward,disconnected,bad_put;
 	struct write log[32];
 };
 static bool read32(void *context,uint32_t reg,uint32_t *value)
@@ -21,7 +21,7 @@ static bool read32(void *context,uint32_t reg,uint32_t *value)
 		if((m->ctrl&3)&&m->init_busy)*value|=0x80000000;
 		if(!(m->ctrl&3)&&m->stop_busy)*value|=0x20000;
 		if(m->disconnected)*value=UINT32_MAX;
-	}else {assert(reg==0x640000+m->id*0x1000);*value=m->put;}
+	}else {assert(reg==0x640000+m->id*0x1000);*value=m->bad_put?m->put^4:m->put;}
 	return true;
 }
 static bool write32(void *context,uint32_t reg,uint32_t value)
@@ -78,8 +78,8 @@ int main(void)
 	for(unsigned id=0;id<=8;id++) {
 		struct model m={.id=id,.now=100};struct nouveau_channel_io io=io_for(&m);
 		struct nouveau_channel c={0};
-		assert(nouveau_channel_prepare(&c,id,0x123003));
-		assert(!nouveau_channel_prepare(&c,id,0x123003));
+		assert(nouveau_channel_prepare(&c,id,0x123003,132));
+		assert(!nouveau_channel_prepare(&c,id,0x123003,132));
 		assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_OK);
 		assert(c.state==NOUVEAU_CHANNEL_RUNNING&&c.resources_held&&m.held);
 		const struct write expected[]={
@@ -103,7 +103,7 @@ int main(void)
 	 * no release is permitted until a subsequent verified stop. */
 	for(unsigned type=0;type<3;type++)for(unsigned nth=1;nth<=(type==0?3:type==1?6:2);nth++) {
 		struct model m={0};struct nouveau_channel_io io=io_for(&m);struct nouveau_channel c={0};
-		assert(nouveau_channel_prepare(&c,0,0x3403));
+		assert(nouveau_channel_prepare(&c,0,0x3403,132));
 		if(type==0)m.fail_read=nth;
 		if(type==1)m.fail_write=nth;
 		if(type==2)m.fail_time=nth;
@@ -113,7 +113,7 @@ int main(void)
 	}
 	for(unsigned type=0;type<3;type++)for(unsigned nth=1;nth<=(type==0?4:type==1?2:1);nth++) {
 		struct model m={0};struct nouveau_channel_io io=io_for(&m);struct nouveau_channel c={0};
-		assert(nouveau_channel_prepare(&c,0,0x3403));assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_OK);
+		assert(nouveau_channel_prepare(&c,0,0x3403,132));assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_OK);
 		if(type==0)m.fail_read=m.reads+nth;
 		if(type==1)m.fail_write=m.writes+nth;
 		if(type==2)m.fail_time=m.times+nth;
@@ -122,7 +122,7 @@ int main(void)
 	}
 	for(unsigned mode=0;mode<5;mode++) {
 		struct model m={.now=100,.init_busy=true};struct nouveau_channel_io io=io_for(&m);struct nouveau_channel c={0};
-		assert(nouveau_channel_prepare(&c,0,0x3403));
+		assert(nouveau_channel_prepare(&c,0,0x3403,132));
 		if(mode==1)m.stalled=true;
 		if(mode==2)m.backward=true;
 		if(mode==3)m.fail_delay=1;
@@ -132,11 +132,38 @@ int main(void)
 		assert(m.delays<=20000&&c.state==NOUVEAU_CHANNEL_QUARANTINED);
 		cleanup(&c,&m);
 	}
+	for(unsigned mode=0;mode<4;mode++) {
+		struct model m={0};struct nouveau_channel_io io=io_for(&m);struct nouveau_channel c={0};
+		assert(nouveau_channel_prepare(&c,0,0x3403,132));
+		assert(nouveau_channel_kick(&c,&io,132)==NOUVEAU_CHANNEL_INVALID&&!m.writes);
+		assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_OK);
+		unsigned initial_writes=m.writes;
+		assert(nouveau_channel_kick(&c,&io,0)==NOUVEAU_CHANNEL_INVALID);
+		assert(nouveau_channel_kick(&c,&io,133)==NOUVEAU_CHANNEL_INVALID);
+		assert(nouveau_channel_kick(&c,&io,4096)==NOUVEAU_CHANNEL_INVALID);
+		assert(m.writes==initial_writes);
+		if(mode==1)m.fail_write=m.writes+1;
+		if(mode==2)m.fail_read=m.reads+1;
+		if(mode==3)m.bad_put=true;
+		assert(nouveau_channel_kick(&c,&io,132)==(mode?NOUVEAU_CHANNEL_IO_FAILED:NOUVEAU_CHANNEL_OK));
+		assert(m.log[6].reg==0x640000&&m.log[6].value==132);
+		assert(c.resources_held&&m.held);
+		if(mode) {
+			assert(c.state==NOUVEAU_CHANNEL_QUARANTINED);
+			assert(nouveau_channel_kick(&c,&io,136)==NOUVEAU_CHANNEL_INVALID);
+		}else {
+			assert(c.saved_put==132);
+			assert(nouveau_channel_kick(&c,&io,132)==NOUVEAU_CHANNEL_INVALID);
+			assert(nouveau_channel_kick(&c,&io,128)==NOUVEAU_CHANNEL_INVALID);
+			assert(nouveau_channel_kick(&c,&io,136)==NOUVEAU_CHANNEL_INVALID);
+		}
+		m.bad_put=false;cleanup(&c,&m);
+	}
 	struct model m={0};struct nouveau_channel_io io=io_for(&m);struct nouveau_channel c={0};
-	assert(!nouveau_channel_prepare(&c,9,0x3403));
-	assert(!nouveau_channel_prepare(&c,0,0x3401));
-	assert(!nouveau_channel_prepare(&c,0,0x340b));
-	assert(nouveau_channel_prepare(&c,0,0x3403));
+	assert(!nouveau_channel_prepare(&c,9,0x3403,132));
+	assert(!nouveau_channel_prepare(&c,0,0x3401,132));
+	assert(!nouveau_channel_prepare(&c,0,0x340b,132));
+	assert(nouveau_channel_prepare(&c,0,0x3403,132));
 	m.ctrl=0x01000013;
 	assert(nouveau_channel_start(&c,&io)==NOUVEAU_CHANNEL_BUSY&&!m.writes&&!m.acquired);
 	m.ctrl=0;m.fail_acquire=true;
@@ -146,5 +173,10 @@ int main(void)
 	m.stop_busy=true;
 	assert(nouveau_channel_stop(&c,&io)==NOUVEAU_CHANNEL_TIMEOUT&&c.resources_held);
 	cleanup(&c,&m);
-	puts("NOUVEAU_CHANNEL_PASS: GP102 golden init, GF119 core/base/overlay stop, all IO failures, quarantine/retry, timeout/stalled/backward clock, resource retention");
+	struct nouveau_channel invalid={0};
+	assert(!nouveau_channel_prepare(&invalid,0,0x3403,0));
+	assert(!nouveau_channel_prepare(&invalid,0,0x3403,133));
+	assert(!nouveau_channel_prepare(&invalid,0,0x3403,4096));
+	assert(nouveau_channel_prepare(&invalid,0,0x3403,4092));
+	puts("NOUVEAU_CHANNEL_PASS: GP102 golden init, GF119 core/base/overlay stop, all IO failures, quarantine/retry, timeout/stalled/backward clock, resource retention, PUT ready-range bounds");
 }

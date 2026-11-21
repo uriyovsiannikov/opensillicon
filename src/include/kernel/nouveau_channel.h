@@ -28,17 +28,23 @@ struct nouveau_channel_io {
 };
 struct nouveau_channel {
 	enum nouveau_channel_state state;
-	uint32_t push, saved_put;
+	uint32_t push, saved_put, prepared_bytes;
 	uint8_t id;
 	bool resources_held;
 };
 /* Does not perform IO. Zero-initialize first. HOST push must be 4KiB aligned. */
-bool nouveau_channel_prepare(struct nouveau_channel *,unsigned id,uint32_t push);
+bool nouveau_channel_prepare(struct nouveau_channel *,unsigned id,uint32_t push, uint32_t prepared_bytes);
 /* Requires an already inactive channel and an owning engine lifecycle.
  * Starts with PUT=0; this does not submit staged timing/surface methods.
  * Any failure after acquiring resources quarantines the channel. */
 enum nouveau_channel_status nouveau_channel_start(struct nouveau_channel *,
 	const struct nouveau_channel_io *);
+/* Publish a forward-only byte offset in a prepared 4KiB push buffer.
+ * Caller must have finalized/flushed all visible words before acquire.
+ * No ring wrapping or CPU editing while device-owned is supported.
+ * This can execute GPU methods: never call it from a discovery probe. */
+enum nouveau_channel_status nouveau_channel_kick(struct nouveau_channel *,
+	const struct nouveau_channel_io *, uint32_t put_bytes);
 /* Bounded GF119 stop sequence, retaining resources on IO/timeout. Retryable
  * from quarantine. No blind register restoration, IRQ enabling or UPDATE. */
 enum nouveau_channel_status nouveau_channel_stop(struct nouveau_channel *,
