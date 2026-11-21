@@ -547,3 +547,16 @@ failed bind с side effect, busy channel всех 17 номеров, stuck/stall
 clock, отказ VRAM rollback и retry. Нативная boot probe этот API пока не
 вызывает: capability copying, IRQ/supervisor/PLL и физический adapter остаются
 незавершённой частью engine integration.
+
+`nouveau_engine_capabilities` добавляет head/SOR copying из gf119_disp_init.
+По head count/mask проверяется до четырёх heads; копируются три CRTC caps
+на head и фиксированный банк восьми SOR caps. GP102 не объявляет DAC engine,
+поэтому legacy DAC registers не затрагиваются. До первой записи сохраняются
+все прежние зеркала; каждая новая запись проверяется read-back. Bind запрещён
+до успешной подготовки caps. При rollback зеркала восстанавливаются до
+возврата IRQ masks и firmware request; любой отказ оставляет quarantine.
+
+Тесты проверяют все capability и restore register read/write failures,
+частичный rollback и повторное восстановление, а также неверный read-back
+instance после фактической записи. Supervisor/PLL, IRQ dispatch и native
+adapter всё ещё не подключены; boot probe handoff не выполняет.

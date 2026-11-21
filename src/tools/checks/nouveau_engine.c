@@ -5,7 +5,7 @@
 #include "kernel/nouveau_engine.h"
 static uint32_t memory[16384],backup[16384],image[16384];
 struct model {
-	uint32_t instance,firmware,supervisor,masks[3],controls[17];
+	uint32_t instance,firmware,supervisor,masks[3],controls[17],caps[20];
 	unsigned reads,writes,fail_read,fail_write,wrong_read,delays;
 	uint64_t now;
 	bool stuck,stalled,backward,owner,fail_memory;
@@ -16,11 +16,22 @@ struct model {
 	struct nouveau_upload upload;
 	struct nouveau_upload_io upload_io;
 };
+static int cap_index(uint32_t reg,bool source)
+{
+	for(unsigned i=0;i<4;i++)for(unsigned j=0;j<3;j++)
+		if(reg==(source?0x616104U:0x6101b4U)+i*0x800+j*4)return i*3+j;
+	for(unsigned i=0;i<8;i++)if(reg==(source?0x61c000U:0x6301c4U)+i*0x800)return 12+i;
+	return -1;
+}
 static bool read32(void *ctx,uint32_t reg,uint32_t *value)
 {
 	struct model *m=ctx;m->reads++;
 	if(m->reads==m->fail_read)return false;
-	if(reg==0x610010)*value=m->instance;
+	if(reg==0x22448)*value=4;
+	else if(reg==0x612004)*value=0x30f;
+	else if(cap_index(reg,false)>=0)*value=m->caps[cap_index(reg,false)];
+	else if(cap_index(reg,true)>=0)*value=0x1000+(unsigned)cap_index(reg,true);
+	else if(reg==0x610010)*value=m->instance;
 	else if(reg==0x6194e8)*value=m->firmware;
 	else if(reg==0x6100ac)*value=m->supervisor;
 	else if(reg==0x610090)*value=m->masks[0];
@@ -33,7 +44,8 @@ static bool read32(void *ctx,uint32_t reg,uint32_t *value)
 static bool write32(void *ctx,uint32_t reg,uint32_t value)
 {
 	struct model *m=ctx;m->writes++;
-	if(reg==0x610010) {
+	if(cap_index(reg,false)>=0)m->caps[cap_index(reg,false)]=value;
+	else if(reg==0x610010) {
 		assert(value==1||m->upload.state==NOUVEAU_UPLOAD_PINNED);m->instance=value;
 	}else if(reg==0x6194e8) {
 		/* Firmware ack bit is read-only, do not emulate it as writable. */
@@ -65,10 +77,12 @@ static void setup(struct model *m)
 	*m=(struct model){.instance=1,.firmware=3,.supervisor=0x100,.masks={0x12,0x34,0x56},.now=100};
 	m->io=(struct nouveau_engine_io){m,read32,write32,time_us,delay_us};
 	m->upload_io=(struct nouveau_upload_io){m,memread,memwrite,owns};
+	for(unsigned i=0;i<20;i++)m->caps[i]=0x2000+i;
 	for(unsigned i=0;i<16384;i++){memory[i]=i^0xa5a5;image[i]=i^0x5a5a;}
 }
 static void upload(struct model *m)
 {
+	assert(nouveau_engine_capabilities(&m->engine)==NOUVEAU_ENGINE_OK);
 	m->owner=true;
 	assert(nouveau_vram_pool_init(&m->pool,0x1000000,NULL,0));
 	assert(nouveau_vram_pool_alloc(&m->pool,65536,65536,&m->allocation));
@@ -83,6 +97,7 @@ static void recovered(struct model *m)
 	assert(m->instance==1&&(m->firmware&1)==1);
 	assert(m->masks[0]==0x12&&m->masks[1]==0x34&&m->masks[2]==0x56);
 	assert(m->engine.state==NOUVEAU_ENGINE_EMPTY);
+	for(unsigned i=0;i<20;i++)assert(m->caps[i]==0x2000+i);
 }
 int main(void)
 {
@@ -122,5 +137,44 @@ int main(void)
 	m.fail_write=m.writes+1;
 	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_IO_FAILED);
 	assert(m.upload.state==NOUVEAU_UPLOAD_PINNED);recovered(&m);assert(nouveau_upload_finish(&m.upload));
-	puts("NOUVEAU_ENGINE_PASS: GF119 handoff, 17-channel idle gate, instance pin/readback, VRAM rollback before firmware return, all take IO failures, timeout and retry");
+	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
+	unsigned cap_reads=m.reads,cap_writes=m.writes;
+	assert(nouveau_engine_capabilities(&m.engine)==NOUVEAU_ENGINE_OK);
+	cap_reads=m.reads-cap_reads;cap_writes=m.writes-cap_writes;
+	for(unsigned i=0;i<20;i++)assert(m.caps[i]==0x1000+i);
+	recovered(&m);
+	for(unsigned i=1;i<=cap_reads;i++) {
+		setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
+		m.fail_read=m.reads+i;
+		assert(nouveau_engine_capabilities(&m.engine)==NOUVEAU_ENGINE_IO_FAILED);recovered(&m);
+	}
+	for(unsigned i=1;i<=cap_writes;i++) {
+		setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);
+		m.fail_write=m.writes+i;
+		assert(nouveau_engine_capabilities(&m.engine)==NOUVEAU_ENGINE_IO_FAILED);recovered(&m);
+	}
+	/* Every restore register IO must remain retryable, including failures
+	 * after unbind/VRAM rollback and a write that already resumed firmware. */
+	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
+	unsigned restore_reads=m.reads,restore_writes=m.writes;
+	assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_OK);
+	restore_reads=m.reads-restore_reads;restore_writes=m.writes-restore_writes;
+	assert(nouveau_upload_finish(&m.upload));
+	for(unsigned type=0;type<2;type++) {
+		unsigned count=type?restore_writes:restore_reads;
+		for(unsigned i=1;i<=count;i++) {
+			setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+			assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_OK);
+			if(type)m.fail_write=m.writes+i;else m.fail_read=m.reads+i;
+			assert(nouveau_engine_restore(&m.engine)==NOUVEAU_ENGINE_IO_FAILED);
+			assert(m.engine.state==NOUVEAU_ENGINE_QUARANTINED);
+			recovered(&m);assert(nouveau_upload_finish(&m.upload));
+		}
+	}
+	setup(&m);assert(nouveau_engine_take(&m.engine,&m.io)==NOUVEAU_ENGINE_OK);upload(&m);
+	m.wrong_read=m.reads+18;
+	assert(nouveau_engine_bind(&m.engine,&m.upload)==NOUVEAU_ENGINE_IO_FAILED);
+	assert(m.upload.state==NOUVEAU_UPLOAD_PINNED);recovered(&m);assert(nouveau_upload_finish(&m.upload));
+	puts("NOUVEAU_ENGINE_PASS: GF119 handoff, 17-channel idle gate, instance pin/readback, VRAM rollback before firmware return, all take/capability/restore register IO failures, bind readback mismatch, timeout and retry");
 }

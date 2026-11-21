@@ -17,20 +17,28 @@ struct nouveau_engine_io {
 	bool (*time_us)(void *,uint64_t *);
 	bool (*delay_us)(void *,unsigned);
 };
+struct nouveau_engine_cap { uint32_t reg,saved,value; };
 struct nouveau_engine {
 	enum nouveau_engine_state state;
 	const struct nouveau_engine_io *io;
 	struct nouveau_upload *instance;
 	uint32_t saved_instance,saved_firmware,saved_interrupts[3];
 	bool snapshot_valid,firmware_touched,interrupts_touched,instance_touched;
+	struct nouveau_engine_cap caps[20];
+	uint8_t cap_count;
+	bool caps_ready,caps_touched;
 };
 /* Caller holds exclusive PCI/engine ownership for the entire lifetime.
  * Requires all 17 GP102 channel controls inactive; never steals an active
  * channel. Performs GF119 firmware request/ack and masks interrupts.
  * W1C supervisor acknowledgement cannot be recreated during rollback. */
 enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *,const struct nouveau_engine_io *);
+/* Copy GP102 head/SOR capabilities to EVO mirrors with snapshots/readback.
+ * Required before bind. GP102 has no DAC engine; no legacy DAC writes. */
+enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *);
 /* Pin a verified, uploaded 64KiB instance BEFORE writing 0x610010.
- * Does not copy capabilities, start channels, enable IRQs or submit UPDATE. */
+ * Requires successful capability preparation. Does not start channels,
+ * enable IRQs or submit UPDATE. */
 enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *,struct nouveau_upload *);
 /* Requires ALL channels inactive. Restore instance/readback before unpin,
  * restore uploaded VRAM, then saved interrupt masks and firmware request bit. On failure keep the

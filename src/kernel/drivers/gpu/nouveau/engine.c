@@ -89,9 +89,43 @@ enum nouveau_engine_status nouveau_engine_take(struct nouveau_engine *e,const st
 	}
 	e->state=NOUVEAU_ENGINE_QUIESCENT;return NOUVEAU_ENGINE_OK;
 }
+enum nouveau_engine_status nouveau_engine_capabilities(struct nouveau_engine *e)
+{
+	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid ||
+	    e->caps_ready || e->caps_touched) return NOUVEAU_ENGINE_INVALID;
+	enum nouveau_engine_status status=idle(e->io);
+	if(status!=NOUVEAU_ENGINE_OK) return status;
+	uint32_t count,mask;
+	if(!read32(e->io,0x22448,&count) || !read32(e->io,0x612004,&mask)) return NOUVEAU_ENGINE_IO_FAILED;
+	if(!count || count>4 || !(mask&15) || ((mask&15)&~((1U<<count)-1))) return NOUVEAU_ENGINE_INVALID;
+	struct nouveau_engine_cap caps[20];unsigned used=0;
+	for(unsigned i=0;i<count;i++) if(mask&(1U<<i)) {
+		for(unsigned j=0;j<3;j++) {
+			struct nouveau_engine_cap *c=&caps[used++];
+			c->reg=0x6101b4+i*0x800+j*4;
+			if(!read32(e->io,c->reg,&c->saved) ||
+			    !read32(e->io,0x616104+i*0x800+j*4,&c->value)) return NOUVEAU_ENGINE_IO_FAILED;
+		}
+	}
+	/* gf119_disp_init copies the fixed SOR register bank (nr=8). */
+	for(unsigned i=0;i<8;i++) {
+		struct nouveau_engine_cap *c=&caps[used++];c->reg=0x6301c4+i*0x800;
+		if(!read32(e->io,c->reg,&c->saved) ||
+		    !read32(e->io,0x61c000+i*0x800,&c->value)) return NOUVEAU_ENGINE_IO_FAILED;
+	}
+	for(unsigned i=0;i<used;i++) e->caps[i]=caps[i];
+	e->cap_count=used;e->caps_touched=true;e->state=NOUVEAU_ENGINE_QUARANTINED;
+	for(unsigned i=0;i<used;i++) {
+		uint32_t value;
+		if(!e->io->write32(e->io->context,caps[i].reg,caps[i].value) ||
+		    !read32(e->io,caps[i].reg,&value) || value!=caps[i].value) return NOUVEAU_ENGINE_IO_FAILED;
+	}
+	e->caps_ready=true;e->state=NOUVEAU_ENGINE_QUIESCENT;return NOUVEAU_ENGINE_OK;
+}
+
 enum nouveau_engine_status nouveau_engine_bind(struct nouveau_engine *e,struct nouveau_upload *u)
 {
-	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid || e->instance ||
+	if(!e || e->state!=NOUVEAU_ENGINE_QUIESCENT || !e->snapshot_valid || !e->caps_ready || e->instance ||
 	    !u || u->state!=NOUVEAU_UPLOAD_VERIFIED || u->length!=65536 ||
 	    (u->address&65535) || u->address>=(UINT64_C(1)<<40)) return NOUVEAU_ENGINE_INVALID;
 	enum nouveau_engine_status status=idle(e->io);
@@ -122,6 +156,12 @@ enum nouveau_engine_status nouveau_engine_restore(struct nouveau_engine *e)
 	if(e->instance) {
 		if(nouveau_upload_restore(e->instance)!=NOUVEAU_UPLOAD_OK) return NOUVEAU_ENGINE_IO_FAILED;
 		e->instance=NULL;
+	}
+	if(e->caps_touched) {
+		for(unsigned i=0;i<e->cap_count;i++) {
+			if(!e->io->write32(e->io->context,e->caps[i].reg,e->caps[i].saved) ||
+			    !read32(e->io,e->caps[i].reg,&value) || value!=e->caps[i].saved) return NOUVEAU_ENGINE_IO_FAILED;
+		}
 	}
 	if(e->interrupts_touched) {
 		for(unsigned i=0;i<3;i++) {
