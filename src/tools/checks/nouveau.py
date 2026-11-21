@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory(prefix="opensillicon-nouveau-") as tmp:
         ("nouveau_bios", ["bios.c", "bios_shadow.c"]),
         ("nouveau_edid", ["edid.c", "ddc.c"]),
         ("nouveau_framebuffer", ["../../../tty/fb/framebuffer_device.c"]),
+        ("nouveau_pll", ["pll.c"]),
         ("nouveau_supervisor", ["supervisor.c"]),
         ("nouveau_engine", ["engine.c", "upload.c", "vram_pool.c"]),
         ("nouveau_lifecycle", ["upload.c", "vram_pool.c", "channel.c"]),

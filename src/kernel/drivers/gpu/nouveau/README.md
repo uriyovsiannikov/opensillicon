@@ -577,3 +577,25 @@ completion не отправляется. Автоматический retry и 
 остаются нетронутыми. Это polling primitive, не готовый IRQ dispatcher.
 Host-тест сверяет порядок всех стадий и все read/write/action отказы.
 Нативная probe supervisor не вызывает, IED interpreter пока отсутствует.
+
+## Fractional VPLL
+
+`pll.c` переносит fractional path gt215_pll_calc, используемый
+`gf100_devinit_pll_set` через gm200 devinit GP107. Декодер v0x40 limits
+payload проверяет 14 байт, VCO/input ranges и M/N/P. Refclk должен быть явно
+получен из записи VBIOS; автоматического предположения 27 МГц нет.
+Поиск BIT C/PLL table и image-D translation для этой записи ещё не подключён;
+v0x50 и legacy PLL formats здесь не реализованы.
+
+Арифметика расчёта 64-битная с проверкой divisors/ranges. Возвращаются M/N/P,
+encoded fractional N, расчётная частота и коэффициенты. План GF100 содержит
+только CPU-данные трёх записей: control+0xc OR 0x100, coefficients+4,
+fraction+0x10. Register base проверяется по head 0..3 (0x614100+head*0x800).
+Никакие записи или ожидание lock не выполняются; actual_khz — расчётное
+значение, не аппаратное измерение частоты.
+
+Эталонный тест использует синтетические ограничения: для 148500 кГц
+M=2 N=219 P=20 fractional=4096, слова 0x0014db02/0x10000000.
+Это не считанные limits GTX 1050 Ti. Проверяются неправильные размеры,
+частоты, адреса регистров и 20000 мутаций limits. Исходники и лицензии
+Linux v6.12 сохранены в upstream/pll с SHA256.
