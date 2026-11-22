@@ -40,15 +40,8 @@ struct kernel_module_section_memory {
 	size_t size;
 };
 
-struct kernel_module_handle {
-	uint32_t slot;
-	uint32_t generation;
-};
-
 struct kernel_module_snapshot_entry {
 	char name[KERNEL_MODULE_NAME_MAX + 1U];
-	uint32_t references;
-	uint32_t reserved;
 };
 
 /* Validates the bounded x86-64 ELF64 ET_REL subset accepted for kernel
@@ -80,10 +73,6 @@ enum kernel_module_error kernel_module_load_path(const char *name,
  * module loaded and skips module_fini and unmapping. Preparation must leave
  * the module usable if it refuses. */
 enum kernel_module_error kernel_module_unload(const char *name);
-/* Pins module text/data for a client that retains callback pointers. Each
- * successful acquire must be balanced with exactly one release. */
-bool kernel_module_acquire(const char *name, struct kernel_module_handle *handle);
-bool kernel_module_release(struct kernel_module_handle handle);
 size_t kernel_module_snapshot(struct kernel_module_snapshot_entry *entries,
 	size_t capacity);
 

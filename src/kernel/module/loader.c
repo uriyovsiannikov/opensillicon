@@ -31,8 +31,6 @@
 struct loaded_module {
 	bool busy;
 	bool loaded;
-	uint32_t generation;
-	uint32_t references;
 	char name[KERNEL_MODULE_NAME_MAX + 1U];
 	size_t page_count;
 	uint64_t *physical_pages;
@@ -45,7 +43,6 @@ struct loaded_module {
 
 static struct loaded_module modules[MODULE_LIMIT];
 static struct spinlock module_lock = SPINLOCK_INITIALIZER;
-static uint32_t next_generation = 1;
 static bool name_valid(const char *name, size_t *length);
 
 static bool
@@ -342,12 +339,6 @@ kernel_module_load(const char *name, const void *object, size_t image_size)
 	}
 	slot = (size_t)(module - modules);
 	*module = (struct loaded_module){.busy = true};
-	module->generation = next_generation++;
-	if (module->generation == 0) {
-		module->generation = next_generation++;
-		if (module->generation == 0)
-			module->generation = 1;
-	}
 	for (size_t i = 0; i < name_length; i++)
 		module->name[i] = name[i];
 	module->name[name_length] = '\0';
@@ -501,10 +492,6 @@ kernel_module_unload(const char *name)
 		spinlock_unlock_irqrestore(&module_lock, flags);
 		return KERNEL_MODULE_BUSY;
 	}
-	if (module->references != 0) {
-		spinlock_unlock_irqrestore(&module_lock, flags);
-		return KERNEL_MODULE_BUSY;
-	}
 	module->loaded = false;
 	spinlock_unlock_irqrestore(&module_lock, flags);
 	if (module->prepare_unload != NULL && module->prepare_unload() != 0) {
@@ -517,57 +504,6 @@ kernel_module_unload(const char *name)
 		module->fini();
 	return unmap_and_free(module, slot) ? KERNEL_MODULE_OK :
 	    KERNEL_MODULE_BUSY;
-}
-
-bool
-kernel_module_acquire(const char *name, struct kernel_module_handle *handle)
-{
-	uint64_t flags;
-	size_t name_length;
-	if (handle == NULL || !name_valid(name, &name_length))
-		return false;
-	*handle = (struct kernel_module_handle){0};
-	flags = spinlock_lock_irqsave(&module_lock);
-	for (size_t i = 0; i < MODULE_LIMIT; i++) {
-		struct loaded_module *module = &modules[i];
-		if (!module->busy || !module->loaded ||
-		    !module_name_equal(module, name))
-			continue;
-		if (module->references == UINT32_MAX) {
-			spinlock_unlock_irqrestore(&module_lock, flags);
-			return false;
-		}
-		module->references++;
-		*handle = (struct kernel_module_handle){
-			.slot = (uint32_t)i,
-			.generation = module->generation
-		};
-		spinlock_unlock_irqrestore(&module_lock, flags);
-		return true;
-	}
-	spinlock_unlock_irqrestore(&module_lock, flags);
-	return false;
-}
-
-bool
-kernel_module_release(struct kernel_module_handle handle)
-{
-	uint64_t flags;
-	if (handle.slot >= MODULE_LIMIT || handle.generation == 0)
-		return false;
-	flags = spinlock_lock_irqsave(&module_lock);
-	{
-		struct loaded_module *module = &modules[handle.slot];
-		if (!module->busy || !module->loaded ||
-		    module->generation != handle.generation ||
-		    module->references == 0) {
-			spinlock_unlock_irqrestore(&module_lock, flags);
-			return false;
-		}
-		module->references--;
-	}
-	spinlock_unlock_irqrestore(&module_lock, flags);
-	return true;
 }
 
 size_t
@@ -583,9 +519,6 @@ kernel_module_snapshot(struct kernel_module_snapshot_entry *entries,
 		const struct loaded_module *module = &modules[i];
 		if (!module->busy || !module->loaded)
 			continue;
-		entries[copied] = (struct kernel_module_snapshot_entry){
-			.references = module->references
-		};
 		for (size_t j = 0; j <= KERNEL_MODULE_NAME_MAX; j++)
 			entries[copied].name[j] = module->name[j];
 		copied++;

@@ -518,9 +518,7 @@ procfs_make_modules(uint64_t inode, struct procfs_node **result)
 	count = kernel_module_snapshot(entries,
 	    sizeof(entries) / sizeof(entries[0]));
 	for (size_t i = 0; i < count; i++) {
-		if (!append_text(node, entries[i].name) || !append_text(node, "\t") ||
-		    !append_u64(node, entries[i].references) ||
-		    !append_text(node, "\n")) {
+		if (!append_text(node, entries[i].name) || !append_text(node, "\n")) {
 			vnode_put(&node->vnode);
 			return -EINVAL;
 		}
