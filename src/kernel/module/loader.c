@@ -250,7 +250,6 @@ find_entry_points(const uint8_t *image, size_t image_size,
 			uint64_t symbol_size = read64(symbol + 16);
 			const uint8_t *section_header;
 			uint64_t section_flags;
-			bool is_init;
 			if (name_offset >= strings_size || symbol_type != STT_FUNC ||
 			    section_index == SHN_UNDEF || section_index == SHN_ABS ||
 			    section_index >= shnum || sections[section_index].address == NULL)
@@ -263,29 +262,16 @@ find_entry_points(const uint8_t *image, size_t image_size,
 			    symbol_size > sections[section_index].size ||
 			    value > sections[section_index].size - symbol_size)
 				continue;
-			is_init = strings_size - name_offset >= 12 &&
-			    strings[name_offset] == 'm' && strings[name_offset + 1] == 'o' &&
-			    strings[name_offset + 2] == 'd' && strings[name_offset + 3] == 'u' &&
-			    strings[name_offset + 4] == 'l' && strings[name_offset + 5] == 'e' &&
-			    strings[name_offset + 6] == '_' && strings[name_offset + 7] == 'i' &&
-			    strings[name_offset + 8] == 'n' && strings[name_offset + 9] == 'i' &&
-			    strings[name_offset + 10] == 't' && strings[name_offset + 11] == 0;
-			if (value >= sections[section_index].size ||
-			    value > UINTPTR_MAX - (uintptr_t)sections[section_index].address)
+			if (value > UINTPTR_MAX - (uintptr_t)sections[section_index].address)
 				continue;
-			if (is_init && *init == NULL)
+			if (symbol_name_is(strings, strings_size, name_offset,
+			    "module_init") && *init == NULL)
 				*init = (int (*)(void))((uintptr_t)sections[section_index].address + value);
 			else if (symbol_name_is(strings, strings_size, name_offset,
 			    "module_prepare_unload") && *prepare_unload == NULL)
 				*prepare_unload = (int (*)(void))((uintptr_t)sections[section_index].address + value);
-			else if (!is_init && strings_size - name_offset >= 12 &&
-			    strings[name_offset] == 'm' && strings[name_offset + 1] == 'o' &&
-			    strings[name_offset + 2] == 'd' && strings[name_offset + 3] == 'u' &&
-			    strings[name_offset + 4] == 'l' && strings[name_offset + 5] == 'e' &&
-			    strings[name_offset + 6] == '_' && strings[name_offset + 7] == 'f' &&
-			    strings[name_offset + 8] == 'i' && strings[name_offset + 9] == 'n' &&
-			    strings[name_offset + 10] == 'i' && strings[name_offset + 11] == 0 &&
-			    *fini == NULL)
+			else if (symbol_name_is(strings, strings_size, name_offset,
+			    "module_fini") && *fini == NULL)
 				*fini = (void (*)(void))((uintptr_t)sections[section_index].address + value);
 		}
 	}
