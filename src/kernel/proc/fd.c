@@ -273,7 +273,7 @@ fd_set_descriptor_flags(struct fd_table *table, uint64_t descriptor,
 	if (table == NULL || descriptor >= FD_TABLE_CAPACITY ||
 	    table->entries[descriptor] == NULL)
 		return -EBADF;
-	if ((flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
+	if ((flags & ~OS_FD_CLOEXEC) != 0)
 		return -EINVAL;
 	table->descriptor_flags[descriptor] = flags;
 	return 0;
@@ -286,7 +286,7 @@ fd_table_close_on_exec(struct fd_table *table)
 	if (table == NULL)
 		return;
 	for (i = 0; i < FD_TABLE_CAPACITY; i++)
-		if ((table->descriptor_flags[i] & FD_DESCRIPTOR_CLOEXEC) != 0)
+		if ((table->descriptor_flags[i] & OS_FD_CLOEXEC) != 0)
 			(void)fd_close(table, i);
 }
 
@@ -359,7 +359,7 @@ fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    table->entries[source] == NULL)
 		return -EBADF;
-	if (minimum >= FD_TABLE_CAPACITY || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
+	if (minimum >= FD_TABLE_CAPACITY || (flags & ~OS_FD_CLOEXEC) != 0)
 		return -EINVAL;
 	for (descriptor = minimum; descriptor < FD_TABLE_CAPACITY; descriptor++)
 		if (table->entries[descriptor] == NULL)
@@ -380,7 +380,7 @@ fd_dup_to(struct fd_table *table, uint64_t source, uint64_t destination,
 	struct fd_object *source_object;
 	struct fd_object *old_destination;
 
-	if (source == destination || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
+	if (source == destination || (flags & ~OS_FD_CLOEXEC) != 0)
 		return -EINVAL;
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    destination >= FD_TABLE_CAPACITY ||

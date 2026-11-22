@@ -28,6 +28,7 @@
 #include "../src/network/lookup.h"
 #undef hidden
 #include "abi/syscall.h"
+#include "abi/fcntl.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -47,6 +48,11 @@ static int files_check(void)
  CHECK(fcntl(fd,F_GETFD)&FD_CLOEXEC);
  CHECK((fcntl(fd,F_GETFL)&O_ACCMODE)==O_RDWR);
  CHECK(fcntl(fd,F_SETFD,0)==0 && fcntl(fd,F_GETFD)==0);
+ CHECK(fcntl(fd,F_SETFD,2)==-1 && errno==EINVAL && fcntl(fd,F_GETFD)==0);
+ CHECK(__os_raw(SYSCALL_FCNTL,fd,OS_F_SETFD,1ULL<<32,0,0,0)==-EINVAL);
+ CHECK(fcntl(fd,F_GETFD)==0);
+ CHECK(__os_raw(SYSCALL_FCNTL,fd,8,0,0,0,0)==-EOPNOTSUPP);
+ CHECK(__os_raw(SYSCALL_FCNTL,fd,0x7fffffff,0,0,0,0)==-EOPNOTSUPP);
  CHECK(fcntl(fd,F_SETFL,O_NONBLOCK)==0);
  CHECK(fcntl(fd,F_GETFL)&O_NONBLOCK);
  CHECK(write(fd,"abc",3)==3);

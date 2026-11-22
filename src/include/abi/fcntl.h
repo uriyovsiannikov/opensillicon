@@ -14,4 +14,12 @@
 #define OS_O_DIRECTORY 0x10000U
 #define OS_O_CLOEXEC 0x80000U
 
+#define OS_F_DUPFD 0U
+#define OS_F_GETFD 1U
+#define OS_F_SETFD 2U
+#define OS_F_GETFL 3U
+#define OS_F_SETFL 4U
+#define OS_F_DUPFD_CLOEXEC 1030U
+#define OS_FD_CLOEXEC 1U
+
 #endif

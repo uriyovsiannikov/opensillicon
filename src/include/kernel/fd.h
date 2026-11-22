@@ -12,7 +12,6 @@
 #define FD_POLL_WRITE 0x02U
 #define FD_POLL_ERROR 0x04U
 #define FD_POLL_HANGUP 0x08U
-#define FD_DESCRIPTOR_CLOEXEC 0x00000001U
 
 struct vfs_dirent;
 struct vnode;

@@ -19,13 +19,6 @@
 #define SYSCALL_MAX_IOV 16U
 #define SYSCALL_MAX_IOV_BYTES (64U * 1024U)
 #define SYSCALL_IOV_CHUNK 512U
-#define NATIVE_F_DUPFD 0U
-#define NATIVE_F_DUPFD_CLOEXEC 1030U
-#define NATIVE_F_GETFD 1U
-#define NATIVE_F_SETFD 2U
-#define NATIVE_F_GETFL 3U
-#define NATIVE_F_SETFL 4U
-#define NATIVE_F_SETOWN 8U
 
 struct syscall_iovec {
 	uint64_t base;
@@ -654,8 +647,8 @@ syscall_io_local(struct interrupt_frame **result_frame)
 				return true;
 			}
 			if (flags & OS_O_CLOEXEC) {
-				(void)fd_set_descriptor_flags(table,reader,FD_DESCRIPTOR_CLOEXEC);
-				(void)fd_set_descriptor_flags(table,writer,FD_DESCRIPTOR_CLOEXEC);
+				(void)fd_set_descriptor_flags(table,reader,OS_FD_CLOEXEC);
+				(void)fd_set_descriptor_flags(table,writer,OS_FD_CLOEXEC);
 			}
 			if (flags & OS_O_NONBLOCK) {
 				struct fd_object *read_end = fd_object_for_descriptor(table,reader);
@@ -775,15 +768,15 @@ syscall_io_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			switch (frame->rsi) {
-			case NATIVE_F_DUPFD:
-			case NATIVE_F_DUPFD_CLOEXEC: {
+			case OS_F_DUPFD:
+			case OS_F_DUPFD_CLOEXEC: {
 				int result = fd_dup_from(current_fd_table(),frame->rdi,frame->rdx,
-				    frame->rsi == NATIVE_F_DUPFD_CLOEXEC ? FD_DESCRIPTOR_CLOEXEC : 0);
+				    frame->rsi == OS_F_DUPFD_CLOEXEC ? OS_FD_CLOEXEC : 0);
 				if (result < 0) syscall_error(frame,errno_from_kernel(result));
 				else frame->rax = result;
 				break;
 			}
-			case NATIVE_F_GETFD: {
+			case OS_F_GETFD: {
 				uint32_t flags;
 				int result = fd_get_descriptor_flags(current_fd_table(),
 				    frame->rdi, &flags);
@@ -793,7 +786,7 @@ syscall_io_bsp(struct interrupt_frame *frame)
 					frame->rax = flags;
 				break;
 			}
-			case NATIVE_F_SETFD: {
+			case OS_F_SETFD: {
 				int result = frame->rdx > UINT32_MAX ? -EINVAL :
 				    fd_set_descriptor_flags(current_fd_table(),
 				    frame->rdi, (uint32_t)frame->rdx);
@@ -803,19 +796,16 @@ syscall_io_bsp(struct interrupt_frame *frame)
 					frame->rax = 0;
 				break;
 			}
-			case NATIVE_F_GETFL:
+			case OS_F_GETFL:
 				frame->rax = __atomic_load_n(&object->status_flags, __ATOMIC_RELAXED);
 				break;
-			case NATIVE_F_SETFL:
+			case OS_F_SETFL:
 				__atomic_store_n(&object->status_flags,
 				    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
 				    OS_O_ACCMODE) | ((uint32_t)frame->rdx &
 				    (OS_O_NONBLOCK | OS_O_APPEND)), __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
-				break;
-			case NATIVE_F_SETOWN:
-				syscall_error(frame, EOPNOTSUPP);
 				break;
 			default:
 				syscall_error(frame, EOPNOTSUPP);
@@ -831,7 +821,7 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			}
 			int result = fd_dup_to(current_fd_table(), frame->rdi,
 			    frame->rsi, (frame->rdx & OS_O_CLOEXEC) ?
-			    FD_DESCRIPTOR_CLOEXEC : 0);
+			    OS_FD_CLOEXEC : 0);
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));
 			else

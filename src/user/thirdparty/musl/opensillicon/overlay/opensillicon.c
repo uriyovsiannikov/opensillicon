@@ -62,19 +62,29 @@ static long open_native(long dirfd, long path, long flags, long mode)
      flags & ~(O_NOFOLLOW|O_LARGEFILE|O_NOCTTY),mode,0,0);
 }
 
+#define CHECK_FCNTL_VALUE(name) _Static_assert(name == OS_##name, #name " ABI")
+CHECK_FCNTL_VALUE(F_DUPFD);
+CHECK_FCNTL_VALUE(F_DUPFD_CLOEXEC);
+CHECK_FCNTL_VALUE(F_GETFD);
+CHECK_FCNTL_VALUE(F_SETFD);
+CHECK_FCNTL_VALUE(F_GETFL);
+CHECK_FCNTL_VALUE(F_SETFL);
+CHECK_FCNTL_VALUE(FD_CLOEXEC);
+#undef CHECK_FCNTL_VALUE
+
 static long fcntl_native(long fd,long cmd,long arg)
 {
  switch(cmd) {
- case F_DUPFD: return call(SYSCALL_FCNTL,fd,0,arg,0,0,0);
- case F_DUPFD_CLOEXEC: return call(SYSCALL_FCNTL,fd,1030,arg,0,0,0);
- case F_GETFD: return call(SYSCALL_FCNTL,fd,1,0,0,0,0);
+ case F_GETFD: case F_GETFL:
+  return call(SYSCALL_FCNTL,fd,cmd,0,0,0,0);
  case F_SETFD:
   if(arg & ~FD_CLOEXEC) return -EINVAL;
-  return call(SYSCALL_FCNTL,fd,2,arg,0,0,0);
- case F_GETFL: return call(SYSCALL_FCNTL,fd,3,0,0,0,0);
+  /* Descriptor flags and duplicate commands share the native vocabulary. */
+ case F_DUPFD: case F_DUPFD_CLOEXEC:
+  return call(SYSCALL_FCNTL,fd,cmd,arg,0,0,0);
  case F_SETFL:
   if(arg & ~(O_ACCMODE|O_NONBLOCK|O_LARGEFILE|O_APPEND)) return -EOPNOTSUPP;
-  return call(SYSCALL_FCNTL,fd,4,arg & (O_NONBLOCK|O_APPEND),0,0,0);
+  return call(SYSCALL_FCNTL,fd,cmd,arg & (O_NONBLOCK|O_APPEND),0,0,0);
  default: return -ENOSYS;
  }
 }

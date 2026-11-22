@@ -510,7 +510,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (flags & OS_O_CLOEXEC)
-				(void)fd_set_descriptor_flags(table, result, FD_DESCRIPTOR_CLOEXEC);
+				(void)fd_set_descriptor_flags(table, result, OS_FD_CLOEXEC);
 			frame->rax = (uint64_t)result;
 		}
 		break;
