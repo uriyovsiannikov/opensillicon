@@ -126,6 +126,10 @@ preserving native lookup and permission errors. This lets musl realpath work
 with the VFS, which currently has no symlinks. Canonicalization and missing/
 non-directory path errors are checked, including absolute command paths in doas.
 Read/write requests are capped at the kernel's 4096-byte staging limit.
+Vectored I/O uses a 64 KiB per-call work budget and returns short counts for
+larger buffers. This lets libc finish large fread/fwrite calls without private
+application chunking. Stream sendmsg/recvmsg use the same native vectored I/O;
+UDP retains datagram gathering, scattering and truncation handling.
 Process support includes fork, execve (up to the kernel limit of 16 arguments),
 waitpid via native WAITPID, kill/raise, pipe, UID/GID queries and
 setuid/setgid/setresuid/setresgid. WAITPID writes an encoded 32-bit POSIX status. Normal exits such

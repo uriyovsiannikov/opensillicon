@@ -757,6 +757,18 @@ static int network_check(void)
   if(send(client,"hello",5,0)!=5) _exit(91);
   char reply[3]={0};
   if(recv(client,reply,2,0)!=2 || strcmp(reply,"ok")) _exit(92);
+  unsigned char large[8192]; size_t used=0;
+  while(used<sizeof large) {
+   struct iovec input[2]={{NULL,0},{large+used,sizeof large-used}};
+   struct msghdr header={.msg_iov=input,.msg_iovlen=2};
+   ssize_t got=recvmsg(client,&header,0);
+   if(got<=0 || (size_t)got>sizeof large-used || header.msg_flags || header.msg_controllen) _exit(93);
+   used+=(size_t)got;
+  }
+  for(size_t i=0;i<sizeof large;i++) if(large[i]!=(unsigned char)(i*13+7)) _exit(94);
+  struct iovec output[2]={{large,19},{large+19,sizeof large-19}};
+  struct msghdr header={.msg_iov=output,.msg_iovlen=2};
+  if(sendmsg(client,&header,0)!=sizeof large) _exit(95);
   close(client);
   _exit(0);
  }
@@ -777,8 +789,18 @@ static int network_check(void)
  char message[6]={0};
  CHECK(recv(peer,message,5,0)==5 && !strcmp(message,"hello"));
  CHECK(send(peer,"ok",2,0)==2);
+ unsigned char large_message[8192], large_reply[8192];
+ for(size_t i=0;i<sizeof large_message;i++) large_message[i]=(unsigned char)(i*13+7);
+ struct iovec stream_vectors[2]={{large_message,23},{large_message+23,sizeof large_message-23}};
+ struct msghdr stream_header={.msg_iov=stream_vectors,.msg_iovlen=2};
+ CHECK(sendmsg(peer,&stream_header,0)==sizeof large_message);
  int status;
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ stream_vectors[0]=(struct iovec){large_reply,31};
+ stream_vectors[1]=(struct iovec){large_reply+31,sizeof large_reply-31};
+ stream_header.msg_flags=123;
+ CHECK(recvmsg(peer,&stream_header,0)==sizeof large_reply && stream_header.msg_flags==0 &&
+     stream_header.msg_controllen==0 && !memcmp(large_message,large_reply,sizeof large_reply));
  CHECK(recv(peer,message,sizeof message,0)==0);
  CHECK(shutdown(peer,SHUT_RDWR)==0 && close(peer)==0 && close(server)==0);
  CHECK(unlink(address.sun_path)==0);

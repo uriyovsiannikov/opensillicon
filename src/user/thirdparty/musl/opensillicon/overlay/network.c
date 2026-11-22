@@ -50,16 +50,28 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   if(msg->msg_iovlen>16) return -EMSGSIZE;
   long kind=call(SYSCALL_SOCKET_KIND,a,0,0,0,0,0);
   if(kind<0) return kind;
+  if(kind!=OS_SOCKET_KIND_UDP) {
+   if(c) return -EOPNOTSUPP;
+   if(n==SYS_sendmsg) {
+    if(msg->msg_controllen) return -EOPNOTSUPP;
+    if(msg->msg_name) return -EISCONN;
+    return call(SYSCALL_WRITEV,a,(long)msg->msg_iov,msg->msg_iovlen,0,0,0);
+   }
+   if(msg->msg_name) return -EOPNOTSUPP;
+   long received=call(SYSCALL_READV,a,(long)msg->msg_iov,msg->msg_iovlen,0,0,0);
+   if(received>=0) { msg->msg_controllen=0; msg->msg_flags=0; }
+   return received;
+  }
   size_t total=0;
   for(size_t i=0;i<msg->msg_iovlen;i++) {
    if(msg->msg_iov[i].iov_len>(size_t)INT64_MAX-total) return -EINVAL;
    total+=msg->msg_iov[i].iov_len;
   }
-  unsigned char payload[4096];
-  size_t limit=kind==OS_SOCKET_KIND_UDP ? 512 : sizeof payload;
+  unsigned char payload[512];
+  size_t limit=sizeof payload;
   if(n==SYS_sendmsg) {
    if(msg->msg_controllen) return -EOPNOTSUPP;
-   if(kind==OS_SOCKET_KIND_UDP && total>limit) return -EMSGSIZE;
+   if(total>limit) return -EMSGSIZE;
    size_t size=total<limit ? total : limit, copied=0;
    for(size_t i=0;i<msg->msg_iovlen && copied<size;i++) {
     size_t chunk=msg->msg_iov[i].iov_len;
@@ -70,9 +82,8 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
    return __os_network(SYS_sendto,a,(long)payload,size,c,(long)msg->msg_name,msg->msg_namelen);
   }
   if(c & ~MSG_TRUNC) return -EOPNOTSUPP;
-  if(c && kind!=OS_SOCKET_KIND_UDP) return -EOPNOTSUPP;
   long got=__os_network(SYS_recvfrom,a,(long)payload,
-      kind==OS_SOCKET_KIND_UDP ? limit : (total<limit ? total : limit),0,
+      limit,0,
       (long)msg->msg_name,(long)&msg->msg_namelen);
   if(got<0)return got;
   size_t size=(size_t)got<total ? (size_t)got : total, copied=0;
