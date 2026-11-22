@@ -1,9 +1,14 @@
+#include <string.h>
+
 #include "deviceconf.h"
-int user_main(uint64_t argc, char **argv)
+
+int
+main(int argc, char **argv)
 {
-    if (argc == 2 && u_streq(argv[1], "--tone"))
-        return deviceconf_show(1, argv, "audioconf", "/proc/hdatest", "[-l | --codec | --tone]");
-    if (argc == 2 && u_streq(argv[1], "--codec"))
-        return deviceconf_show(1, argv, "audioconf", "/proc/hdacodecs", "[-l | --codec | --tone]");
-    return deviceconf_show(argc, argv, "audioconf", "/proc/audiopci", "[-l | --codec | --tone]");
+	if (argc == 2 && strcmp(argv[1], "--tone") == 0)
+		return deviceconf_show("audioconf", "/proc/hdatest", 0);
+	if (argc == 2 && strcmp(argv[1], "--codec") == 0)
+		return deviceconf_show("audioconf", "/proc/hdacodecs", 0);
+	return deviceconf_main(argc, argv, "audioconf", "/proc/audiopci",
+	    "[-l | --codec | --tone]", 0);
 }

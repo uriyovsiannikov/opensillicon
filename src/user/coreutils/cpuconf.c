@@ -1,3 +1,7 @@
 #include "deviceconf.h"
-int user_main(uint64_t argc, char **argv)
-{ return deviceconf_show(argc, argv, "cpuconf", "/proc/cpuinfo", "[-l]"); }
+
+int
+main(int argc, char **argv)
+{
+	return deviceconf_main(argc, argv, "cpuconf", "/proc/cpuinfo", "[-l]", 0);
+}

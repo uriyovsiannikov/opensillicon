@@ -50,6 +50,14 @@ $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h $(LIBC_A
 
 # Utilities using the public POSIX runtime need libc startup and headers.
 POSIX_COREUTILS := ls rm uname sleep tail cat head wc stat which pwd mkdir kill basename dirname
+DEVICECONF_COREUTILS := cpuconf usbconf pciconf blkconf audioconf netconf kldstat
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(DEVICECONF_COREUTILS) deviceconf)): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/coreutils/deviceconf.h $(LIBC_ARCHIVE) src/user/Makefile
+	mkdir -p $(@D)
+	$(CC) $(LIBC_CFLAGS) -c $< -o $@
+
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,$(DEVICECONF_COREUTILS))): $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/coreutils/%.o $(BUILD_DIR)/coreutils/deviceconf.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
+	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $< $(BUILD_DIR)/coreutils/deviceconf.o $(LIBC_ARCHIVE) -lgcc -o $@
+
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(POSIX_COREUTILS))): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c $(LIBC_ARCHIVE) src/user/Makefile
 	mkdir -p $(@D)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@

@@ -1,3 +1,7 @@
 #include "deviceconf.h"
-int user_main(uint64_t argc, char **argv)
-{ return deviceconf_show(argc, argv, "usbconf", "/proc/usb", "[-l]"); }
+
+int
+main(int argc, char **argv)
+{
+	return deviceconf_main(argc, argv, "usbconf", "/proc/usb", "[-l]", 0);
+}
