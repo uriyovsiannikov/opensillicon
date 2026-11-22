@@ -131,7 +131,7 @@ $(LIBZ_BUILD_DIR)/%.o: src/tools/pkg/repo/_src/twm/deps/libz/%.c $(wildcard src/
 $(LIBZ_ARCHIVE): $(LIBZ_OBJECTS)
 	ar rcs $@ $^
 
-LIBFONTENC_CPPFLAGS := -nostdinc -I$(abspath src/build/musl/sysroot/include) \
+LIBFONTENC_CPPFLAGS := -D_POSIX_C_SOURCE=200809L -nostdinc -I$(abspath src/build/musl/sysroot/include) \
 	-I$(abspath src/tools/pkg/repo/_src/twm/tinyx/include) -I$(abspath src/tools/pkg/repo/_src/twm/deps/libfontenc/include) \
 	-isystem $(shell $(CC) -print-file-name=include) -idirafter /usr/include \
 	-DFONT_ENCODINGS_DIRECTORY=\"/usr/share/fonts/encodings\"
