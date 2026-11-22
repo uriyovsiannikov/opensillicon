@@ -56,8 +56,8 @@ long u_chdir(const char *path)
 long u_getcwd(char *buffer, size_t capacity)
 { return syscall4(SYSCALL_GETCWD, (uintptr_t)buffer, capacity, 0, 0); }
 long u_getpid(void) { return syscall4(SYSCALL_GETPID, 0, 0, 0, 0); }
-long u_process_snapshot(struct u_process_info *entries, size_t capacity)
-{ return syscall4(SYSCALL_PROCESS_SNAPSHOT, (uintptr_t)entries, capacity, 0, 0); }
+long u_process_info(struct os_process_info *entries, size_t capacity)
+{ return syscall4(SYSCALL_PROCESS_INFO, (uintptr_t)entries, capacity, 0, 0); }
 long u_framebuffer_info(struct os_framebuffer_info *info)
 { return syscall4(SYSCALL_FRAMEBUFFER_INFO, (uintptr_t)info, 0, 0, 0); }
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect)

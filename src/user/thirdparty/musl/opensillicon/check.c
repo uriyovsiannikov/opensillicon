@@ -1,4 +1,5 @@
 #include "abi/signal.h"
+#include "abi/process_info.h"
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -690,6 +691,22 @@ static int network_check(void)
 }
 static int sysctl_check(void)
 {
+ struct os_process_info processes[OS_PROCESS_INFO_MAX];
+ long process_count=__os_raw(SYSCALL_PROCESS_INFO,(long)processes,OS_PROCESS_INFO_MAX,0,0,0,0);
+ CHECK(process_count>0 && process_count<=OS_PROCESS_INFO_MAX);
+ int found_self=0;
+ for(long i=0;i<process_count;i++) {
+  CHECK(memchr(processes[i].name,0,sizeof processes[i].name)!=NULL);
+  CHECK(processes[i].state<=OS_PROCESS_ZOMBIE);
+  if(processes[i].pid==(uint64_t)getpid()) {
+   found_self=1;
+   CHECK(processes[i].uid==geteuid() && processes[i].parent_pid==(uint64_t)getppid());
+  }
+ }
+ CHECK(found_self);
+ CHECK(__os_raw(SYSCALL_PROCESS_INFO,1,OS_PROCESS_INFO_MAX,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,0,0,0,0,0)==-EINVAL);
+ CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,OS_PROCESS_INFO_MAX+1,0,0,0,0)==-EINVAL);
  struct utsname identity;
  CHECK(uname(&identity)==0);
  CHECK(!strcmp(identity.sysname,"OpenSillicon") && !strcmp(identity.machine,"amd64"));

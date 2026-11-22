@@ -53,6 +53,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('svctl list', 'console: running pid='),
                 ('host localhost', 'localhost has address 127.0.0.1'),
                 ('uname', 'OpenSillicon\n'),
+                ('ps', 'PID PPID UID STATE COMMAND\n'),
                 ('uname -snrm', 'OpenSillicon opensillicon development amd64\n'),
                 ('uname -v', 'OpenSillicon development kernel\n'),
                 ('uname bad', 'usage: uname'),

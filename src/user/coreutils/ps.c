@@ -1,8 +1,5 @@
 #include "../include/os.h"
 
-_Static_assert(sizeof(struct u_process_info) == 24,
-	"process snapshot ABI size mismatch");
-
 static const char *
 state_name(uint32_t state)
 {
@@ -18,7 +15,7 @@ state_name(uint32_t state)
 int
 user_main(uint64_t argc, char **argv)
 {
-	struct u_process_info processes[U_PROCESS_SNAPSHOT_MAX];
+	struct os_process_info processes[OS_PROCESS_INFO_MAX];
 	long count;
 	long i;
 	(void)argv;
@@ -26,21 +23,23 @@ user_main(uint64_t argc, char **argv)
 		u_puts("usage: ps\n");
 		return 1;
 	}
-	count = u_process_snapshot(processes, U_PROCESS_SNAPSHOT_MAX);
+	count = u_process_info(processes, OS_PROCESS_INFO_MAX);
 	if (count < 0) {
 		u_puts(count == -7 ? "ps: process list exceeds 128 entries\n" :
 		    "ps: process snapshot failed\n");
 		return 1;
 	}
-	u_puts("PID PPID STATE STATUS\n");
+	u_puts("PID PPID UID STATE COMMAND\n");
 	for (i = 0; i < count; i++) {
 		u_put_u64(processes[i].pid);
 		u_puts(" ");
 		u_put_u64(processes[i].parent_pid);
 		u_puts(" ");
+		u_put_u64(processes[i].uid);
+		u_puts(" ");
 		u_puts(state_name(processes[i].state));
 		u_puts(" ");
-		u_put_u64(processes[i].exit_status);
+		u_puts(processes[i].name);
 		u_puts("\n");
 	}
 	return 0;

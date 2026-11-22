@@ -12,6 +12,7 @@
 #include "abi/input.h"
 #include "abi/credentials.h"
 #include "abi/stat.h"
+#include "abi/process_info.h"
 
 #define U_O_RDONLY 0U
 #define U_O_WRONLY 1U
@@ -42,14 +43,6 @@ struct u_winsize {
 	uint16_t columns;
 	uint16_t xpixel;
 	uint16_t ypixel;
-};
-
-struct u_process_info {
-	uint64_t pid;
-	uint64_t parent_pid;
-	uint32_t state;
-	uint8_t exit_status;
-	uint8_t reserved[3];
 };
 
 struct u_ipv4_config {
@@ -98,7 +91,7 @@ long u_kldunload(const char *name);
 long u_chdir(const char *path);
 long u_getcwd(char *buffer, size_t capacity);
 long u_getpid(void);
-long u_process_snapshot(struct u_process_info *entries, size_t capacity);
+long u_process_info(struct os_process_info *entries, size_t capacity);
 long u_framebuffer_info(struct os_framebuffer_info *info);
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect);
 long u_kill(uint64_t pid, uint64_t signo);
