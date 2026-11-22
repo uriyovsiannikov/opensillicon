@@ -191,15 +191,13 @@ syscall_system_bsp(struct interrupt_frame *frame)
 		{
 			struct os_credentials credentials;
 			if (!process_current_credentials(&credentials) ||
-			    (credentials.effective_uid != 0 &&
-			    !fd_object_is_console(fd_object_for_descriptor(current_fd_table(), 0)))) {
-				syscall_error(frame, 1U);
+			    credentials.effective_uid != 0) {
+				syscall_error(frame, EPERM);
 				break;
 			}
 		}
 		if (frame->rdi == POWER_CONTROL_POWEROFF) {
-			/* The local console user can shut down the machine. Flush
-			 * registered disks before invoking firmware S5. */
+			/* Flush registered disks before invoking firmware S5. */
 			for (size_t i = 0; i < block_device_count(); i++) {
 				if (block_flush(block_device_at(i)) != 0) {
 					syscall_error(frame, EIO);

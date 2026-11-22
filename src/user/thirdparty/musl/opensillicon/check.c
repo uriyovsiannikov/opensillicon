@@ -579,6 +579,23 @@ static int shell_path_check(void)
  }
  return 0;
 }
+static int power_permissions_check(void)
+{
+ CHECK(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)==-EINVAL);
+ CHECK(__os_raw(SYSCALL_POWER_CONTROL,-1,0,0,0,0,0)==-EINVAL);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  if(!isatty(0) || setgid(1000) || setuid(1000)) _exit(120);
+  /* An invalid request tests authorization without invoking firmware. */
+  if(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(121);
+  if(close(0) || __os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(122);
+  _exit(0);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ return 0;
+}
+
 static int module_file_check(void)
 {
  const char *path="/boot/modules/module_file_probe.ko";
@@ -1541,6 +1558,8 @@ int main(int argc, char **argv)
  if(action_result) return action_result;
  int nested_result=nested_signal_check();
  if(nested_result) return nested_result;
+ int power_result=power_permissions_check();
+ if(power_result) return power_result;
  int module_result=module_file_check();
  if(module_result) return module_result;
  int shared_result=shared_mapping_check();
