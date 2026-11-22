@@ -4,7 +4,6 @@
 
 #include "kernel/errno.h"
 #include "kernel/heap.h"
-#include "kernel/cyclone_net.h"
 #include "kernel/process.h"
 #include "kernel/module.h"
 #include "kernel/pmm.h"
@@ -33,7 +32,6 @@ enum procfs_entry {
 	PROCFS_NETPCI,
 	PROCFS_AUDIOPCI,
 	PROCFS_HDACODECS,
-	PROCFS_NETIF,
 	PROCFS_DAPI
 };
 
@@ -47,7 +45,7 @@ struct procfs_node {
 	uint64_t cpuinfo_inode;
 	uint64_t modules_inode;
 	uint64_t pci_inode, usb_inode, disks_inode, cmdline_inode, netpci_inode,
-	    netif_inode, dapi_inode, audiopci_inode, hdacodecs_inode, hdatest_inode;
+	    dapi_inode, audiopci_inode, hdacodecs_inode, hdatest_inode;
 	char name[16];
 	char content[PROCFS_CONTENT_MAX];
 };
@@ -629,20 +627,6 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		if (error == 0) *result = &entry->vnode;
 		return error;
 	}
-	if (name_length == 5 && memcmp(name, "netif", 5) == 0) {
-		struct procfs_node *entry = procfs_allocate("netif", PROCFS_NETIF,
-		    VNODE_REGULAR, node->netif_inode);
-		if (entry == NULL)
-			return -ENOMEM;
-		const char *device = cyclone_net_device_name();
-		if (device != NULL && !append_text(entry, device)) {
-			vnode_put(&entry->vnode);
-			return -EINVAL;
-		}
-		entry->vnode.size = entry->content_length;
-		*result = &entry->vnode;
-		return 0;
-	}
 	if (name_length == 7 && memcmp(name, "cmdline", 7) == 0) {
 		struct procfs_node *entry = procfs_allocate("cmdline",
 		    PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
@@ -704,33 +688,40 @@ static int
 procfs_readdir(struct vnode *directory, uint64_t index,
 	struct vfs_dirent *entry)
 {
-	static const char *const names[] = {"self", "uptime", "meminfo",
-	    "cpuinfo", "modules", "pci", "usb", "disks", "cmdline", "netpci",
-	    "netif", "dapi", "audiopci", "hdacodecs", "hdatest"};
+	static const struct {
+		const char *name;
+		size_t inode_offset;
+		enum vnode_type type;
+	} entries[] = {
+		{"self", offsetof(struct procfs_node, self_inode), VNODE_DIRECTORY},
+		{"uptime", offsetof(struct procfs_node, uptime_inode), VNODE_REGULAR},
+		{"meminfo", offsetof(struct procfs_node, meminfo_inode), VNODE_REGULAR},
+		{"cpuinfo", offsetof(struct procfs_node, cpuinfo_inode), VNODE_REGULAR},
+		{"modules", offsetof(struct procfs_node, modules_inode), VNODE_REGULAR},
+		{"pci", offsetof(struct procfs_node, pci_inode), VNODE_REGULAR},
+		{"usb", offsetof(struct procfs_node, usb_inode), VNODE_REGULAR},
+		{"disks", offsetof(struct procfs_node, disks_inode), VNODE_REGULAR},
+		{"cmdline", offsetof(struct procfs_node, cmdline_inode), VNODE_REGULAR},
+		{"netpci", offsetof(struct procfs_node, netpci_inode), VNODE_REGULAR},
+		{"dapi", offsetof(struct procfs_node, dapi_inode), VNODE_REGULAR},
+		{"audiopci", offsetof(struct procfs_node, audiopci_inode), VNODE_REGULAR},
+		{"hdacodecs", offsetof(struct procfs_node, hdacodecs_inode), VNODE_REGULAR},
+		{"hdatest", offsetof(struct procfs_node, hdatest_inode), VNODE_REGULAR},
+	};
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
 		return -ENOTDIR;
 	if (entry == NULL)
 		return -EINVAL;
-	if (index >= sizeof(names) / sizeof(names[0]))
+	if (index >= sizeof(entries) / sizeof(entries[0]))
 		return 0;
 	node = procfs_from_vnode(directory);
 	memset(entry, 0, sizeof(*entry));
-	entry->inode = index == 0 ? node->self_inode
-	    : index == 1	  ? node->uptime_inode
-	    : index == 2	  ? node->meminfo_inode
-	    : index == 3	  ? node->cpuinfo_inode
-	    : index == 4	  ? node->modules_inode
-	    : index == 5	  ? node->pci_inode
-	    : index == 6	  ? node->usb_inode
-	    : index == 7	  ? node->disks_inode
-				  : index == 8	  ? node->cmdline_inode
-				  : index == 9       ? node->netpci_inode
-				  : index == 10      ? node->netif_inode
-							  : index == 11 ? node->dapi_inode : index == 12 ? node->audiopci_inode : index == 13 ? node->hdacodecs_inode : node->hdatest_inode;
-	entry->type = VNODE_REGULAR;
-	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
+	memcpy(&entry->inode, (const char *)node + entries[index].inode_offset,
+	    sizeof(entry->inode));
+	entry->type = entries[index].type;
+	memcpy(entry->name, entries[index].name, strlen(entries[index].name) + 1U);
 	return 1;
 }
 
@@ -759,7 +750,6 @@ procfs_mount(const char *path)
 	root->disks_inode = vfs_allocate_inode();
 	root->cmdline_inode = vfs_allocate_inode();
 	root->netpci_inode = vfs_allocate_inode();
-	root->netif_inode = vfs_allocate_inode();
 	root->dapi_inode = vfs_allocate_inode();
 	root->audiopci_inode = vfs_allocate_inode();
 	root->hdacodecs_inode = vfs_allocate_inode();
@@ -769,7 +759,7 @@ procfs_mount(const char *path)
 	    root->modules_inode == 0 || root->pci_inode == 0 ||
 	    root->usb_inode == 0 || root->disks_inode == 0 ||
 	    root->cmdline_inode == 0 || root->netpci_inode == 0 ||
-	    root->netif_inode == 0 || root->dapi_inode == 0 || root->audiopci_inode == 0 || root->hdacodecs_inode == 0 || root->hdatest_inode == 0) {
+	    root->dapi_inode == 0 || root->audiopci_inode == 0 || root->hdacodecs_inode == 0 || root->hdatest_inode == 0) {
 		vnode_put(&root->vnode);
 		return -ENOMEM;
 	}

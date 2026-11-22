@@ -1142,6 +1142,26 @@ static int nanosleep_check(void)
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
  return 0;
 }
+static int procfs_directory_check(void)
+{
+ const char *names[]={"self","uptime","meminfo","cpuinfo","modules","pci","usb",
+     "disks","cmdline","netpci","dapi","audiopci","hdacodecs","hdatest"};
+ DIR *directory=opendir("/proc"); CHECK(directory);
+ uint64_t inodes[sizeof names/sizeof names[0]];
+ for(size_t i=0;i<sizeof names/sizeof names[0];i++) {
+  struct dirent *entry=readdir(directory);
+  CHECK(entry && !strcmp(entry->d_name,names[i]) && entry->d_ino);
+  CHECK(entry->d_type==(i==0 ? DT_DIR : DT_REG));
+  inodes[i]=entry->d_ino;
+  for(size_t j=0;j<i;j++) CHECK(inodes[j]!=inodes[i]);
+ }
+ errno=0;
+ CHECK(!readdir(directory) && !errno && closedir(directory)==0);
+ struct stat st;
+ CHECK(stat("/proc/netif",&st)==-1 && errno==ENOENT);
+ CHECK(stat("/proc/dapi",&st)==0 && st.st_ino==inodes[10]);
+ return 0;
+}
 static int sysctl_check(void)
 {
  struct os_process_info processes[OS_PROCESS_INFO_MAX];
@@ -1275,6 +1295,8 @@ int main(int argc, char **argv)
  if(clock_gettime(CLOCK_MONOTONIC,&t)) return 5;
  int sleep_result=nanosleep_check();
  if(sleep_result) return sleep_result;
+ int procfs_result=procfs_directory_check();
+ if(procfs_result) return procfs_result;
  int sysctl_result=sysctl_check();
  if(sysctl_result) return sysctl_result;
  int large_io_result=large_iovec_check();

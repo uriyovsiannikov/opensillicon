@@ -287,3 +287,5 @@ active device name, `net.inet.ip.config` is an `os_ipv4_config`, and
 configuration is unavailable. These are OpenSillicon MIB nodes, not a complete
 BSD routing or interface tree. ifconfig and libc's resolver use this shared
 interface. Rebuild static applications for ABI v14.
+The unused `/proc/netif` export and the private userspace network wrappers
+are removed. Static network configuration retrieval no longer requires procfs.
