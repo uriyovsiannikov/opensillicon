@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/silliconfs.h"
