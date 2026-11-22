@@ -12,9 +12,6 @@
 #define U_O_RDONLY 0U
 #define U_O_WRONLY 1U
 #define U_O_CREAT 0x40U
-#define U_SIGINT 2U
-#define U_SIGKILL 9U
-#define U_SIGTERM 15U
 #define U_EXEC_ARG_MAX 16U
 #define U_TIOCSRAW 0x4f530001U
 #define U_TIOCCANON 0x4f530002U
@@ -68,7 +65,6 @@ long u_getpid(void);
 long u_process_info(struct os_process_info *entries, size_t capacity);
 long u_framebuffer_info(struct os_framebuffer_info *info);
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect);
-long u_kill(uint64_t pid, uint64_t signo);
 _Noreturn void u_exit(uint64_t status);
 size_t u_strlen(const char *string);
 int u_streq(const char *left, const char *right);

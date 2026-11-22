@@ -438,6 +438,7 @@ static int shell_path_check(void)
 }
 static int process_check(void)
 {
+	CHECK(kill(getpid(),0)==0);
  sigset_t set, old, current;
  sigemptyset(&set);
  sigaddset(&set,SIGUSR1);

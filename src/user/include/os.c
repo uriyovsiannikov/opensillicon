@@ -46,8 +46,6 @@ long u_framebuffer_info(struct os_framebuffer_info *info)
 { return syscall4(SYSCALL_FRAMEBUFFER_INFO, (uintptr_t)info, 0, 0, 0); }
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect)
 { return syscall4(SYSCALL_FRAMEBUFFER_PRESENT_RECT, (uintptr_t)rect, 0, 0, 0); }
-long u_kill(uint64_t pid, uint64_t signo)
-{ return syscall4(SYSCALL_KILL, pid, signo, 0, 0); }
 _Noreturn void u_exit(uint64_t status)
 {
 	(void)syscall4(SYSCALL_EXIT, status, 0, 0, 0);
