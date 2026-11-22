@@ -7,7 +7,7 @@ prefix="$root/src/build/x11/prefix"
 cc=${CC:-gcc}
 build_triplet=$(sh "$root/src/tools/pkg/repo/_src/twm/deps/libX11/config.guess")
 gcc_include=$($cc -print-file-name=include)
-cflags="-std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone"
+cflags="-D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone"
 cppflags="-DOPEN_SILLICON -nostdinc -isystem $gcc_include -I$root/src/build/musl/sysroot/include -I$root/src/build/musl/sysroot/include/sys -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
