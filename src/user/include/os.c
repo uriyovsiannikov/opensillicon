@@ -16,8 +16,6 @@ syscall4(uint64_t number, uint64_t first, uint64_t second, uint64_t third,
 
 long u_write(uint64_t fd, const void *buffer, size_t length)
 { return syscall4(SYSCALL_WRITE, fd, (uintptr_t)buffer, length, 0); }
-long u_read(uint64_t fd, void *buffer, size_t length)
-{ return syscall4(SYSCALL_READ, fd, (uintptr_t)buffer, length, 0); }
 long u_power_control(uint64_t command)
 { return syscall4(SYSCALL_POWER_CONTROL, command, 0, 0, 0); }
 long u_kldload(const char *path)

@@ -14,7 +14,6 @@
 #define U_POWER_CONTROL_REBOOT 2U
 
 long u_write(uint64_t fd, const void *buffer, size_t length);
-long u_read(uint64_t fd, void *buffer, size_t length);
 long u_power_control(uint64_t command);
 long u_kldload(const char *path);
 long u_kldunload(const char *name);

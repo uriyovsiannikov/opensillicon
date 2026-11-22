@@ -75,10 +75,7 @@ print_history(void)
 {
 	size_t i;
 	for (i = 0; i < history_count; i++) {
-		u_put_u64(i + 1);
-		u_puts("  ");
-		u_puts(command_history[history_slot(i)]);
-		u_puts("\n");
+		printf("%zu  %s\n", i + 1, command_history[history_slot(i)]);
 	}
 }
 
@@ -103,11 +100,11 @@ reap_background_children(void)
 static void
 print_error(const char *operation, const char *path)
 {
-	u_puts("sh: ");
-	u_puts(operation);
-	u_puts(": ");
-	u_puts(path);
-	u_puts(" failed\n");
+	fputs("sh: ", stdout);
+	fputs(operation, stdout);
+	fputs(": ", stdout);
+	fputs(path, stdout);
+	fputs(" failed\n", stdout);
 }
 
 static int
@@ -202,7 +199,7 @@ print_help_commands(void)
 	char (*names)[HELP_NAME_CAPACITY] = calloc(internal_count + HELP_COMMAND_LIMIT,
 	    sizeof(*names));
 	if (names == NULL) {
-		u_puts("sh: cannot allocate command list\n");
+		fputs("sh: cannot allocate command list\n", stdout);
 		return;
 	}
 	for (size_t i = 0; i < internal_count; i++)
@@ -223,28 +220,28 @@ print_help_commands(void)
 	if (columns > max_columns)
 		columns = max_columns;
 	uint64_t rows = (total + columns - 1) / columns;
-	u_puts("Available commands:\n");
+	fputs("Available commands:\n", stdout);
 	for (uint64_t row = 0; row < rows; row++) {
 		for (uint64_t column = 0; column < columns; column++) {
 			uint64_t index = row * columns + column;
 			if (index >= total)
 				continue;
 			size_t length = strlen(names[index]);
-			u_puts(names[index]);
+			fputs(names[index], stdout);
 			if (column + 1 < columns && index + 1 < total) {
 				uint64_t spaces = length < HELP_COLUMN_WIDTH ?
 				    HELP_COLUMN_WIDTH - length : 2;
 				while (spaces-- != 0)
-					u_puts(" ");
+					fputs(" ", stdout);
 			}
 		}
-		u_puts("\n");
+		fputs("\n", stdout);
 	}
 	free(names);
 	if (listing_error != 0)
-		u_puts(listing_error == -2 ?
+		fputs(listing_error == -2 ?
 		    "sh: PATH has more than 128 external commands\n" :
-		    "sh: cannot read PATH commands; listed internal commands only\n");
+		    "sh: cannot read PATH commands; listed internal commands only\n", stdout);
 }
 
 static void
@@ -263,7 +260,7 @@ command_external(const char *const argv[], int background,
 	if (background) {
 		reap_background_children();
 		if (background_child_count == BACKGROUND_CHILD_LIMIT) {
-			u_puts("sh: too many unreaped background commands\n");
+			fputs("sh: too many unreaped background commands\n", stdout);
 			goto resume_editor;
 		}
 	}
@@ -275,9 +272,9 @@ command_external(const char *const argv[], int background,
 	if (child == 0) {
 		(void)execvp(command, (char *const *)argv);
 		if (errno == ENOENT || errno == ENOTDIR) {
-			u_puts("sh: command not found: ");
-			u_puts(command);
-			u_puts("\n");
+			fputs("sh: command not found: ", stdout);
+			fputs(command, stdout);
+			fputs("\n", stdout);
 		} else {
 			print_error("exec", command);
 		}
@@ -290,17 +287,16 @@ command_external(const char *const argv[], int background,
 		if (wait_result < 0)
 			print_error("waitpid", command);
 		else if (status != 0) {
-		u_puts("sh: command exited status ");
-		u_put_u64(WIFSIGNALED(status) ? 128U + WTERMSIG(status) :
-		    WEXITSTATUS(status));
-		u_puts("\n");
+			printf("sh: command exited status %u\n",
+			    WIFSIGNALED(status) ? 128U + WTERMSIG(status) :
+			    (unsigned int)WEXITSTATUS(status));
 		}
 	} else {
 		background_children[background_child_count++] = child;
 	}
 resume_editor:
 	if (interactive && tcsetattr(STDIN_FILENO, TCSANOW, &editor_attributes) < 0) {
-		u_puts("sh: cannot restore interactive input mode\n");
+		fputs("sh: cannot restore interactive input mode\n", stdout);
 		_exit(1);
 	}
 }
@@ -308,29 +304,27 @@ resume_editor:
 static void
 redraw_line(const char *line, size_t length, size_t cursor)
 {
-	u_puts("\r");
-	u_puts(current_directory);
-	u_puts("% ");
+	fputs("\r", stdout);
+	fputs(current_directory, stdout);
+	fputs("% ", stdout);
 	if (cursor_visible && !xterm_cursor) {
-		u_putn(line, cursor);
-		u_puts("\033[7m");
+		fwrite(line, 1, cursor, stdout);
+		fputs("\033[7m", stdout);
 		if (cursor < length)
-			u_putn(line + cursor, 1);
+			fwrite(line + cursor, 1, 1, stdout);
 		else
-			u_puts(" ");
-		u_puts("\033[0m");
+			fputs(" ", stdout);
+		fputs("\033[0m", stdout);
 		if (cursor < length)
-			u_putn(line + cursor + 1, length - cursor - 1);
+			fwrite(line + cursor + 1, 1, length - cursor - 1, stdout);
 	} else {
-		u_putn(line, length);
+		fwrite(line, 1, length, stdout);
 	}
-	u_puts("\033[K");
+	fputs("\033[K", stdout);
 	if (cursor_visible && !xterm_cursor && cursor == length) {
-		u_puts("\033[1D");
+		fputs("\033[1D", stdout);
 	} else if (cursor < length) {
-		u_puts("\033[");
-		u_put_u64(length - cursor);
-		u_puts("D");
+		printf("\033[%zuD", length - cursor);
 	}
 }
 
@@ -517,14 +511,14 @@ complete_line(char *line, size_t *length, size_t *cursor)
 			cursor_visible = 0;
 			redraw_line(line, *length, *cursor);
 			cursor_visible = restore_cursor;
-			u_puts("\r\n");
+			fputs("\r\n", stdout);
 			for (size_t i = 0; i < count; i++) {
-				u_puts(candidates[i].name);
+				fputs(candidates[i].name, stdout);
 				if (candidates[i].is_directory)
-					u_puts("/");
-				u_puts("  ");
+					fputs("/", stdout);
+				fputs("  ", stdout);
 			}
-			u_puts("\r\n");
+			fputs("\r\n", stdout);
 		}
 		redraw_line(line, *length, *cursor);
 		return;
@@ -542,12 +536,12 @@ complete_line(char *line, size_t *length, size_t *cursor)
 		cursor_visible = 0;
 		redraw_line(line, *length, *cursor);
 		cursor_visible = restore_cursor;
-		u_puts("\r\n");
+		fputs("\r\n", stdout);
 		for (size_t i = 0; i < count; i++) {
-			u_puts(candidates[i].name);
-			u_puts("  ");
+			fputs(candidates[i].name, stdout);
+			fputs("  ", stdout);
 		}
-		u_puts("\r\n");
+		fputs("\r\n", stdout);
 	}
 	redraw_line(line, *length, *cursor);
 }
@@ -562,8 +556,10 @@ read_command_line(char *line)
 	for (;;) {
 		char character;
 		reap_background_children();
-		long amount = u_read(0, &character, 1);
-		if (amount == -11) {
+		ssize_t amount = read(STDIN_FILENO, &character, 1);
+		if (amount < 0 && errno == EINTR)
+			continue;
+		if (amount < 0 && errno == EAGAIN) {
 			cursor_visible = !cursor_visible;
 			redraw_line(line, length, cursor);
 			continue;
@@ -571,7 +567,7 @@ read_command_line(char *line)
 		if (amount == 0)
 			return 0;
 		if (amount < 0)
-			return (int)amount;
+			return -errno;
 		cursor_visible = 1;
 		if (character == '\n' || character == '\r') {
 			line[length] = '\0';
@@ -579,20 +575,20 @@ read_command_line(char *line)
 			 * from the screen before leaving the editor for command output. */
 			cursor_visible = 0;
 			redraw_line(line, length, length);
-			u_puts("\n");
+			fputs("\n", stdout);
 			remember_command(line);
 			return 1;
 		}
 		if ((uint8_t)character == 0x1bU) {
 			char sequence[2];
-			if (u_read(0, sequence, sizeof(sequence)) !=
+			if (read(STDIN_FILENO, sequence, sizeof(sequence)) !=
 			    (long)sizeof(sequence) || sequence[0] != '[')
 				continue;
 			if (sequence[1] >= '0' && sequence[1] <= '9') {
 				/* Ignore parameterized keys the line editor does not use. */
 				char final = sequence[1];
 				for (unsigned int i = 0; i < 8 && final < '@'; i++) {
-					if (u_read(0, &final, 1) != 1)
+					if (read(STDIN_FILENO, &final, 1) != 1)
 						break;
 				}
 				continue;
@@ -655,7 +651,7 @@ read_command_line(char *line)
 		}
 		if ((uint8_t)character == 4U) {
 			if (length == 0) {
-				u_puts("\n");
+				fputs("\n", stdout);
 				return 0;
 			}
 			if (cursor < length) {
@@ -669,8 +665,8 @@ read_command_line(char *line)
 			continue;
 		}
 		if ((uint8_t)character == 3U) {
-			u_puts("^C\n");
-			return -2;
+			fputs("^C\n", stdout);
+			return -ECANCELED;
 		}
 		if ((uint8_t)character < 0x20U || (uint8_t)character > 0x7eU ||
 		    length + 1 >= LINE_CAPACITY)
@@ -701,7 +697,7 @@ run_command(char *line, int interactive)
 		    *cursor == '\n') cursor++;
 		if (*cursor == '\0') break;
 		if (count == ARGUMENT_CAPACITY) {
-			u_puts("sh: too many arguments\n");
+			fputs("sh: too many arguments\n", stdout);
 			return 1;
 		}
 		arguments[count++] = cursor;
@@ -726,7 +722,7 @@ run_command(char *line, int interactive)
 		print_help_commands();
 	} else if (strcmp(arguments[0], "history") == 0) {
 		if (count != 1)
-			u_puts("usage: history\n");
+			fputs("usage: history\n", stdout);
 		else
 			print_history();
 	} else if (strcmp(arguments[0], "cd") == 0) {
@@ -749,12 +745,14 @@ int
 main(int argc, char **argv)
 {
 	char line[LINE_CAPACITY];
+	/* Prompts and editor redraws must reach the terminal before read/fork. */
+	setvbuf(stdout, NULL, _IONBF, 0);
 	if (getenv("TERM") == NULL && setenv("TERM", "xterm", 0) != 0) {
-		u_puts("OpenSillicon shell: cannot initialize TERM\n");
+		fputs("OpenSillicon shell: cannot initialize TERM\n", stdout);
 		return 1;
 	}
 	if (getcwd(current_directory, sizeof(current_directory)) == NULL) {
-		u_puts("OpenSillicon shell: getcwd failed\n");
+		fputs("OpenSillicon shell: getcwd failed\n", stdout);
 		_exit(1);
 	}
 	if (argc == 3 && strcmp(argv[1], "-c") == 0) {
@@ -765,7 +763,7 @@ main(int argc, char **argv)
 	if (argc == 2 && strcmp(argv[1], "--xterm") == 0) {
 		xterm_cursor = 1;
 	} else if (argc > 1) {
-		u_puts("usage: sh [-c command] [--xterm]\n");
+		fputs("usage: sh [-c command] [--xterm]\n", stdout);
 		_exit(2);
 	}
 	if (tcgetattr(STDIN_FILENO, &command_attributes) < 0) {
@@ -784,8 +782,8 @@ main(int argc, char **argv)
 	for (;;) {
 		int result;
 		if (!waiting_for_keyboard) {
-			u_puts(current_directory);
-			u_puts("# ");
+			fputs(current_directory, stdout);
+			fputs("# ", stdout);
 			cursor_visible = 1;
 			redraw_line(line, 0, 0);
 		}
@@ -795,18 +793,18 @@ main(int argc, char **argv)
 			_exit(0);
 		}
 		if (result < 0) {
-			if (result == -2)
+			if (result == -ECANCELED)
 				continue;
-			if (result == -19) {
+			if (result == -ENODEV) {
 				if (!waiting_for_keyboard) {
-					u_puts("\nOpenSillicon shell: no keyboard controller available\n");
+					fputs("\nOpenSillicon shell: no keyboard controller available\n", stdout);
 					waiting_for_keyboard = true;
 				}
 				const struct timespec delay = {.tv_sec = 1};
 				(void)nanosleep(&delay, NULL);
 				continue;
 			}
-			(void)u_puts("\n");
+			(void)fputs("\n", stdout);
 			print_error("read", "stdin");
 			continue;
 		}

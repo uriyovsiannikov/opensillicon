@@ -90,10 +90,8 @@ $(BUILD_DIR)/init.elf: $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/shell.elf: $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) \
-		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_shell.o src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o \
-		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_shell.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/populate_root: src/tools/populate_root.c src/kernel/fs/vfs/vfs.c \

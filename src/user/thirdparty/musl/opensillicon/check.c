@@ -702,10 +702,15 @@ static int shell_pty_check(void)
  CHECK(shell_pty_output(pair[0],"","% "));
  CHECK(tcgetattr(pair[1],&actual)==0 && !(actual.c_lflag&(ICANON|ECHO)) &&
      actual.c_oflag==original.c_oflag && actual.c_cc[VERASE]==8);
+ const char cancel[]="discard\003";
+ CHECK(write(pair[0],cancel,sizeof cancel-1)==sizeof cancel-1);
+ CHECK(shell_pty_output(pair[0],"^C","% "));
  const char command[]="/sbin/init --shell-tty-check\n";
  CHECK(write(pair[0],command,sizeof command-1)==sizeof command-1);
  CHECK(shell_pty_output(pair[0],"SHELL_TTY_OK","% "));
  CHECK(tcgetattr(pair[1],&actual)==0 && !(actual.c_lflag&(ICANON|ECHO)));
+ CHECK(write(pair[0],"history\n",8)==8);
+ CHECK(shell_pty_output(pair[0],"1  /sbin/init --shell-tty-check","% "));
  CHECK(write(pair[0],"exit\n",5)==5);
  int status;
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));

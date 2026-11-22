@@ -2,11 +2,6 @@
 #include "../../user/shell/shell.c"
 #undef main
 
-/* These editor writes are irrelevant to the completed input line. */
-void u_puts(const char *text) { (void)text; }
-void u_putn(const char *text, size_t length) { (void)text; (void)length; }
-void u_put_u64(uint64_t value) { (void)value; }
-
 int
 main(int argc, char **argv)
 {
@@ -25,7 +20,16 @@ main(int argc, char **argv)
 		return 2;
 	strcpy(line, argv[2]);
 	size_t length = strlen(line), cursor = length;
+	/* Exercise real stdio output, keeping editor escape sequences out of the report. */
+	FILE *editor = tmpfile();
+	int report = dup(STDOUT_FILENO);
+	if (editor == NULL || report < 0 || fflush(stdout) != 0 ||
+	    dup2(fileno(editor), STDOUT_FILENO) < 0)
+		return 6;
 	complete_line(line, &length, &cursor);
+	if (fflush(stdout) != 0 || dup2(report, STDOUT_FILENO) < 0 ||
+	    close(report) != 0 || fclose(editor) != 0)
+		return 7;
 	printf("COMPLETE %s\n", line);
 	const char *command[] = {"/bin/true", NULL};
 	command_external(command, 0, 0);
