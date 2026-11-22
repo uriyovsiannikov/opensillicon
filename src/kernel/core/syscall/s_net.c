@@ -43,7 +43,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_UDP_BIND:
 		{
-			struct udp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
 			int result;
@@ -69,7 +69,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_UDP_CONNECT:
 		{
-			struct udp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
 			int result;
@@ -126,7 +126,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_UDP_SENDTO:
 		{
-			struct udp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			uint8_t payload[UDP_SOCKET_PAYLOAD_LIMIT];
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
@@ -183,7 +183,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			    vmm_active_address_space(), frame->rsi,
 			    (size_t)frame->rdx)) || !vmm_validate_user_write(
 			    vmm_active_address_space(), frame->r10,
-			    sizeof(struct udp_socket_endpoint))) {
+			    sizeof(struct os_ipv4_endpoint))) {
 				syscall_error(frame, EFAULT);
 				break;
 			}
@@ -226,7 +226,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 	case SYSCALL_TCP_BIND:
 	case SYSCALL_TCP_CONNECT:
 		{
-			struct tcp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
 			int result;
@@ -279,7 +279,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_TCP_ACCEPT:
 		{
-			struct tcp_socket_endpoint peer;
+			struct os_ipv4_endpoint peer;
 			struct address_space *space = vmm_active_address_space();
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
@@ -418,7 +418,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 	case SYSCALL_TCP_GETSOCKNAME:
 	case SYSCALL_TCP_GETPEERNAME:
 		{
-			struct tcp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			struct address_space *space = vmm_active_address_space();
 			struct fd_object *object = fd_object_for_descriptor(
 				current_fd_table(), frame->rdi);
@@ -453,7 +453,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 	case SYSCALL_UDP_GETSOCKNAME:
 	case SYSCALL_UDP_GETPEERNAME:
 		{
-			struct udp_socket_endpoint endpoint;
+			struct os_ipv4_endpoint endpoint;
 			struct address_space *space = vmm_active_address_space();
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);

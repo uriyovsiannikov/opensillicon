@@ -17,7 +17,7 @@
 #define UDP_PROTOCOL 17U
 
 struct udp_queue_entry {
-	struct udp_socket_endpoint source;
+	struct os_ipv4_endpoint source;
 	size_t length;
 	uint8_t payload[UDP_SOCKET_PAYLOAD_LIMIT];
 };
@@ -27,8 +27,8 @@ struct udp_socket_state {
 	bool bound;
 	bool connected;
 	bool send_busy;
-	struct udp_socket_endpoint local;
-	struct udp_socket_endpoint remote;
+	struct os_ipv4_endpoint local;
+	struct os_ipv4_endpoint remote;
 	struct udp_queue_entry queue[UDP_SOCKET_QUEUE_LIMIT];
 	size_t queue_head;
 	size_t queue_count;
@@ -268,7 +268,7 @@ udp_socket_create_fd(struct fd_table *table, uint64_t family,
 
 static bool
 bind_conflicts(const struct udp_socket_state *candidate,
-	const struct udp_socket_endpoint *endpoint)
+	const struct os_ipv4_endpoint *endpoint)
 {
 	for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++) {
 		const struct udp_socket_state *other = &sockets[i];
@@ -285,9 +285,9 @@ bind_conflicts(const struct udp_socket_state *candidate,
 
 static int
 bind_socket(struct udp_socket_state *state,
-	const struct udp_socket_endpoint *requested)
+	const struct os_ipv4_endpoint *requested)
 {
-	struct udp_socket_endpoint endpoint = *requested;
+	struct os_ipv4_endpoint endpoint = *requested;
 	if (!address_is_zero(endpoint.address) &&
 	    !address_is_local(endpoint.address))
 		return -EADDRNOTAVAIL;
@@ -316,7 +316,7 @@ bind_socket(struct udp_socket_state *state,
 	    cyclone_udp_receive, state)) {
 		flags = state_guard_enter();
 		state->bound = false;
-		state->local = (struct udp_socket_endpoint){0};
+		state->local = (struct os_ipv4_endpoint){0};
 		state_guard_leave(flags);
 		return -EIO;
 	}
@@ -333,7 +333,7 @@ already_bound:
 static int
 ensure_bound(struct udp_socket_state *state)
 {
-	struct udp_socket_endpoint local = {0};
+	struct os_ipv4_endpoint local = {0};
 	uint64_t flags = state_guard_enter();
 	bool bound = state->bound;
 	state_guard_leave(flags);
@@ -352,7 +352,7 @@ ensure_bound(struct udp_socket_state *state)
 
 int
 udp_socket_bind(struct fd_object *object,
-	const struct udp_socket_endpoint *endpoint)
+	const struct os_ipv4_endpoint *endpoint)
 {
 	uint64_t flags = state_guard_enter();
 	struct udp_socket_state *state = socket_state(object);
@@ -377,7 +377,7 @@ udp_socket_bind(struct fd_object *object,
 
 int
 udp_socket_connect(struct fd_object *object,
-	const struct udp_socket_endpoint *endpoint)
+	const struct os_ipv4_endpoint *endpoint)
 {
 	struct udp_socket_state *state;
 	uint64_t flags;
@@ -410,7 +410,7 @@ int
 udp_socket_send(struct fd_object *object, const uint8_t *payload,
 	size_t length)
 {
-	struct udp_socket_endpoint destination;
+	struct os_ipv4_endpoint destination;
 	uint64_t flags = state_guard_enter();
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
@@ -486,7 +486,7 @@ network_icmp_echo(struct icmp_echo_request *request)
 
 int
 udp_socket_sendto(struct fd_object *object,
-	const struct udp_socket_endpoint *destination, const uint8_t *payload,
+	const struct os_ipv4_endpoint *destination, const uint8_t *payload,
 	size_t length)
 {
 	struct udp_socket_state *state;
@@ -615,7 +615,7 @@ udp_socket_consume(struct fd_object *object)
 
 int
 udp_socket_local_endpoint(struct fd_object *object,
-	struct udp_socket_endpoint *endpoint)
+	struct os_ipv4_endpoint *endpoint)
 {
 	uint64_t flags = state_guard_enter();
 	struct udp_socket_state *state = socket_state(object);
@@ -630,7 +630,7 @@ udp_socket_local_endpoint(struct fd_object *object,
 
 int
 udp_socket_peer_endpoint(struct fd_object *object,
-	struct udp_socket_endpoint *endpoint)
+	struct os_ipv4_endpoint *endpoint)
 {
 	uint64_t flags = state_guard_enter();
 	struct udp_socket_state *state = socket_state(object);

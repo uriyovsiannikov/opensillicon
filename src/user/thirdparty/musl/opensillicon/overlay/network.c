@@ -7,27 +7,25 @@
 #include <stdint.h>
 #include <string.h>
 #include "abi/syscall.h"
+#include "abi/inet.h"
 long __os_native_call(long,long,long,long,long,long,long);
 #define call __os_native_call
-/* Native IPv4 addresses contain four octets and a host-order port. */
-struct endpoint { unsigned char ip[4]; uint16_t port; };
-_Static_assert(sizeof(struct endpoint)==6,"native endpoint size");
-static long from_address(long address,long size,struct endpoint *ep)
+static long from_address(long address,long size,struct os_ipv4_endpoint *ep)
 {
  if(!address) return -EFAULT;
  if(size<sizeof(struct sockaddr_in)) return -EINVAL;
  const struct sockaddr_in *in=(const void *)address;
  if(in->sin_family!=AF_INET) return -EAFNOSUPPORT;
- memcpy(ep->ip,&in->sin_addr,4);
+ memcpy(ep->address,&in->sin_addr,4);
  ep->port=ntohs(in->sin_port);
  return 0;
 }
-static long to_address(const struct endpoint *ep,long address,long length)
+static long to_address(const struct os_ipv4_endpoint *ep,long address,long length)
 {
  if(!address) return 0;
  if(!length) return -EFAULT;
  struct sockaddr_in in={.sin_family=AF_INET,.sin_port=htons(ep->port)};
- memcpy(&in.sin_addr,ep->ip,4);
+ memcpy(&in.sin_addr,ep->address,4);
  socklen_t *size=(void *)length;
  memcpy((void *)address,&in,*size<sizeof in ? *size : sizeof in);
  *size=sizeof in;
@@ -115,7 +113,7 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
  long kind=call(SYSCALL_SOCKET_KIND,a,0,0,0,0,0);
  if(kind<0) return kind;
  int unix_socket=kind==OS_SOCKET_KIND_UNIX, tcp=kind==OS_SOCKET_KIND_TCP;
- struct endpoint ep={0};
+ struct os_ipv4_endpoint ep={0};
  long op, r;
  switch(n) {
  case SYS_bind: case SYS_connect:

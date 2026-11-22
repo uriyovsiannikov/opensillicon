@@ -42,3 +42,4 @@ install -D -m 644 "$root/src/include/abi/sysctl.h" "$build/sysroot/include/abi/s
 install -D -m 644 "$root/src/include/abi/fcntl.h" "$build/sysroot/include/abi/fcntl.h"
 install -D -m 644 "$root/src/include/abi/time.h" "$build/sysroot/include/abi/time.h"
 install -D -m 644 "$root/src/include/abi/dirent.h" "$build/sysroot/include/abi/dirent.h"
+install -D -m 644 "$root/src/include/abi/inet.h" "$build/sysroot/include/abi/inet.h"

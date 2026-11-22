@@ -294,7 +294,7 @@ out:
 
 int
 tcp_socket_bind(struct fd_object *object,
-	const struct tcp_socket_endpoint *endpoint)
+	const struct os_ipv4_endpoint *endpoint)
 {
 	struct tcp_socket_state *state = socket_state(object);
 	IpAddr address = { .length = sizeof(Ipv4Addr) };
@@ -334,7 +334,7 @@ tcp_socket_listen(struct fd_object *object, uint64_t backlog)
 
 int
 tcp_socket_connect(struct fd_object *object,
-	const struct tcp_socket_endpoint *endpoint)
+	const struct os_ipv4_endpoint *endpoint)
 {
 	struct tcp_socket_state *state = socket_state(object);
 	IpAddr address = { .length = sizeof(Ipv4Addr) };
@@ -385,7 +385,7 @@ tcp_socket_connect(struct fd_object *object,
 
 int
 tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
-	struct tcp_socket_endpoint *peer)
+	struct os_ipv4_endpoint *peer)
 {
 	struct tcp_socket_state *parent = socket_state(listener);
 	struct tcp_socket_state *child = NULL;
@@ -610,7 +610,7 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 
 int
 tcp_socket_get_name(struct fd_object *object, bool peer,
-	struct tcp_socket_endpoint *endpoint)
+	struct os_ipv4_endpoint *endpoint)
 {
 	struct tcp_socket_state *state = socket_state(object);
 	TcpState tcp_state;

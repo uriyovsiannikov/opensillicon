@@ -32,6 +32,7 @@
 #include "abi/syscall.h"
 #include "abi/fcntl.h"
 #include "abi/dirent.h"
+#include "abi/inet.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -817,6 +818,10 @@ static int network_check(void)
  CHECK(bind(udp,(struct sockaddr *)&local,sizeof local)==0);
  length=sizeof local;
  CHECK(getsockname(udp,(struct sockaddr *)&local,&length)==0 && length==sizeof local && local.sin_port!=0);
+ struct { struct os_ipv4_endpoint value; uint16_t guard; } native_endpoint={.guard=0xabcd};
+ CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,udp,(long)&native_endpoint.value,0,0,0,0)==0);
+ CHECK(native_endpoint.value.port==ntohs(local.sin_port) &&
+     !memcmp(native_endpoint.value.address,&local.sin_addr,4) && native_endpoint.guard==0xabcd);
  CHECK(recv(udp,message,sizeof message,0)==-1 && errno==EAGAIN);
  CHECK(recv(udp,message,(size_t)-1,0)==-1 && errno==EINVAL);
  CHECK(send(udp,message,1,MSG_PEEK)==-1 && errno==EOPNOTSUPP);
@@ -842,6 +847,9 @@ static int network_check(void)
  CHECK(connect(tcp,(struct sockaddr *)&remote,sizeof remote)==0);
  length=sizeof remote;
  CHECK(getpeername(tcp,(struct sockaddr *)&remote,&length)==0 && ntohs(remote.sin_port)==MUSL_TEST_TCP_PORT);
+ CHECK(__os_raw(SYSCALL_TCP_GETPEERNAME,tcp,(long)&native_endpoint.value,0,0,0,0)==0);
+ CHECK(native_endpoint.value.port==ntohs(remote.sin_port) &&
+     !memcmp(native_endpoint.value.address,&remote.sin_addr,4) && native_endpoint.guard==0xabcd);
  CHECK(send(tcp,"hello",5,0)==5);
  memset(message,0,sizeof message);
  int total=0;
