@@ -1,4 +1,8 @@
 #include "syscall_internal.h"
+#include "abi/sysctl.h"
+#include "kernel/pmm.h"
+#include "kernel/smp.h"
+#include "kernel/version.h"
 
 #include "arch/x86_64/acpi.h"
 #include "kernel/block.h"
@@ -10,6 +14,124 @@
 #include "kernel/vmm.h"
 
 #include <string.h>
+
+struct sysctl_value {
+	union {
+		int32_t integer;
+		uint64_t wide;
+	} number;
+	const void *data;
+	size_t size;
+};
+
+static int
+sysctl_value(const int name[2], struct sysctl_value *value)
+{
+	const char *text = NULL;
+	if (name[0] == CTL_KERN) {
+		switch (name[1]) {
+		case KERN_OSTYPE: text = KERNEL_OSTYPE; break;
+		case KERN_OSRELEASE: text = KERNEL_OSRELEASE; break;
+		case KERN_VERSION: text = KERNEL_VERSION; break;
+		case KERN_HOSTNAME: text = KERNEL_HOSTNAME; break;
+		default: return ENOENT;
+		}
+	} else if (name[0] == CTL_VM && name[1] == VM_FREEPAGES) {
+		value->number.wide = pmm_free_pages();
+		value->data = &value->number.wide;
+		value->size = sizeof(value->number.wide);
+		return 0;
+	} else if (name[0] == CTL_HW) {
+		switch (name[1]) {
+		case HW_MACHINE:
+		case HW_MACHINE_ARCH:
+			text = KERNEL_MACHINE;
+			break;
+		case HW_NCPU:
+			value->number.integer = (int32_t)smp_online_count();
+			break;
+		case HW_BYTEORDER:
+			value->number.integer = 1234;
+			break;
+		case HW_PAGESIZE:
+			value->number.integer = PMM_PAGE_SIZE;
+			break;
+		case HW_PHYSMEM:
+			if (pmm_usable_pages() > UINT64_MAX / PMM_PAGE_SIZE)
+				return EOVERFLOW;
+			value->number.wide = pmm_usable_pages() * PMM_PAGE_SIZE;
+			value->data = &value->number.wide;
+			value->size = sizeof(value->number.wide);
+			return 0;
+		default: return ENOENT;
+		}
+		if (text == NULL) {
+			value->data = &value->number.integer;
+			value->size = sizeof(value->number.integer);
+			return 0;
+		}
+	} else {
+		return ENOENT;
+	}
+	value->data = text;
+	value->size = strlen(text) + 1;
+	return 0;
+}
+
+static struct interrupt_frame *
+syscall_sysctl(struct interrupt_frame *frame)
+{
+	struct address_space *space = vmm_active_address_space();
+	int name[2];
+	struct sysctl_value value;
+	uint64_t capacity = 0;
+	if (frame->rsi != 2) {
+		syscall_error(frame, EINVAL);
+		return frame;
+	}
+	if (!vmm_copy_from_user(space, name, frame->rdi, sizeof(name))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	int error = sysctl_value(name, &value);
+	if (error != 0) {
+		syscall_error(frame, error);
+		return frame;
+	}
+	if (frame->r8 != 0 || frame->r9 != 0) {
+		syscall_error(frame, frame->r8 != 0 ? EPERM : EINVAL);
+		return frame;
+	}
+	if (frame->r10 == 0) {
+		if (frame->rdx != 0)
+			syscall_error(frame, EFAULT);
+		else
+			frame->rax = 0;
+		return frame;
+	}
+	if (!vmm_validate_user_write(space, frame->r10, sizeof(capacity)) ||
+	    (frame->rdx != 0 && !vmm_copy_from_user(space, &capacity,
+	    frame->r10, sizeof(capacity)))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	uint64_t amount = frame->rdx == 0 ? value.size :
+	    capacity < value.size ? capacity : value.size;
+	if (frame->rdx != 0 && amount != 0 &&
+	    !vmm_copy_to_user(space, frame->rdx, value.data, (size_t)amount)) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	if (!vmm_copy_to_user(space, frame->r10, &amount, sizeof(amount))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	if (frame->rdx != 0 && capacity < value.size)
+		syscall_error(frame, ENOMEM);
+	else
+		frame->rax = 0;
+	return frame;
+}
 
 static uint64_t
 errno_from_module(enum kernel_module_error error)
@@ -34,6 +156,8 @@ syscall_system_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
+	case SYSCALL_SYSCTL:
+		return syscall_sysctl(frame);
 	case SYSCALL_KERNEL_CRASH:
 		{
 			struct os_credentials credentials;

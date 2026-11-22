@@ -8,6 +8,8 @@
 #include "limine.h"
 #include "kernel/boot.h"
 
+#define PMM_PAGE_SIZE 4096ULL
+
 bool pmm_init(const struct boot_info *info,
 	struct bootstrap_allocator *bootstrap);
 bool pmm_alloc_page(uint64_t *physical_address);

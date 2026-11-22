@@ -4,8 +4,6 @@
 #include "kernel/pmm.h"
 #include "kernel/spinlock.h"
 
-#define PAGE_SIZE 4096ULL
-
 struct pmm_metadata_range {
 	uint64_t start;
 	uint64_t end;
@@ -77,10 +75,10 @@ static void
 reserve_metadata_pages(struct pmm_metadata_range *range, uint64_t start,
 	uint64_t end)
 {
-	uint64_t first = start / PAGE_SIZE;
-	uint64_t last = end / PAGE_SIZE + (end % PAGE_SIZE != 0);
+	uint64_t first = start / PMM_PAGE_SIZE;
+	uint64_t last = end / PMM_PAGE_SIZE + (end % PMM_PAGE_SIZE != 0);
 
-	*range = (struct pmm_metadata_range){first * PAGE_SIZE, last * PAGE_SIZE};
+	*range = (struct pmm_metadata_range){first * PMM_PAGE_SIZE, last * PMM_PAGE_SIZE};
 	for (uint64_t frame = first; frame < last && frame < pmm.frame_count; frame++) {
 		if (!bit_is_set(pmm.used, frame))
 			pmm.free_count--;
@@ -103,7 +101,7 @@ page_is_usable(uint64_t physical_address)
 	uint64_t page_end;
 	uint64_t i;
 
-	if (!range_end(physical_address, PAGE_SIZE, &page_end))
+	if (!range_end(physical_address, PMM_PAGE_SIZE, &page_end))
 		return false;
 	for (i = 0; i < pmm.memmap->entry_count; i++) {
 		const struct limine_memmap_entry *entry = pmm.memmap->entries[i];
@@ -150,8 +148,8 @@ pmm_init(const struct boot_info *info, struct bootstrap_allocator *bootstrap)
 		    end > max_address)
 			max_address = end;
 	}
-	frame_count = max_address / PAGE_SIZE +
-	    (max_address % PAGE_SIZE != 0);
+	frame_count = max_address / PMM_PAGE_SIZE +
+	    (max_address % PMM_PAGE_SIZE != 0);
 	if (frame_count == 0 || frame_count > UINT64_MAX - 7)
 		return false;
 	bitmap_bytes_u64 = (frame_count + 7) / 8;
@@ -186,8 +184,8 @@ pmm_init(const struct boot_info *info, struct bootstrap_allocator *bootstrap)
 			continue;
 		if (!range_end(entry->base, entry->length, &end))
 			return false;
-		first = entry->base / PAGE_SIZE + (entry->base % PAGE_SIZE != 0);
-		end_frame = end / PAGE_SIZE;
+		first = entry->base / PMM_PAGE_SIZE + (entry->base % PMM_PAGE_SIZE != 0);
+		end_frame = end / PMM_PAGE_SIZE;
 		for (frame = first; frame < end_frame && frame < pmm.frame_count;
 		    frame++) {
 			if (bit_is_set(pmm.used, frame)) {
@@ -239,7 +237,7 @@ pmm_alloc_page_locked(uint64_t *physical_address)
 		pmm.search_hint = frame + 1;
 		if (pmm.search_hint == pmm.frame_count)
 			pmm.search_hint = 0;
-		*physical_address = frame * PAGE_SIZE;
+		*physical_address = frame * PMM_PAGE_SIZE;
 		return true;
 	}
 	return false;
@@ -260,10 +258,10 @@ pmm_free_page_locked(uint64_t physical_address)
 {
 	uint64_t frame;
 
-	if (!pmm.initialized || (physical_address & (PAGE_SIZE - 1)) != 0 ||
+	if (!pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1)) != 0 ||
 	    page_is_metadata(physical_address) || !page_is_usable(physical_address))
 		return false;
-	frame = physical_address / PAGE_SIZE;
+	frame = physical_address / PMM_PAGE_SIZE;
 	if (frame >= pmm.frame_count || !bit_is_set(pmm.used, frame) ||
 	    pmm.dma_pins[frame] != 0)
 		return false;
@@ -278,9 +276,9 @@ bool
 pmm_page_is_allocated(uint64_t physical_address)
 {
 	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
-	uint64_t frame = physical_address / PAGE_SIZE;
+	uint64_t frame = physical_address / PMM_PAGE_SIZE;
 	bool allocated = pmm.initialized &&
-	    (physical_address & (PAGE_SIZE - 1)) == 0 &&
+	    (physical_address & (PMM_PAGE_SIZE - 1)) == 0 &&
 	    frame < pmm.frame_count && bit_is_set(pmm.used, frame) &&
 	    page_is_usable(physical_address) &&
 	    !page_is_metadata(physical_address);
@@ -294,17 +292,17 @@ pmm_dma_pin_contiguous(uint64_t physical_address, size_t page_count)
 	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
 	uint64_t first;
 	bool valid = pmm.initialized && page_count != 0 &&
-	    (physical_address & (PAGE_SIZE - 1)) == 0 &&
-	    page_count <= UINT64_MAX / PAGE_SIZE;
+	    (physical_address & (PMM_PAGE_SIZE - 1)) == 0 &&
+	    page_count <= UINT64_MAX / PMM_PAGE_SIZE;
 	if (!valid)
 		goto out;
-	first = physical_address / PAGE_SIZE;
+	first = physical_address / PMM_PAGE_SIZE;
 	if (first >= pmm.frame_count || page_count > pmm.frame_count - first) {
 		valid = false;
 		goto out;
 	}
 	for (uint64_t i = 0; i < page_count; i++) {
-		uint64_t address = (first + i) * PAGE_SIZE;
+		uint64_t address = (first + i) * PMM_PAGE_SIZE;
 		if (!bit_is_set(pmm.used, first + i) ||
 		    pmm.dma_pins[first + i] == UINT16_MAX ||
 		    !page_is_usable(address) ||
@@ -326,11 +324,11 @@ pmm_dma_unpin_contiguous(uint64_t physical_address, size_t page_count)
 	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
 	uint64_t first;
 	bool valid = pmm.initialized && page_count != 0 &&
-	    (physical_address & (PAGE_SIZE - 1)) == 0 &&
-	    page_count <= UINT64_MAX / PAGE_SIZE;
+	    (physical_address & (PMM_PAGE_SIZE - 1)) == 0 &&
+	    page_count <= UINT64_MAX / PMM_PAGE_SIZE;
 	if (!valid)
 		goto out;
-	first = physical_address / PAGE_SIZE;
+	first = physical_address / PMM_PAGE_SIZE;
 	if (first >= pmm.frame_count || page_count > pmm.frame_count - first) {
 		valid = false;
 		goto out;
@@ -373,13 +371,13 @@ pmm_alloc_contiguous_locked(size_t page_count, size_t alignment_pages,
 	    alignment_pages == 0 ||
 	    (alignment_pages & (alignment_pages - 1)) != 0 ||
 	    maximum_address_exclusive == 0 ||
-	    page_count > UINT64_MAX / PAGE_SIZE)
+	    page_count > UINT64_MAX / PMM_PAGE_SIZE)
 		return false;
 	count = (uint64_t)page_count;
 	alignment = (uint64_t)alignment_pages;
 	if (count > pmm.free_count)
 		return false;
-	limit_frames = maximum_address_exclusive / PAGE_SIZE;
+	limit_frames = maximum_address_exclusive / PMM_PAGE_SIZE;
 	if (limit_frames > pmm.frame_count)
 		limit_frames = pmm.frame_count;
 	if (count > limit_frames)
@@ -429,7 +427,7 @@ pmm_alloc_contiguous_locked(size_t page_count, size_t alignment_pages,
 	pmm.search_hint = found + count;
 	if (pmm.search_hint >= pmm.frame_count)
 		pmm.search_hint = 0;
-	*physical_address = found * PAGE_SIZE;
+	*physical_address = found * PMM_PAGE_SIZE;
 	return true;
 }
 
@@ -453,15 +451,15 @@ pmm_free_contiguous_locked(uint64_t physical_address, size_t page_count)
 	uint64_t i;
 
 	if (!pmm.initialized || page_count == 0 ||
-	    (physical_address & (PAGE_SIZE - 1)) != 0 ||
-	    page_count > UINT64_MAX / PAGE_SIZE)
+	    (physical_address & (PMM_PAGE_SIZE - 1)) != 0 ||
+	    page_count > UINT64_MAX / PMM_PAGE_SIZE)
 		return false;
-	first = physical_address / PAGE_SIZE;
+	first = physical_address / PMM_PAGE_SIZE;
 	count = (uint64_t)page_count;
 	if (first >= pmm.frame_count || count > pmm.frame_count - first)
 		return false;
 	for (i = 0; i < count; i++) {
-		uint64_t address = (first + i) * PAGE_SIZE;
+		uint64_t address = (first + i) * PMM_PAGE_SIZE;
 
 		if (!bit_is_set(pmm.used, first + i) ||
 		    pmm.dma_pins[first + i] != 0 || !page_is_usable(address) ||
@@ -522,10 +520,10 @@ pmm_test_page_is_allocated(uint64_t physical_address)
 	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
 	bool allocated;
 
-	if (!pmm.initialized || (physical_address & (PAGE_SIZE - 1)) != 0) {
+	if (!pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1)) != 0) {
 		allocated = false;
 	} else {
-		frame = physical_address / PAGE_SIZE;
+		frame = physical_address / PMM_PAGE_SIZE;
 		allocated = frame < pmm.frame_count && bit_is_set(pmm.used, frame);
 	}
 	spinlock_unlock_irqrestore(&pmm_lock, flags);

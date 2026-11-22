@@ -109,6 +109,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_WAITPID] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_KILL] = { .bsp = syscall_proc_bsp },
 	/* System */
+	[SYSCALL_SYSCTL] = { .bsp = syscall_system_bsp },
 	[SYSCALL_POWER_CONTROL] = { .bsp = syscall_system_bsp },
 	[SYSCALL_KERNEL_CRASH] = { .bsp = syscall_system_bsp },
 	[SYSCALL_KLDLOAD] = { .bsp = syscall_system_bsp },

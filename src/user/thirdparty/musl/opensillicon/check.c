@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/syscall.h>
+#include <sys/sysctl.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -686,6 +687,66 @@ static int network_check(void)
  CHECK(socket(AF_INET6,SOCK_STREAM,0)==-1 && errno==EAFNOSUPPORT);
  return 0;
 }
+static int sysctl_check(void)
+{
+ static const struct { const char *name; int mib[2]; int kind; } nodes[]={
+#define CHECK_NODE(symbol,group,value,text,kind) {text,{group,symbol},kind},
+  OS_SYSCTL_NODES(CHECK_NODE)
+#undef CHECK_NODE
+ };
+ for(size_t i=0;i<sizeof nodes/sizeof nodes[0];i++) {
+  size_t bytes=0;
+  CHECK(sysctl(nodes[i].mib,2,NULL,&bytes,NULL,0)==0 && bytes>0);
+  if(nodes[i].kind==OS_SYSCTL_INT32) CHECK(bytes==sizeof(int32_t));
+  if(nodes[i].kind==OS_SYSCTL_UINT64) CHECK(bytes==sizeof(uint64_t));
+  if(nodes[i].kind==OS_SYSCTL_STRING) {
+   char text[128]; size_t capacity=sizeof text;
+   CHECK(sysctlbyname(nodes[i].name,text,&capacity,NULL,0)==0 && capacity==bytes && text[bytes-1]==0);
+  }
+ }
+ size_t length=0;
+ CHECK(sysctlbyname("kern.ostype",NULL,&length,NULL,0)==0 && length==sizeof("OpenSillicon"));
+ struct { char text[32]; uint64_t guard; } output={.guard=0xabcdef1234567890ULL};
+ memset(output.text,0xa5,sizeof output.text);
+ length=4;
+ CHECK(sysctlbyname("kern.ostype",output.text,&length,NULL,0)==-1 && errno==ENOMEM);
+ CHECK(length==4 && !memcmp(output.text,"Open",4) && (unsigned char)output.text[4]==0xa5);
+ CHECK(output.guard==0xabcdef1234567890ULL);
+ length=sizeof output.text;
+ CHECK(sysctlbyname("kern.ostype",output.text,&length,NULL,0)==0 && !strcmp(output.text,"OpenSillicon"));
+ CHECK(length==sizeof("OpenSillicon"));
+ int mib[2]={777,888}; size_t count=1;
+ CHECK(sysctlnametomib("hw.pagesize",mib,&count)==-1 && errno==ENOMEM);
+ CHECK(count==2 && mib[0]==777 && mib[1]==888);
+ CHECK(sysctlnametomib("hw.pagesize",mib,&count)==0 && mib[0]==CTL_HW && mib[1]==HW_PAGESIZE);
+ struct { int value; unsigned guard; } page={0,0xaabbccdd};
+ length=sizeof page.value;
+ CHECK(sysctl(mib,2,&page.value,&length,NULL,0)==0 && page.value==4096 && length==sizeof page.value);
+ CHECK(page.guard==0xaabbccdd);
+ CHECK(sysctl(mib,2,NULL,NULL,NULL,0)==0);
+ CHECK(sysctl(mib,1,NULL,NULL,NULL,0)==-1 && errno==EINVAL);
+ CHECK(sysctl(mib,3,NULL,NULL,NULL,0)==-1 && errno==EINVAL);
+ CHECK(sysctl(mib,2,NULL,NULL,&page.value,sizeof page.value)==-1 && errno==EPERM);
+ CHECK(sysctl(mib,2,NULL,NULL,NULL,1)==-1 && errno==EINVAL);
+ CHECK(sysctlbyname("hw.missing",NULL,&length,NULL,0)==-1 && errno==ENOENT);
+ CHECK(sysctlbyname(NULL,NULL,&length,NULL,0)==-1 && errno==EFAULT);
+ int cpus=0; length=sizeof cpus;
+ CHECK(sysctlbyname("hw.ncpu",&cpus,&length,NULL,0)==0 && cpus>=1);
+ uint64_t memory=0,free_pages=0; length=sizeof memory;
+ CHECK(sysctlbyname("hw.physmem",&memory,&length,NULL,0)==0 && memory>0 && memory%4096==0);
+ length=sizeof free_pages;
+ CHECK(sysctlbyname("vm.freepages",&free_pages,&length,NULL,0)==0 && free_pages<=memory/4096);
+ length=0;
+ CHECK(sysctl(mib,2,output.text,&length,NULL,0)==-1 && errno==ENOMEM && length==0);
+ length=SIZE_MAX;
+ CHECK(sysctl(mib,2,&page.value,&length,NULL,0)==0 && length==sizeof page.value);
+ CHECK(__os_raw(SYSCALL_SYSCTL,1,2,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_SYSCTL,(long)mib,2,0,1,0,0)==-EFAULT);
+ length=sizeof page.value;
+ CHECK(__os_raw(SYSCALL_SYSCTL,(long)mib,2,1,(long)&length,0,0)==-EFAULT);
+ CHECK(length==sizeof page.value && page.guard==0xaabbccdd);
+ return 0;
+}
 int main(int argc, char **argv)
 {
  if(argc==3 && !strcmp(argv[1],"--cloexec-check")) {
@@ -716,6 +777,8 @@ int main(int argc, char **argv)
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
  struct timespec t;
  if(clock_gettime(CLOCK_MONOTONIC,&t)) return 5;
+ int sysctl_result=sysctl_check();
+ if(sysctl_result) return sysctl_result;
  int file_result=files_check();
  if(file_result) return file_result;
  int at_result=openat_check();
@@ -744,6 +807,6 @@ int main(int argc, char **argv)
  if(network_result) return network_result;
  int dns_result=dns_check();
  if(dns_result) return dns_result;
- printf("MUSL_PASS pid=%ld tls=%d ctor=%d malloc=ok errno=ok files=ok processes=ok signals=ok sockets=ok poll=ok dns=ok terminal=ok ncurses=ok openat=ok append=ok duplication=ok sigaction=ok nested-signals=ok\n",(long)getpid(),tls,constructed);
+ printf("MUSL_PASS pid=%ld tls=%d ctor=%d malloc=ok errno=ok files=ok processes=ok signals=ok sockets=ok poll=ok dns=ok terminal=ok ncurses=ok openat=ok append=ok duplication=ok sigaction=ok nested-signals=ok sysctl=ok\n",(long)getpid(),tls,constructed);
  return 0;
 }

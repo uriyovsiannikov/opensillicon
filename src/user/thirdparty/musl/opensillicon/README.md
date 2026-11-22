@@ -212,3 +212,16 @@ ABI v8 removes the private READDIR call (slot 17), its userspace wrapper and
 its metadata-bearing directory structure. Applications use libc directory
 streams over GETDENTS and query metadata through stat/fstatat as needed. The
 internal VFS directory entry no longer carries unused size/mode fields.
+
+## Native sysctl
+
+The read-only SYSCTL call accepts a two-integer MIB, an optional output buffer
+and its size pointer, and the standard replacement arguments (writes fail
+with EPERM). libc exports sysctl, sysctlbyname and sysctlnametomib through
+`sys/sysctl.h`. `abi/sysctl.h` is the canonical name/MIB/type registry.
+Size queries include the string terminator. Short buffers receive a prefix,
+report bytes copied and return ENOMEM. Unknown nodes return ENOENT.
+The current tree contains kernel identity, machine/CPU/page information,
+64-bit usable physical memory bytes and native `vm.freepages` (64-bit frames).
+This provides BSD-style queries without parsing procfs or forwarding Linux
+syscall numbers; it does not implement the complete FreeBSD sysctl tree.

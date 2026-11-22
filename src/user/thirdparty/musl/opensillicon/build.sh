@@ -9,9 +9,10 @@ exec 9>"$build/.build.lock"
 flock 9
 # Preserve timestamps so repeated builds remain incremental.
 tar -C "$source" --exclude=./opensillicon -cf - . | tar -C "$build/source" -xf -
+cp -p "$port/include/sys/sysctl.h" "$build/source/include/sys/sysctl.h"
 cp -p "$port/overlay/resolvconf.c" "$build/source/src/network/resolvconf.c"
 cp -p "$port/overlay/syscall_arch.h" "$build/source/arch/x86_64/syscall_arch.h"
-cp -p "$port/overlay/opensillicon.c" "$port/overlay/thread.c" "$port/overlay/network.c" "$build/source/src/misc/"
+cp -p "$port/overlay/opensillicon.c" "$port/overlay/thread.c" "$port/overlay/network.c" "$port/overlay/sysctl.c" "$build/source/src/misc/"
 mkdir -p "$build/source/src/misc/x86_64"
 cp -p "$port/overlay/raw.s" "$port/overlay/cp.s" "$build/source/src/misc/x86_64/"
 # These Linux assembly entry points bypass syscall_arch.h.
@@ -35,3 +36,5 @@ fi
 make -j"${JOBS:-4}" > build.log 2>&1 || { tail -60 build.log; exit 1; }
 make install > install.log 2>&1
 cp -R "$port/include/." "$build/sysroot/include/"
+
+install -D -m 644 "$root/src/include/abi/sysctl.h" "$build/sysroot/include/abi/sysctl.h"
