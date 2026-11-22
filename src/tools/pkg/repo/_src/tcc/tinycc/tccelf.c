@@ -1200,7 +1200,7 @@ ST_FUNC void tcc_add_runtime(TCCState *s1)
     /* add libc */
     if (!s1->nostdlib) {
 #ifdef CONFIG_TCC_OPENSILLICON
-        tcc_add_library_err(s1, "libc");
+        tcc_add_library_err(s1, "c");
 #else
         tcc_add_library_err(s1, "c");
 #endif
@@ -1215,7 +1215,7 @@ ST_FUNC void tcc_add_runtime(TCCState *s1)
         tcc_add_support(s1, TCC_LIBTCC1);
 #ifdef CONFIG_TCC_OPENSILLICON
         /* libtcc1 may introduce references to libc routines such as memset. */
-        tcc_add_library_err(s1, "libc");
+        tcc_add_library_err(s1, "c");
 #else
         /* add crt end if not memory output */
         if (s1->output_type != TCC_OUTPUT_MEMORY)
