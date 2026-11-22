@@ -172,7 +172,7 @@ shootdown_tlbs(const struct address_space *space)
 	 * page-table changes are serialized by process ownership. */
 	if (!(space == NULL || space == &kernel_space ? smp_tlb_shootdown_all() :
 	    smp_tlb_shootdown_space(space))) {
-		klog("OpenSillicon panic: remote TLB shootdown failed\n");
+		klog("panic: remote tlb shootdown failed\n");
 		kernel_halt();
 	}
 }
@@ -273,11 +273,11 @@ vmm_init(const struct boot_info *info)
 	    info->hhdm_offset == 0)
 		return false;
 	if (!validate_layout(info)) {
-		klog("OpenSillicon: VMM virtual ranges overlap\n");
+		klog("vmm virtual ranges overlap\n");
 		return false;
 	}
 	if (!cpu_has_nx()) {
-		klog("OpenSillicon: CPU does not support NX\n");
+		klog("cpu does not support NX\n");
 		return false;
 	}
 	hhdm_offset = info->hhdm_offset;
@@ -497,7 +497,7 @@ map_shared_page(struct address_space *space, uint64_t virtual_address,
 	if (!user_leaf_entry(space, virtual_address, &leaf_table, &leaf_index)) {
 		if (!vmm_unmap_page(space, virtual_address, &mapped_physical) ||
 		    mapped_physical != physical_address) {
-			klog("OpenSillicon panic: shared page marking rollback failed\n");
+			klog("panic: shared page marking rollback failed\n");
 			kernel_halt();
 		}
 		return false;
@@ -568,7 +568,7 @@ vmm_map_shared_object(struct address_space *space, uint64_t base,
 		if (!unmap_shared_page(space, base +
 		    (uint64_t)installed * PAGE_SIZE, &physical) ||
 		    physical != object->pages[installed]) {
-			klog("OpenSillicon panic: shared mapping install rollback failed\n");
+			klog("panic: shared mapping install rollback failed\n");
 			kernel_halt();
 		}
 	}
@@ -615,7 +615,7 @@ vmm_shm_create(struct address_space *space, uint64_t size,
 		return -ENOMEM;
 	if (!vmm_map_shared_object(space, base, object)) {
 		if (!shm_object_release(object)) {
-			klog("OpenSillicon panic: failed to release uncommitted shared object\n");
+			klog("panic: failed to release uncommitted shared object\n");
 			kernel_halt();
 		}
 		return -ENOMEM;
@@ -781,7 +781,7 @@ private_mapping_metadata_destroy(struct private_mapping *mapping)
 
 		if (!kheap_free(mapping->page_protections) ||
 		    !kheap_free(mapping->physical_pages) || !kheap_free(mapping)) {
-			klog("OpenSillicon panic: failed to release private mapping metadata\n");
+			klog("panic: failed to release private mapping metadata\n");
 			kernel_halt();
 		}
 		mapping = next;
@@ -797,7 +797,7 @@ private_metadata_allocation_fails(void)
 	    test_private_metadata_allocations != test_private_metadata_fail_at)
 		return false;
 	test_private_metadata_fail_at = 0;
-	klog("OpenSillicon test: injected private mapping metadata failure\n");
+	klog("test: injected private mapping metadata failure\n");
 	return true;
 }
 #endif
@@ -912,7 +912,7 @@ vmm_private_map(struct address_space *space, uint64_t size,
 		if (test_private_map_fail_after != 0 &&
 		    test_private_map_page_count >= test_private_map_fail_after) {
 			test_private_map_fail_after = 0;
-			klog("OpenSillicon test: injected private mapping failure\n");
+			klog("test: injected private mapping failure\n");
 			goto rollback;
 		}
 #endif
@@ -972,7 +972,7 @@ rollback:
 	return error;
 
 invariant_failure:
-	klog("OpenSillicon panic: private mapping rollback invariant failed\n");
+	klog("panic: private mapping rollback invariant failed\n");
 	kernel_halt();
 }
 
@@ -999,7 +999,7 @@ vmm_private_map_protected(struct address_space *space, uint64_t size,
 		result = vmm_private_protect(space, base, size, protection);
 		if (result != 0) {
 			if (vmm_private_unmap(space, base, size) != 0) {
-				klog("OpenSillicon panic: protected mapping rollback failed\n");
+				klog("panic: protected mapping rollback failed\n");
 				kernel_halt();
 			}
 			/* Failed map operations do not consume the monotonic cursor. */
@@ -1056,18 +1056,18 @@ vmm_private_unmap(struct address_space *space, uint64_t base,
 
 		if (!unmap_user_page(space, base + (uint64_t)i * PAGE_SIZE,
 		    &physical, true) || physical != mapping->physical_pages[i]) {
-			klog("OpenSillicon panic: validated private mapping could not unmap\n");
+			klog("panic: validated private mapping could not unmap\n");
 			kernel_halt();
 		}
 		if (!reclaim_empty_user_tables(space,
 		    base + (uint64_t)i * PAGE_SIZE)) {
-			klog("OpenSillicon panic: private mapping page-table cleanup failed\n");
+			klog("panic: private mapping page-table cleanup failed\n");
 			kernel_halt();
 		}
 	}
 	for (i = 0; i < mapping->page_count; i++) {
 		if (!pmm_free_page(mapping->physical_pages[i])) {
-			klog("OpenSillicon panic: private mapping page release failed\n");
+			klog("panic: private mapping page release failed\n");
 			kernel_halt();
 		}
 	}
@@ -1171,7 +1171,7 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 		uint64_t entry;
 
 		if (!user_leaf_entry(space, address, &leaf_table, &leaf_index)) {
-			klog("OpenSillicon panic: validated private protection path changed\n");
+			klog("panic: validated private protection path changed\n");
 			kernel_halt();
 		}
 		entry = leaf_table[leaf_index] &
@@ -1632,7 +1632,7 @@ free_user_tables(uint64_t table_physical, unsigned int level)
 		}
 	}
 	if (!pmm_free_page(table_physical)) {
-		klog("OpenSillicon panic: failed to free user page table\n");
+		klog("panic: failed to free user page table\n");
 		kernel_halt();
 	}
 }
@@ -2321,11 +2321,11 @@ address_space_clone_locked(const struct address_space *source,
 			return false;
 	}
 	if (!validate_shared_mappings(source)) {
-		klog("OpenSillicon: private fork source shared validation failed\n");
+		klog("private fork source shared validation failed\n");
 		return false;
 	}
 	if (!validate_private_mappings(source)) {
-		klog("OpenSillicon: private fork source metadata validation failed\n");
+		klog("private fork source metadata validation failed\n");
 		return false;
 	}
 	if (!address_space_create_locked(destination))
@@ -2340,13 +2340,13 @@ address_space_clone_locked(const struct address_space *source,
 		if ((entry & PTE_USER) == 0 || (entry & PTE_LARGE) != 0 ||
 		    !clone_user_tables(source, entry & PTE_ADDRESS, 3,
 		    (uint64_t)i << 39, destination)) {
-			klog("OpenSillicon: private fork page clone failed\n");
+			klog("private fork page clone failed\n");
 			goto fail;
 		}
 	}
 	if (!private_mapping_set_clone(source->private_mappings,
 	    destination)) {
-		klog("OpenSillicon: private fork metadata clone failed\n");
+		klog("private fork metadata clone failed\n");
 		goto fail;
 	}
 	if (!shm_mapping_set_clone(&source->shared_mappings,
