@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
@@ -35,7 +36,7 @@ static char command_history[HISTORY_CAPACITY][LINE_CAPACITY];
 static size_t history_count;
 static size_t history_next;
 static size_t history_position;
-static uint64_t background_children[BACKGROUND_CHILD_LIMIT];
+static pid_t background_children[BACKGROUND_CHILD_LIMIT];
 static size_t background_child_count;
 static int cursor_visible = 1;
 static int xterm_cursor;
@@ -82,10 +83,9 @@ reap_background_children(void)
 	size_t index = 0;
 
 	while (index < background_child_count) {
-		long result = u_waitpid_options(background_children[index], NULL,
-		    U_WAIT_NOHANG);
+		pid_t result = waitpid(background_children[index], NULL, WNOHANG);
 
-		if (result == 0 || result == -4) {
+		if (result == 0 || (result < 0 && errno != ECHILD)) {
 			index++;
 			continue;
 		}
@@ -247,8 +247,8 @@ command_external(const char *const argv[], int background,
 	int interactive)
 {
 	const char *command = argv[0];
-	long child;
-	long wait_result;
+	pid_t child;
+	pid_t wait_result;
 	int status = 0;
 
 	if (interactive && u_ioctl(0, U_TIOCCANON, 0) < 0) {
@@ -262,7 +262,7 @@ command_external(const char *const argv[], int background,
 			goto resume_editor;
 		}
 	}
-	child = u_fork();
+	child = fork();
 	if (child < 0) {
 		print_error("fork", command);
 		goto resume_editor;
@@ -276,27 +276,27 @@ command_external(const char *const argv[], int background,
 		} else {
 			print_error("exec", command);
 		}
-		u_exit(127);
+		_exit(127);
 	}
 	if (!background) {
 		do {
-			wait_result = u_waitpid((uint64_t)child, &status);
-		} while (wait_result == -4);
+			wait_result = waitpid(child, &status, 0);
+		} while (wait_result < 0 && errno == EINTR);
 		if (wait_result < 0)
 			print_error("waitpid", command);
 		else if (status != 0) {
 		u_puts("sh: command exited status ");
-		u_put_u64((status & 0x7f) != 0 ? 128U + (status & 0x7f) :
-		    (unsigned int)status >> 8);
+		u_put_u64(WIFSIGNALED(status) ? 128U + WTERMSIG(status) :
+		    WEXITSTATUS(status));
 		u_puts("\n");
 		}
 	} else {
-		background_children[background_child_count++] = (uint64_t)child;
+		background_children[background_child_count++] = child;
 	}
 resume_editor:
 	if (interactive && u_ioctl(0, U_TIOCSRAW, 0) < 0) {
 		u_puts("sh: cannot restore interactive input mode\n");
-		u_exit(1);
+		_exit(1);
 	}
 }
 
@@ -753,27 +753,27 @@ main(int argc, char **argv)
 		u_puts("OpenSillicon shell: cannot initialize TERM\n");
 		return 1;
 	}
-	if (u_getcwd(current_directory, sizeof(current_directory)) < 0) {
+	if (getcwd(current_directory, sizeof(current_directory)) == NULL) {
 		u_puts("OpenSillicon shell: getcwd failed\n");
-		u_exit(1);
+		_exit(1);
 	}
 	if (argc == 3 && strcmp(argv[1], "-c") == 0) {
 		/* A command shell has no line editor and does not own the tty. */
 		(void)run_command(argv[2], 0);
-		u_exit(0);
+		_exit(0);
 	}
 	if (argc == 2 && strcmp(argv[1], "--xterm") == 0) {
 		xterm_cursor = 1;
 	} else if (argc > 1) {
 		u_puts("usage: sh [-c command] [--xterm]\n");
-		u_exit(2);
+		_exit(2);
 	}
 	long input_mode = u_ioctl(0, U_TIOCSRAW, 0);
 	if (input_mode < 0) {
 		u_puts("OpenSillicon shell: cannot enable interactive input mode, errno ");
 		u_put_u64((uint64_t)-input_mode);
 		u_puts("\n");
-		u_exit(1);
+		_exit(1);
 	}
 	bool waiting_for_keyboard = false;
 	for (;;) {
@@ -787,7 +787,7 @@ main(int argc, char **argv)
 		result = read_command_line(line);
 		if (result == 0) {
 			(void)u_ioctl(0, U_TIOCCANON, 0);
-			u_exit(0);
+			_exit(0);
 		}
 		if (result < 0) {
 			if (result == -2)
@@ -808,7 +808,7 @@ main(int argc, char **argv)
 		waiting_for_keyboard = false;
 		if (!run_command(line, 1)) {
 			(void)u_ioctl(0, U_TIOCCANON, 0);
-			u_exit(0);
+			_exit(0);
 		}
 	}
 }
