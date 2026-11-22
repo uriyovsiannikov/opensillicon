@@ -20,7 +20,7 @@ pkg-from-stage: $(BUILD_DIR)/pkg/pkg-build
 	$(BUILD_DIR)/pkg/pkg-build "$(PKG_NAME)" "$(PKG_VERSION)" "$(PKG_STAGE)" \
 		src/tools/pkg/repo/_pkges/$(PKG_NAME)-$(PKG_VERSION).spkg "$(PKG_DESCRIPTION)"
 
-$(BUILD_DIR)/mbedtls/.pkg-ready:
+$(BUILD_DIR)/mbedtls/.pkg-ready: $(LIBC_ARCHIVE)
 	sh src/tools/builders/build_mbedtls.sh
 $(BUILD_DIR)/mbedtls-host/.pkg-ready:
 	sh src/tools/builders/build_mbedtls.sh host
