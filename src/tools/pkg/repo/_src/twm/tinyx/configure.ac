@@ -202,7 +202,7 @@ if ! test "x$DEBUGGING" = xyes; then
 fi
 
 DIX_LIB='$(top_builddir)/dix/libdix.la'
-OS_LIB='$(top_builddir)/os/libc.la'
+OS_LIB='$(top_builddir)/os/libos.la'
 MI_LIB='$(top_builddir)/mi/libmi.la'
 MI_EXT_LIB='$(top_builddir)/mi/libmiext.la'
 MI_INC='-I$(top_srcdir)/mi'

@@ -12,5 +12,5 @@ libfc_la_SOURCES = 		\
 	fservestr.h		\
 	fsio.c			\
 	fsio.h			\
-	fslibc.h		\
+	fslibos.h		\
 	fstrans.c
