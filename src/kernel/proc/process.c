@@ -109,11 +109,6 @@ struct process {
 	char current_directory[VFS_PATH_MAX];
 	unsigned int signal_depth;
 	struct process_signal_context signal_stack[PROCESS_SIGNAL_DEPTH_LIMIT];
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	bool test_private_mapping_child;
-	uint64_t test_private_mapping_base;
-	uint64_t test_private_mapping_physical;
-#endif
 };
 
 _Static_assert(_Alignof(struct process) >= 16,
@@ -171,19 +166,6 @@ process_table_owned_here(void)
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
 static uint64_t test_shm_reap_releases;
 static uint64_t test_shm_exec_releases;
-#endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-static bool test_private_mapping_armed;
-static bool test_private_mapping_failed;
-static uint64_t test_private_mapping_faults;
-static uint64_t test_private_mapping_zombies;
-static uint64_t test_private_mapping_reaps;
-#endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_PROTECTION
-static bool test_user_fault_capture_armed;
-static bool test_user_fault_capture_valid;
-static uint64_t test_user_fault_vector;
-static uint64_t test_user_fault_error;
 #endif
 
 static struct process *find_child(struct process *parent, uint64_t pid,
@@ -1950,11 +1932,6 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->saved_frame = NULL;
 	os_signal_state_init(&root->signals);
 	root->signal_depth = 0;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	root->test_private_mapping_child = false;
-	root->test_private_mapping_base = 0;
-	root->test_private_mapping_physical = 0;
-#endif
 	root->initial_user_stack = PROCESS_STACK_TOP;
 	root->user_fs_base = 0;
 	arch_fpu_init_process_state(root->fpu_state);
@@ -1990,47 +1967,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	return status;
 }
 
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-uint64_t
-process_test_private_mapping_lifecycle(const void *image, size_t image_size)
-{
-	uint64_t status;
 
-	test_private_mapping_armed = true;
-	test_private_mapping_failed = false;
-	test_private_mapping_faults = 0;
-	test_private_mapping_zombies = 0;
-	test_private_mapping_reaps = 0;
-	status = process_run_elf_internal(image, image_size, false, "elf");
-	if (status != 0 || test_private_mapping_armed ||
-	    test_private_mapping_failed || test_private_mapping_faults != 1 ||
-	    test_private_mapping_zombies != 1 || test_private_mapping_reaps != 1)
-		return UINT64_MAX;
-	return status;
-}
-#endif
-
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_PROTECTION
-void
-process_test_arm_user_fault_capture(void)
-{
-	test_user_fault_capture_armed = true;
-	test_user_fault_capture_valid = false;
-	test_user_fault_vector = UINT64_MAX;
-	test_user_fault_error = UINT64_MAX;
-}
-
-bool
-process_test_user_fault_capture(uint64_t *vector, uint64_t *error_code)
-{
-	if (!test_user_fault_capture_valid || vector == NULL || error_code == NULL)
-		return false;
-	*vector = test_user_fault_vector;
-	*error_code = test_user_fault_error;
-	test_user_fault_capture_valid = false;
-	return true;
-}
-#endif
 
 /* The caller retains and authorizes the inode; this kernel read does not
  * create a user-readable descriptor or resolve the pathname a second time. */
@@ -2199,11 +2136,6 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	child->signal_depth = current_process->signal_depth;
 	for (i = 0; i < child->signal_depth; i++)
 		child->signal_stack[i] = current_process->signal_stack[i];
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	child->test_private_mapping_child = false;
-	child->test_private_mapping_base = 0;
-	child->test_private_mapping_physical = 0;
-#endif
 	if (!fd_table_clone(&child->descriptors, &current_process->descriptors)) {
 		(void)address_space_destroy_with_pages(child->address_space);
 		(void)kheap_free(child->address_space);
@@ -2219,35 +2151,6 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 		destination_words[i] = source_words[i];
 	child_frame->rax = 0;
 	child_frame->rflags &= ~1ULL;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	if (test_private_mapping_armed) {
-		static const uint8_t instruction = 0xc3;
-		static const uint64_t marker = 0x4e585f4c49564531ULL;
-		uint64_t base;
-
-		if (vmm_private_map(child->address_space, 4096, &base) != 0 ||
-		    !vmm_copy_to_user(child->address_space, base, &instruction,
-		    sizeof(instruction)) ||
-		    !vmm_copy_to_user(child->address_space, base + 8, &marker,
-		    sizeof(marker))) {
-			test_private_mapping_failed = true;
-			fd_table_destroy(&child->descriptors);
-			if (!address_space_destroy_with_pages(child->address_space))
-				kernel_halt();
-			(void)kheap_free(child->address_space);
-			(void)kheap_free(child->kernel_stack);
-			(void)kheap_free(child);
-			*error = EAGAIN;
-			return frame;
-		}
-		child->test_private_mapping_child = true;
-		child->test_private_mapping_base = base;
-		child->test_private_mapping_physical =
-		    child->address_space->private_mappings->physical_pages[0];
-		child_frame->rip = base;
-		test_private_mapping_armed = false;
-	}
-#endif
 	child->saved_frame = child_frame;
 	insert_process(child);
 	(void)dispatch_ap_processes();
@@ -2439,10 +2342,6 @@ static bool
 reap_child(struct process *parent, struct process *child,
 	uint64_t status_address, uint64_t *error)
 {
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	bool test_mapping_child = child->test_private_mapping_child;
-	uint64_t test_mapping_physical = child->test_private_mapping_physical;
-#endif
 
 	int32_t status = child->exit_signal ? child->exit_signal :
 	    (int32_t)child->exit_status << 8;
@@ -2451,15 +2350,6 @@ reap_child(struct process *parent, struct process *child,
 		*error = EFAULT;
 		return false;
 	}
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	if (test_mapping_child &&
-	    (child->state != PROCESS_ZOMBIE ||
-	    child->address_space->private_mappings == NULL ||
-	    child->address_space->private_mappings->base !=
-	    child->test_private_mapping_base ||
-	    !pmm_test_page_is_allocated(test_mapping_physical)))
-		test_private_mapping_failed = true;
-#endif
 	remove_process(child);
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
 	{
@@ -2471,13 +2361,6 @@ reap_child(struct process *parent, struct process *child,
 	}
 #else
 	release_process(child);
-#endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	if (test_mapping_child) {
-		if (pmm_test_page_is_allocated(test_mapping_physical))
-			test_private_mapping_failed = true;
-		test_private_mapping_reaps++;
-	}
 #endif
 	*error = 0;
 	return true;
@@ -2724,48 +2607,8 @@ process_exit(struct interrupt_frame *frame, uint64_t status)
 		process_ap_stop(frame, PROCESS_SLICE_EXIT);
 	}
 	tty_console_framebuffer_owner_exit(process->id);
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	if (process->test_private_mapping_child) {
-		uint64_t marker = 0;
-		uint64_t changed_marker = 0x4e585f4146544552ULL;
-
-		if (status != 128U + 14U || frame == NULL || frame->vector != 14 ||
-		    frame->rip != process->test_private_mapping_base ||
-		    frame->error_code != 0x15U ||
-		    !vmm_validate_user_write(process->address_space,
-		    process->test_private_mapping_base, 1) ||
-		    vmm_validate_user_exec(process->address_space,
-		    process->test_private_mapping_base, 1) ||
-		    !vmm_copy_from_user(process->address_space, &marker,
-		    process->test_private_mapping_base + 8, sizeof(marker)) ||
-		    marker != 0x4e585f4c49564531ULL ||
-		    !vmm_copy_to_user(process->address_space,
-		    process->test_private_mapping_base + 16, &changed_marker,
-		    sizeof(changed_marker)) ||
-		    !vmm_copy_from_user(process->address_space, &marker,
-		    process->test_private_mapping_base + 16, sizeof(marker)) ||
-		    marker != changed_marker ||
-		    !pmm_test_page_is_allocated(
-		    process->test_private_mapping_physical))
-			test_private_mapping_failed = true;
-		else
-			test_private_mapping_faults++;
-	}
-#endif
 	process->exit_status = status & 0xffU;
 	process->state = PROCESS_ZOMBIE;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
-	if (process->test_private_mapping_child) {
-		if (process->address_space->private_mappings == NULL ||
-		    process->address_space->private_mappings->base !=
-		    process->test_private_mapping_base ||
-		    !pmm_test_page_is_allocated(
-		    process->test_private_mapping_physical))
-			test_private_mapping_failed = true;
-		else
-			test_private_mapping_zombies++;
-	}
-#endif
 	fd_table_destroy(&process->descriptors);
 	parent = process->parent;
 	if (process_head != NULL) {
@@ -2790,14 +2633,6 @@ process_user_exception(struct interrupt_frame *frame)
 	if (!process_table_owned_here() && current_process != NULL)
 		process_ap_stop(frame, PROCESS_SLICE_FAULT);
 	if (current_process == NULL) {
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_PROTECTION
-		if (test_user_fault_capture_armed) {
-			test_user_fault_vector = frame->vector;
-			test_user_fault_error = frame->error_code;
-			test_user_fault_capture_valid = true;
-			test_user_fault_capture_armed = false;
-		}
-#endif
 		user_return_to_kernel(0x100U + frame->vector);
 	}
 	if (current_process != NULL)

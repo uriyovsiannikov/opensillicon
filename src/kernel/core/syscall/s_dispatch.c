@@ -170,10 +170,6 @@ syscall_dispatch(struct interrupt_frame *frame)
 			if (shared_memory)
 				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
 #endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-			if (private_memory)
-				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
-#endif
 			process_channel_wait_begin();
 			if (route != NULL && route->local != NULL &&
 			    route->local(&frame)) {

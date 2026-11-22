@@ -24,13 +24,5 @@ uint64_t pmm_total_pages(void);
 /* Full usable frames, excluding reserved memory and physical address holes. */
 uint64_t pmm_usable_pages(void);
 uint64_t pmm_free_pages(void);
-#if defined(KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE) || \
-	defined(KERNEL_TEST_PRIVATE_MAPPING_PROTECTION)
-bool pmm_test_page_is_allocated(uint64_t physical_address);
-#endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_EXHAUSTION
-void pmm_test_reset_exhaustion_failures(void);
-uint64_t pmm_test_exhaustion_failures(void);
-#endif
 
 #endif

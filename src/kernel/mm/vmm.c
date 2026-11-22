@@ -47,15 +47,6 @@ static bool unmap_user_page(struct address_space *space,
 static bool test_shm_fork_failure_armed;
 static size_t test_shm_fork_mapped_pages;
 #endif
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-static unsigned int test_private_map_fail_after;
-static unsigned int test_private_fork_fail_after;
-static unsigned int test_private_map_page_count;
-static unsigned int test_private_fork_page_count;
-static unsigned int test_private_metadata_fail_at;
-static unsigned int test_private_metadata_allocations;
-static uint64_t test_private_collision_physical;
-#endif
 
 static bool
 address_space_valid(const struct address_space *space)
@@ -120,17 +111,6 @@ user_access_space_valid(const struct address_space *space)
 /* Process handoff guarantees one owner of a private user page table.
  * The BSP only accesses a running AP process after collecting its slice.
  * AP callers must use their active space and never walk the global list. */
-static bool
-private_space_owned_here(const struct address_space *space)
-{
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-	/* Fault injection uses BSP-owned global counters. */
-	if (!vmm_mutation_allowed())
-		return false;
-#endif
-	return user_access_space_valid(space);
-}
-
 static bool
 address_space_active_on_any_cpu(const struct address_space *space)
 {
@@ -402,7 +382,7 @@ vmm_map_page(struct address_space *space, uint64_t virtual_address,
 	    (physical_address & ~PTE_ADDRESS) != 0 || !canonical(virtual_address))
 		return false;
 	if (private_mapping) {
-		if (!private_space_owned_here(space))
+		if (!user_access_space_valid(space))
 			return false;
 	} else if (user_mapping) {
 		if (!user_access_space_valid(space))
@@ -647,7 +627,7 @@ unmap_user_page(struct address_space *space, uint64_t virtual_address,
 	unsigned int i;
 
 	if (!initialized || physical_address == NULL ||
-	    !(allow_private ? private_space_owned_here(space) :
+	    !(allow_private ? user_access_space_valid(space) :
 	    virtual_address < KERNEL_BASE ? user_access_space_valid(space) :
 	    address_space_valid(space)) ||
 	    (virtual_address & (PAGE_SIZE - 1)) != 0 || !canonical(virtual_address) ||
@@ -788,19 +768,6 @@ private_mapping_metadata_destroy(struct private_mapping *mapping)
 	}
 }
 
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-static bool
-private_metadata_allocation_fails(void)
-{
-	test_private_metadata_allocations++;
-	if (test_private_metadata_fail_at == 0 ||
-	    test_private_metadata_allocations != test_private_metadata_fail_at)
-		return false;
-	test_private_metadata_fail_at = 0;
-	klog("test: injected private mapping metadata failure\n");
-	return true;
-}
-#endif
 
 static bool
 zero_physical_page(uint64_t physical)
@@ -851,7 +818,7 @@ vmm_private_map(struct address_space *space, uint64_t size,
 	int error = -ENOMEM;
 
 	if (base_out == NULL || !initialized ||
-	    !private_space_owned_here(space) || size == 0 ||
+	    !user_access_space_valid(space) || size == 0 ||
 	    size > UINT64_MAX - (PAGE_SIZE - 1))
 		return -EINVAL;
 	*base_out = 0;
@@ -871,26 +838,14 @@ vmm_private_map(struct address_space *space, uint64_t size,
 		    other->base < base + rounded_size)
 			return -EEXIST;
 	}
-	if (
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-	    private_metadata_allocation_fails() ||
-#endif
-	    (mapping = kheap_alloc(sizeof(*mapping))) == NULL)
+	if ((mapping = kheap_alloc(sizeof(*mapping))) == NULL)
 		return -ENOMEM;
-	if (
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-	    private_metadata_allocation_fails() ||
-#endif
-	    (mapping->physical_pages = kheap_alloc(page_count *
+	if ((mapping->physical_pages = kheap_alloc(page_count *
 	    sizeof(uint64_t))) == NULL) {
 		(void)kheap_free(mapping);
 		return -ENOMEM;
 	}
-	if (
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-	    private_metadata_allocation_fails() ||
-#endif
-	    (mapping->page_protections = kheap_alloc(page_count)) == NULL) {
+	if ((mapping->page_protections = kheap_alloc(page_count)) == NULL) {
 		(void)kheap_free(mapping->physical_pages);
 		(void)kheap_free(mapping);
 		return -ENOMEM;
@@ -908,14 +863,6 @@ vmm_private_map(struct address_space *space, uint64_t size,
 		uint64_t *leaf_table;
 		unsigned int leaf_index;
 
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-		if (test_private_map_fail_after != 0 &&
-		    test_private_map_page_count >= test_private_map_fail_after) {
-			test_private_map_fail_after = 0;
-			klog("test: injected private mapping failure\n");
-			goto rollback;
-		}
-#endif
 		if (!pmm_alloc_page(&physical))
 			goto rollback;
 		if (!zero_physical_page(physical)) {
@@ -945,9 +892,6 @@ vmm_private_map(struct address_space *space, uint64_t size,
 		}
 		mapping->physical_pages[i] = physical;
 		mapped++;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-		test_private_map_page_count++;
-#endif
 	}
 	if (!private_mapping_append(space, mapping))
 		goto rollback;
@@ -1019,7 +963,7 @@ vmm_private_unmap(struct address_space *space, uint64_t base,
 	struct private_mapping *mapping;
 	size_t i;
 
-	if (!initialized || !private_space_owned_here(space) ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    requested_size == 0 || (base & (PAGE_SIZE - 1)) != 0 ||
 	    base < PRIVATE_MAP_USABLE_START || base >= PRIVATE_MAP_USABLE_END)
 		return -EINVAL;
@@ -1083,7 +1027,7 @@ vmm_private_unmap_complete(struct address_space *space, uint64_t base,
 {
 	struct private_mapping *mapping;
 
-	if (!initialized || !private_space_owned_here(space) ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    length == 0 ||
 	    (base & (PAGE_SIZE - 1)) != 0 || base < PRIVATE_MAP_USABLE_START ||
 	    base >= PRIVATE_MAP_USABLE_END)
@@ -1111,7 +1055,7 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 
 	if (!vmm_private_protection_valid(protection))
 		return -EINVAL;
-	if (!initialized || !private_space_owned_here(space) ||
+	if (!initialized || !user_access_space_valid(space) ||
 	    !vmm_private_protection_range(base, length, &rounded_length, &end) ||
 	    base < PRIVATE_MAP_USABLE_START || end > PRIVATE_MAP_USABLE_END)
 		return -EINVAL;
@@ -1194,62 +1138,6 @@ vmm_private_protect(struct address_space *space, uint64_t base,
 	return 0;
 }
 
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-void
-vmm_test_arm_private_map_failure(unsigned int mapped_pages)
-{
-	test_private_map_fail_after = mapped_pages;
-	test_private_map_page_count = 0;
-}
-
-void
-vmm_test_arm_private_fork_failure(unsigned int copied_pages)
-{
-	test_private_fork_fail_after = copied_pages;
-	test_private_fork_page_count = 0;
-}
-
-void
-vmm_test_arm_private_metadata_failure(unsigned int allocation_number)
-{
-	test_private_metadata_fail_at = allocation_number;
-	test_private_metadata_allocations = 0;
-}
-
-bool
-vmm_test_install_private_collision(struct address_space *space)
-{
-	if (test_private_collision_physical != 0 ||
-	    !pmm_alloc_page(&test_private_collision_physical))
-		return false;
-	if (!zero_physical_page(test_private_collision_physical) ||
-	    !vmm_map_page(space, space->private_map_cursor,
-	    test_private_collision_physical, VMM_USER | VMM_WRITE | VMM_PRIVATE)) {
-		(void)pmm_free_page(test_private_collision_physical);
-		test_private_collision_physical = 0;
-		return false;
-	}
-	return true;
-}
-
-bool
-vmm_test_remove_private_collision(struct address_space *space)
-{
-	uint64_t physical;
-	uint64_t address;
-
-	if (test_private_collision_physical == 0)
-		return false;
-	address = space->private_map_cursor;
-	if (!unmap_user_page(space, address, &physical, true) ||
-	    physical != test_private_collision_physical ||
-	    !pmm_free_page(physical) ||
-	    !reclaim_empty_user_tables(space, address))
-		return false;
-	test_private_collision_physical = 0;
-	return true;
-}
-#endif
 
 static bool
 address_space_create_locked(struct address_space *space)
@@ -2042,15 +1930,6 @@ clone_user_tables(const struct address_space *source, uint64_t table_physical,
 				    (((entry & PTE_USER) != 0) !=
 				    (protection != VMM_PROT_NONE)))
 					return false;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-				if (test_private_fork_fail_after != 0 &&
-				    test_private_fork_page_count >=
-				    test_private_fork_fail_after) {
-					test_private_fork_fail_after = 0;
-					klog("test: injected private fork failure\n");
-					return false;
-				}
-#endif
 				flags |= VMM_PRIVATE;
 			}
 
@@ -2081,10 +1960,6 @@ clone_user_tables(const struct address_space *source, uint64_t table_physical,
 					return false;
 				leaf_table[leaf_index] &= ~PTE_USER;
 			}
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-			if ((entry & PTE_PRIVATE) != 0)
-				test_private_fork_page_count++;
-#endif
 		}
 	}
 	return true;

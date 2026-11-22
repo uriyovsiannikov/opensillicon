@@ -23,9 +23,6 @@ struct pmm_state {
 
 static struct pmm_state pmm;
 static struct spinlock pmm_lock = SPINLOCK_INITIALIZER;
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_EXHAUSTION
-static uint64_t test_exhaustion_failures;
-#endif
 
 static bool
 range_end(uint64_t base, uint64_t length, uint64_t *end)
@@ -220,12 +217,8 @@ pmm_alloc_page_locked(uint64_t *physical_address)
 
 	if (!pmm.initialized || physical_address == NULL)
 		return false;
-	if (pmm.free_count == 0) {
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_EXHAUSTION
-		test_exhaustion_failures++;
-#endif
+	if (pmm.free_count == 0)
 		return false;
-	}
 	for (checked = 0; checked < pmm.frame_count; checked++) {
 		frame = pmm.search_hint + checked;
 		if (frame >= pmm.frame_count)
@@ -510,42 +503,3 @@ pmm_free_pages(void)
 	spinlock_unlock_irqrestore(&pmm_lock, flags);
 	return result;
 }
-
-#if defined(KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE) || \
-	defined(KERNEL_TEST_PRIVATE_MAPPING_PROTECTION)
-bool
-pmm_test_page_is_allocated(uint64_t physical_address)
-{
-	uint64_t frame;
-	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
-	bool allocated;
-
-	if (!pmm.initialized || (physical_address & (PMM_PAGE_SIZE - 1)) != 0) {
-		allocated = false;
-	} else {
-		frame = physical_address / PMM_PAGE_SIZE;
-		allocated = frame < pmm.frame_count && bit_is_set(pmm.used, frame);
-	}
-	spinlock_unlock_irqrestore(&pmm_lock, flags);
-	return allocated;
-}
-#endif
-
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_EXHAUSTION
-void
-pmm_test_reset_exhaustion_failures(void)
-{
-	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
-	test_exhaustion_failures = 0;
-	spinlock_unlock_irqrestore(&pmm_lock, flags);
-}
-
-uint64_t
-pmm_test_exhaustion_failures(void)
-{
-	uint64_t flags = spinlock_lock_irqsave(&pmm_lock);
-	uint64_t result = test_exhaustion_failures;
-	spinlock_unlock_irqrestore(&pmm_lock, flags);
-	return result;
-}
-#endif

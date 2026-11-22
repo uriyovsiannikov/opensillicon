@@ -109,13 +109,6 @@ int vmm_private_unmap_complete(struct address_space *space, uint64_t base,
 	uint64_t length);
 int vmm_private_protect(struct address_space *space, uint64_t base,
 	uint64_t length, unsigned int protection);
-#ifdef KERNEL_TEST_PRIVATE_MAPPING_FAILURE
-void vmm_test_arm_private_map_failure(unsigned int mapped_pages);
-void vmm_test_arm_private_fork_failure(unsigned int copied_pages);
-void vmm_test_arm_private_metadata_failure(unsigned int allocation_number);
-bool vmm_test_install_private_collision(struct address_space *space);
-bool vmm_test_remove_private_collision(struct address_space *space);
-#endif
 #ifdef KERNEL_TEST_SHM_FORK_FAILURE
 void vmm_test_arm_shm_fork_failure(void);
 #endif
