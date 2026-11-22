@@ -33,11 +33,6 @@ long u_network_dns_server(uint8_t address[4])
 { return syscall4(SYSCALL_NET_GET_DNS_SERVER, (uintptr_t)address, 0, 0, 0); }
 long u_icmp_echo(struct u_icmp_echo_request *request)
 { return syscall4(SYSCALL_ICMP_ECHO, (uintptr_t)request, 0, sizeof(*request), 0); }
-long u_fork(void) { return syscall4(SYSCALL_FORK, 0, 0, 0, 0); }
-long u_waitpid(uint64_t pid, int *status)
-{ return u_waitpid_options(pid, status, 0); }
-long u_waitpid_options(uint64_t pid, int *status, uint64_t options)
-{ return syscall4(SYSCALL_WAITPID, pid, (uintptr_t)status, options, 0); }
 long u_power_control(uint64_t command)
 { return syscall4(SYSCALL_POWER_CONTROL, command, 0, 0, 0); }
 long u_kernel_crash(void)
@@ -46,8 +41,6 @@ long u_kldload(const char *path)
 { return syscall4(SYSCALL_KLDLOAD, (uintptr_t)path, 0, 0, 0); }
 long u_kldunload(const char *name)
 { return syscall4(SYSCALL_KLDUNLOAD, (uintptr_t)name, 0, 0, 0); }
-long u_chdir(const char *path)
-{ return syscall4(SYSCALL_CHDIR, (uintptr_t)path, 0, 0, 0); }
 long u_getcwd(char *buffer, size_t capacity)
 { return syscall4(SYSCALL_GETCWD, (uintptr_t)buffer, capacity, 0, 0); }
 long u_getpid(void) { return syscall4(SYSCALL_GETPID, 0, 0, 0, 0); }

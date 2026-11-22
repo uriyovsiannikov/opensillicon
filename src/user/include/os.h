@@ -16,7 +16,6 @@
 #define U_SIGKILL 9U
 #define U_SIGTERM 15U
 #define U_EXEC_ARG_MAX 16U
-#define U_WAIT_NOHANG 1U
 #define U_TIOCSRAW 0x4f530001U
 #define U_TIOCCANON 0x4f530002U
 #define U_ICMP_ECHO_PAYLOAD_MAX 32U
@@ -62,14 +61,10 @@ long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_network_ipv4_config(struct u_ipv4_config *config);
 long u_network_dns_server(uint8_t address[4]);
 long u_icmp_echo(struct u_icmp_echo_request *request);
-long u_fork(void);
-long u_waitpid(uint64_t pid, int *status);
-long u_waitpid_options(uint64_t pid, int *status, uint64_t options);
 long u_power_control(uint64_t command);
 long u_kernel_crash(void);
 long u_kldload(const char *path);
 long u_kldunload(const char *name);
-long u_chdir(const char *path);
 long u_getcwd(char *buffer, size_t capacity);
 long u_getpid(void);
 long u_process_info(struct os_process_info *entries, size_t capacity);
