@@ -88,8 +88,8 @@ the directory capability across cwd changes and avoiding permission checks of
 ancestors above that vnode. Nested directory descriptors also work. Absolute
 paths ignore dirfd. Creation under unlinked directories is rejected in ramfs
 and SilliconFS, including after another directory reuses the same pathname.
-Directories opened through a vnode capability have no cached absolute path;
-legacy internal pathname queries report ENOENT rather than an invented path.
+Open-file contexts retain vnodes, without cached absolute paths or a legacy
+pathname-query callback.
 Descriptor-based chdir is still unimplemented.
 
 CLOEXEC is set inside the native open syscall. Append selects the current EOF

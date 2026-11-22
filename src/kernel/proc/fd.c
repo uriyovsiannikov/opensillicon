@@ -599,18 +599,6 @@ fd_object_lookup_at_as(struct fd_object *object, const char *path,
 	return object->operations->lookup_at(object->context, path, uid, gid, result);
 }
 
-int
-fd_object_get_path(struct fd_object *object, char *path, size_t capacity)
-{
-	if (object == NULL)
-		return -EBADF;
-	if (object->operations->get_path == NULL)
-		return -ENOTDIR;
-	if (path == NULL || capacity == 0)
-		return -EINVAL;
-	return object->operations->get_path(object->context, path, capacity);
-}
-
 uint64_t
 fd_get_offset(const struct fd_table *table, uint64_t descriptor)
 {

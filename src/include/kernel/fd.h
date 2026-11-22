@@ -41,7 +41,6 @@ struct fd_operations {
 	int (*stat)(void *context, struct fd_metadata *metadata);
 	int (*chmod)(void *context, uint32_t mode);
 	int (*chown)(void *context, uint32_t uid, uint32_t gid);
-	int (*get_path)(void *context, char *path, size_t capacity);
 	int (*lookup_at)(void *context, const char *path, uint32_t uid,
 	    uint32_t gid, struct vnode **result);
 	bool (*is_terminal)(void *context);
@@ -117,7 +116,6 @@ int fd_seek(struct fd_table *table, uint64_t descriptor, int64_t offset,
 int fd_object_stat(struct fd_object *object, struct fd_metadata *metadata);
 int fd_object_chmod(struct fd_object *object, uint32_t mode);
 int fd_object_chown(struct fd_object *object, uint32_t uid, uint32_t gid);
-int fd_object_get_path(struct fd_object *object, char *path, size_t capacity);
 int fd_object_lookup_at_as(struct fd_object *object, const char *path,
 	uint32_t uid, uint32_t gid, struct vnode **result);
 uint64_t fd_get_offset(const struct fd_table *table, uint64_t descriptor);

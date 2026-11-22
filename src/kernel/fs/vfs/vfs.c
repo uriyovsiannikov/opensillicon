@@ -22,7 +22,6 @@ struct vfs_mount {
 struct vfs_file_context {
 	struct vnode *node;
 	uint32_t flags;
-	char path[VFS_PATH_MAX];
 };
 
 static struct vfs_mount *mounts;
@@ -985,22 +984,6 @@ file_lookup_at(void *context, const char *path, uint32_t uid, uint32_t gid,
 	return vfs_lookup_from_as(file->node, path, uid, gid, result);
 }
 
-static int
-file_get_path(void *context, char *path, size_t capacity)
-{
-	struct vfs_file_context *file = context;
-	size_t length;
-
-	if (file->node->type != VNODE_DIRECTORY)
-		return -ENOTDIR;
-	if (!file->path[0]) return -ENOENT;
-	length = strlen(file->path) + 1U;
-	if (length > capacity)
-		return -ENAMETOOLONG;
-	memcpy(path, file->path, length);
-	return 0;
-}
-
 static void
 file_close(void *context)
 {
@@ -1038,7 +1021,6 @@ static const struct fd_operations vfs_file_operations = {.sync = file_sync,
     .stat = file_stat,
     .chmod = file_chmod,
     .chown = file_chown,
-    .get_path = file_get_path,
     .lookup_at = file_lookup_at,
     .close = file_close};
 
@@ -1103,7 +1085,6 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	*result = NULL;
 	if (directory == NULL) error = canonicalize_path(path, canonical, uid, gid);
 	else {
-		canonical[0] = 0; /* No stable pathname for a directory capability. */
 		error = !path || !*path ? -ENOENT :
 		    strlen(path) >= VFS_PATH_MAX ? -ENAMETOOLONG : 0;
 	}
@@ -1116,7 +1097,6 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 		return -ENOMEM;
 	context->node = NULL;
 	context->flags = flags;
-	memcpy(context->path, canonical, strlen(canonical) + 1U);
 	file = fd_object_create(&vfs_file_operations, context);
 	if (file == NULL) {
 		(void)kheap_free(context);
