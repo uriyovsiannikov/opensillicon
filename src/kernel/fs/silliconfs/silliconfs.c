@@ -2091,8 +2091,6 @@ sfs_readdir(struct vnode *vnode, uint64_t index, struct vfs_dirent *entry)
 					return error;
 				memset(entry, 0, sizeof(*entry));
 				entry->inode = number;
-				entry->size = target.size;
-				entry->mode = target.mode & 07777U;
 				entry->type = sfs_vnode_type(target.mode);
 				memcpy(entry->name, record + SFS_DIR_HEADER, name_length);
 				return 1;

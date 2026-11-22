@@ -1,8 +1,9 @@
 #ifndef ABI_SYSCALL_H
 #define ABI_SYSCALL_H
 
-/* ABI v7: retired calls 4–7, 10, 14, 23, 53, 58 and 109 are not reused. Rebuild all userspace. */
-#define SYSCALL_ABI_VERSION 7U
+/* ABI v8. Retired slots: 4–7, 10, 14, 17, 23, 53, 58 and 109.
+ * Slots are never reused; rebuild userspace after an ABI change. */
+#define SYSCALL_ABI_VERSION 8U
 
 #ifdef __ASSEMBLER__
 #define OS_SYSCALL(name, number) .equ name, number ;

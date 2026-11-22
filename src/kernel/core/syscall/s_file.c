@@ -630,26 +630,6 @@ syscall_file_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_GETDENTS:
 		return syscall_getdents(frame);
-	case SYSCALL_READDIR:
-		{
-			struct vfs_dirent entry;
-			uint64_t old_offset = fd_get_offset(current_fd_table(), frame->rdi);
-			int result = fd_readdir(current_fd_table(), frame->rdi, &entry);
-
-			if (result < 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (result > 0 && !vmm_copy_to_user(
-			    vmm_active_address_space(), frame->rsi, &entry,
-			    sizeof(entry))) {
-				(void)fd_set_offset(current_fd_table(), frame->rdi, old_offset);
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = (uint64_t)result;
-		}
-		break;
 	default:
 		syscall_error(frame, ENOSYS);
 		break;

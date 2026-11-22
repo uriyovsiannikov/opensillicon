@@ -44,7 +44,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_FSTAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTATAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_GETDENTS] = { .bsp = syscall_file_bsp },
-	[SYSCALL_READDIR] = { .bsp = syscall_file_bsp },
 	/* Descriptor I/O */
 	[SYSCALL_READV] = { .local = syscall_io_local, .bsp = syscall_io_bsp },
 	[SYSCALL_WRITEV] = { .local = syscall_io_local, .bsp = syscall_io_bsp },

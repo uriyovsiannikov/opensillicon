@@ -35,8 +35,6 @@ enum vnode_type {
 
 struct vfs_dirent {
 	uint64_t inode;
-	uint64_t size;
-	uint32_t mode;
 	uint32_t type;
 	char name[VFS_NAME_MAX + 1];
 };

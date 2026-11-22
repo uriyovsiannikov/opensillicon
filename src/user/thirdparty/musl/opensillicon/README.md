@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v7.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v8.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -207,3 +207,8 @@ ABI v7 removes the compact native STAT call (slot 14). Native utilities and
 libc share the full metadata contract in `abi/stat.h` through FSTAT/FSTATAT.
 The unused VFS path-stat wrappers and compact kernel/userspace structures are
 removed; file types are encoded in st_mode.
+
+ABI v8 removes the private READDIR call (slot 17), its userspace wrapper and
+its metadata-bearing directory structure. Applications use libc directory
+streams over GETDENTS and query metadata through stat/fstatat as needed. The
+internal VFS directory entry no longer carries unused size/mode fields.

@@ -37,14 +37,6 @@
 #define U_POWER_CONTROL_POWEROFF 1U
 #define U_POWER_CONTROL_REBOOT 2U
 
-struct u_dirent {
-	uint64_t inode;
-	uint64_t size;
-	uint32_t mode;
-	uint32_t type;
-	char name[256];
-};
-
 struct u_winsize {
 	uint16_t rows;
 	uint16_t columns;
@@ -91,7 +83,6 @@ long u_unlink(const char *path, int directory);
 long u_close(uint64_t fd);
 long u_stat_path(const char *path, struct os_stat *status);
 int u_find_command(const char *name, char *path, size_t capacity);
-long u_readdir(uint64_t fd, struct u_dirent *entry);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_network_ipv4_config(struct u_ipv4_config *config);
 long u_network_dns_server(uint8_t address[4]);

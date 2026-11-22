@@ -730,7 +730,6 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 				  : index == 9       ? node->netpci_inode
 				  : index == 10      ? node->netif_inode
 							  : index == 11 ? node->dapi_inode : index == 12 ? node->audiopci_inode : index == 13 ? node->hdacodecs_inode : node->hdatest_inode;
-	entry->mode = index >= 13 ? 0400U : 0444U;
 	entry->type = VNODE_REGULAR;
 	memcpy(entry->name, names[index], strlen(names[index]) + 1U);
 	return 1;

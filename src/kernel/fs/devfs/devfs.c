@@ -344,7 +344,6 @@ devfs_readdir(struct vnode *directory, uint64_t index,
 		return 0;
 	memset(entry, 0, sizeof(*entry));
 	entry->inode = child->vnode.inode;
-	entry->mode = child->vnode.mode;
 	entry->type = (uint32_t)child->vnode.type;
 	memcpy(entry->name, child->name, strlen(child->name) + 1U);
 	return 1;
