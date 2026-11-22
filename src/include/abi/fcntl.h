@@ -22,4 +22,9 @@
 #define OS_F_DUPFD_CLOEXEC 1030U
 #define OS_FD_CLOEXEC 1U
 
+#define OS_LOCK_SH 1U
+#define OS_LOCK_EX 2U
+#define OS_LOCK_NB 4U
+#define OS_LOCK_UN 8U
+
 #endif

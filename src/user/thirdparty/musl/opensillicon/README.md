@@ -266,3 +266,15 @@ separate namespace and duplicate lookup code are removed. TinyX, XCB and
 startx use `/tmp/.X11-unix/X0`. TinyX creates the socket directory, removes its
 listener node when closing, and obtains accepted endpoints with the shared
 getsockname/getpeername interface instead of copying the listener as its peer.
+
+`flock` uses a native FLOCK syscall for advisory shared/exclusive locks on
+regular files and directories. Ownership follows the open file description:
+`dup` and `fork` share it, explicit unlock or the final close releases it.
+Nonblocking conflicts return EAGAIN; blocking requests sleep and retry when a
+lock is released. Lock conversion first releases the previous mode. Package
+management uses this interface on its database directory, with no socket lock
+namespace or separate target-specific implementation.
+
+`kern.maxfilesperproc` reports the kernel descriptor-table capacity.
+`getrlimit(RLIMIT_NOFILE)` and `sysconf(_SC_OPEN_MAX)` query this value.
+Other resource limit queries are unsupported; limits are not currently mutable.

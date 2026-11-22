@@ -3,6 +3,8 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/file.h>
+
 #include <sys/stat.h>
 #include <dirent.h>
 #include <stddef.h>
@@ -15,6 +17,8 @@
 #include <sys/ioctl.h>
 #include "abi/syscall.h"
 #include "abi/fcntl.h"
+_Static_assert(LOCK_SH == OS_LOCK_SH && LOCK_EX == OS_LOCK_EX &&
+    LOCK_NB == OS_LOCK_NB && LOCK_UN == OS_LOCK_UN, "flock ABI");
 #include "abi/time.h"
 #include "abi/dirent.h"
 #include "abi/credentials.h"
@@ -205,6 +209,7 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  case SYS_writev: s=SYSCALL_WRITEV; break;
  case SYS_open: return open_native(AT_FDCWD,a,b,c);
  case SYS_openat: return open_native(a,b,c,d);
+ case SYS_flock: s=SYSCALL_FLOCK; break;
  case SYS_fcntl: return fcntl_native(a,b,c);
  case SYS_dup: return call(SYSCALL_FCNTL,a,0,0,0,0,0);
  case SYS_dup3: s=SYSCALL_DUP3; break;

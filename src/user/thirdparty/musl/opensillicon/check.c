@@ -12,6 +12,7 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <fcntl.h>
@@ -737,6 +738,55 @@ static int dns_check(void)
  CHECK(__get_resolv_conf(&conf,NULL,0)==0 && !memcmp(conf.ns[0].addr,dhcp_dns,4));
  return 0;
 }
+static int flock_check(void)
+{
+ int first=open("/tmp/flock-check",O_CREAT|O_RDWR,0600);
+ int second=open("/tmp/flock-check",O_RDWR);
+ CHECK(first>=0 && second>=0);
+ CHECK(flock(first,LOCK_SH)==0 && flock(second,LOCK_SH|LOCK_NB)==0);
+ CHECK(flock(first,LOCK_EX|LOCK_NB)==-1 && errno==EAGAIN);
+ CHECK(flock(second,LOCK_EX|LOCK_NB)==0);
+ CHECK(flock(first,LOCK_SH|LOCK_NB)==-1 && errno==EAGAIN);
+ CHECK(write(first,"advisory",8)==8);
+ CHECK(flock(second,LOCK_UN)==0 && flock(first,LOCK_EX)==0);
+ int duplicate=dup(first);
+ CHECK(duplicate>=0 && close(first)==0);
+ CHECK(flock(second,LOCK_EX|LOCK_NB)==-1 && errno==EAGAIN);
+ CHECK(close(duplicate)==0 && flock(second,LOCK_EX|LOCK_NB)==0);
+ CHECK(flock(second,LOCK_UN)==0);
+ CHECK(flock(-1,LOCK_EX)==-1 && errno==EBADF);
+ CHECK(flock(second,LOCK_SH|LOCK_EX)==-1 && errno==EINVAL);
+ CHECK(flock(second,LOCK_NB)==-1 && errno==EINVAL);
+ CHECK(__os_raw(SYSCALL_FLOCK,second,0x100000002L,0,0,0,0)==-EINVAL);
+ int channel[2]; CHECK(pipe(channel)==0);
+ CHECK(flock(channel[0],LOCK_EX)==-1 && errno==EOPNOTSUPP);
+ CHECK(close(channel[0])==0 && close(channel[1])==0);
+ CHECK(pipe(channel)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  close(channel[0]);
+  int held=open("/tmp/flock-check",O_RDWR);
+  if(held<0 || flock(held,LOCK_EX) || write(channel[1],"L",1)!=1) _exit(91);
+  close(channel[1]);
+  struct timespec delay={0,150000000};
+  nanosleep(&delay,NULL);
+  _exit(0);
+ }
+ CHECK(close(channel[1])==0);
+ char ready;
+ CHECK(read(channel[0],&ready,1)==1 && ready=='L' && close(channel[0])==0);
+ CHECK(flock(second,LOCK_SH|LOCK_NB)==-1 && errno==EAGAIN);
+ CHECK(flock(second,LOCK_EX)==0);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ CHECK(close(second)==0 && unlink("/tmp/flock-check")==0);
+ int directory=open("/tmp",O_RDONLY|O_DIRECTORY);
+ int other=open("/tmp",O_RDONLY|O_DIRECTORY);
+ CHECK(directory>=0 && other>=0 && flock(directory,LOCK_EX)==0);
+ CHECK(flock(other,LOCK_EX|LOCK_NB)==-1 && errno==EAGAIN);
+ CHECK(close(directory)==0 && flock(other,LOCK_EX|LOCK_NB)==0 && close(other)==0);
+ return 0;
+}
 static int network_check(void)
 {
  const long socket_cases[][4]={
@@ -1194,6 +1244,8 @@ int main(int argc, char **argv)
  if(curses_result) return curses_result;
  int poll_result=poll_check();
  if(poll_result) return poll_result;
+ int flock_result=flock_check();
+ if(flock_result) return flock_result;
  int network_result=network_check();
  if(network_result) return network_result;
  int dns_result=dns_check();

@@ -33,6 +33,7 @@
 #define ENAMETOOLONG 36
 #define ENOTEMPTY 39
 #define EOVERFLOW 75
+#define ENOLCK 37
 #define ENOSYS 78
 #define ENOTSOCK 88
 #define EDESTADDRREQ 89

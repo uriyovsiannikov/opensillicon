@@ -22,6 +22,7 @@ struct vfs_mount {
 struct vfs_file_context {
 	struct vnode *node;
 	uint32_t flags;
+	uint32_t lock;
 };
 
 static struct vfs_mount *mounts;
@@ -978,11 +979,57 @@ file_lookup_at(void *context, const char *path, uint32_t uid, uint32_t gid,
 	return vfs_lookup_from_as(file->node, path, uid, gid, result);
 }
 
+/* A lock belongs to an open file description, so dup/fork share ownership.
+ * The vnode stores either an exclusive bit or a count of shared holders. */
+#define VFS_LOCK_EXCLUSIVE (1U << 31)
+
+static void
+file_unlock(struct vfs_file_context *file)
+{
+	if (file->node == NULL || file->lock == 0)
+		return;
+	__atomic_fetch_sub(&file->node->advisory_locks,
+	    file->lock == OS_LOCK_EX ? VFS_LOCK_EXCLUSIVE : 1U, __ATOMIC_RELEASE);
+	file->lock = 0;
+	fd_readiness_wake();
+}
+
+static int
+file_flock(void *context, uint32_t operation)
+{
+	struct vfs_file_context *file = context;
+	uint32_t desired = operation & ~OS_LOCK_NB;
+
+	if (file->node->type != VNODE_REGULAR && file->node->type != VNODE_DIRECTORY)
+		return -EOPNOTSUPP;
+	if (desired == file->lock)
+		return 0;
+	/* Conversion releases the old lock before trying to acquire the new one. */
+	file_unlock(file);
+	if (desired == OS_LOCK_UN)
+		return 0;
+	uint32_t observed = __atomic_load_n(&file->node->advisory_locks, __ATOMIC_ACQUIRE);
+	for (;;) {
+		if ((observed & VFS_LOCK_EXCLUSIVE) != 0 ||
+		    (desired == OS_LOCK_EX && observed != 0))
+			return -EAGAIN;
+		uint32_t next = desired == OS_LOCK_EX ? VFS_LOCK_EXCLUSIVE : observed + 1U;
+		if (next == VFS_LOCK_EXCLUSIVE && desired == OS_LOCK_SH)
+			return -ENOLCK;
+		if (__atomic_compare_exchange_n(&file->node->advisory_locks, &observed,
+		    next, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+			file->lock = desired;
+			return 0;
+		}
+	}
+}
+
 static void
 file_close(void *context)
 {
 	struct vfs_file_context *file = context;
 
+	file_unlock(file);
 	vnode_put(file->node);
 	(void)kheap_free(file);
 }
@@ -1006,6 +1053,7 @@ file_sync(void *context)
 }
 
 static const struct fd_operations vfs_file_operations = {.sync = file_sync,
+    .flock = file_flock,
     .ioctl = file_ioctl,
     .read = file_read,
     .write = file_write,
@@ -1091,6 +1139,7 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 		return -ENOMEM;
 	context->node = NULL;
 	context->flags = flags;
+	context->lock = 0;
 	file = fd_object_create(&vfs_file_operations, context);
 	if (file == NULL) {
 		(void)kheap_free(context);

@@ -27,6 +27,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_PTY_PAIR] = { .bsp = syscall_device_bsp },
 	[SYSCALL_IOCTL] = { .bsp = syscall_device_bsp },
 	/* File */
+	[SYSCALL_FLOCK] = { .bsp = syscall_file_bsp },
 	[SYSCALL_MOUNT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_UNMOUNT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSYNC] = { .bsp = syscall_file_bsp },

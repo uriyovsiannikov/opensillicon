@@ -67,6 +67,7 @@ struct vnode {
 	uint64_t size;
 	uint64_t inode;
 	uint32_t references;
+	uint32_t advisory_locks;
 	void *private_data;
 };
 

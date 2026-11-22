@@ -150,6 +150,36 @@ syscall_file_bsp(struct interrupt_frame *frame)
 	struct fd_table *table;
 
 	switch (number) {
+	case SYSCALL_FLOCK:
+		{
+			struct fd_object *object = fd_object_for_descriptor(
+			    current_fd_table(), frame->rdi);
+			uint64_t operation = frame->rsi;
+			uint64_t mode = operation & ~((uint64_t)OS_LOCK_NB);
+			uint64_t allowed = OS_LOCK_SH | OS_LOCK_EX | OS_LOCK_NB | OS_LOCK_UN;
+			int result;
+			if (object == NULL) {
+				syscall_error(frame, EBADF);
+				break;
+			}
+			if ((operation & ~allowed) != 0 ||
+			    (mode != OS_LOCK_SH && mode != OS_LOCK_EX && mode != OS_LOCK_UN)) {
+				syscall_error(frame, EINVAL);
+				break;
+			}
+			result = object->operations->flock ?
+			    object->operations->flock(object->context, (uint32_t)operation) :
+			    -EOPNOTSUPP;
+			if (result == -EAGAIN && !(operation & OS_LOCK_NB))
+				return process_block_on_channel(frame,
+				    fd_readiness_wait_channel());
+			if (result != 0)
+				syscall_error(frame, errno_from_kernel(result));
+			else
+				frame->rax = 0;
+		}
+		break;
+
 	case SYSCALL_MOUNT:
 	case SYSCALL_UNMOUNT: {
 		struct os_credentials credentials;

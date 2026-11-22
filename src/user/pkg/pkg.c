@@ -1,4 +1,3 @@
-#include <sys/un.h>
 #include "format.h"
 #include "http.h"
 #include "io.h"
@@ -13,11 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
-#ifdef PKG_HOST
 #include <sys/file.h>
-#else
-#include <sys/socket.h>
-#endif
 
 static const char *root = "";
 static const char *repository = "https://packages.chipset.bond";
@@ -61,19 +56,9 @@ static int lock_database(void)
 	if (ensure_directory("var/db/pkg") < 0 ||
 	    rooted(path, "var/db/pkg") < 0)
 		return -1;
-#ifdef PKG_HOST
 	int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
 	if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0)
 		return package_lock = fd;
-#else
-	const struct sockaddr_un address = { .sun_family = AF_UNIX,
-	    .sun_path = "\0opensillicon:pkg" };
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd >= 0 && bind(fd, (const struct sockaddr *)&address,
-	    offsetof(struct sockaddr_un, sun_path) +
-	    sizeof("\0opensillicon:pkg") - 1) == 0)
-		return package_lock = fd;
-#endif
 	perror("pkg: lock database");
 	if (fd >= 0)
 		close(fd);
