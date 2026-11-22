@@ -9,15 +9,13 @@ cc=${CC:-gcc}
 mkdir -p "$out" "$stage/usr/bin" "$stage/usr/share/licenses/moon-buggy"
 sed -f "$src/text2c.sed" "$src/COPYING" > "$out/copying.h"
 sed -n -f "$src/img.sed" "$src/car.img" > "$out/buggy.h"
-cflags="-std=gnu11 -O2 -DNDEBUG -DOPEN_SILLICON -D_DEFAULT_SOURCE -D_POSIX_SAVED_IDS -DRETSIGTYPE=void -DHAVE_ERRNO_H=1 -DHAVE_SYS_SELECT_H=1 -DO_SHLOCK=0 -DO_EXLOCK=0 -DVERSION=\"1.1.0\" -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/nano/ncurses/include -I$out -I$src"
+cflags="-std=gnu11 -O2 -DNDEBUG -D_DEFAULT_SOURCE -D_POSIX_SAVED_IDS -DRETSIGTYPE=void -DHAVE_ERRNO_H=1 -DHAVE_SYS_SELECT_H=1 -DO_SHLOCK=0 -DO_EXLOCK=0 -DVERSION=\"1.1.0\" -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/nano/ncurses/include -I$out -I$src"
 files='main mode title pager game level ground buggy laser meteor highscore realname queue vclock date persona signal keyboard terminal cursor random error xmalloc xstrdup hpath'
 set --
 for file in $files; do
 	$cc $cflags -isystem "$($cc -print-file-name=include)" -DSCORE_DIR='"/tmp"' -c "$src/$file.c" -o "$out/$file.o"
 	set -- "$@" "$out/$file.o"
 done
-$cc $cflags -isystem "$($cc -print-file-name=include)" -c "$root/src/tools/pkg/repo/_src/moon-buggy/opensillicon.c" -o "$out/opensillicon.o"
-set -- "$@" "$out/opensillicon.o"
 $cc -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-T,"$root/src/user/c_linker.ld" \
 	"$root/src/build/musl/sysroot/lib/crt1.o" "$@" -Wl,--start-group "$root/src/build/nano/ncurses/lib/libncurses.a" \
 	"$root/src/build/musl/sysroot/lib/libc.a" -Wl,--end-group -lgcc -o "$out/moon-buggy"

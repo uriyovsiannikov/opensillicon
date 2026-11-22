@@ -32,14 +32,6 @@ extern  int  errno;
 
 #include "moon-buggy.h"
 
-#ifdef OPEN_SILLICON
-struct flock { short l_type, l_whence; long l_start, l_len; int l_pid; };
-#define F_RDLCK 0
-#define F_WRLCK 1
-#define F_SETLKW 7
-extern double difftime(time_t, time_t);
-#endif
-
 
 struct mode *highscore_mode;
 

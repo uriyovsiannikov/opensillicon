@@ -14,10 +14,6 @@
 #include "moon-buggy.h"
 #include "darray.h"
 
-#ifdef OPEN_SILLICON
-extern int raise(int);
-#endif
-
 
 struct sig_info {
   int  signum;
