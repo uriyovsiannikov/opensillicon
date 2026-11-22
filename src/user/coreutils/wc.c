@@ -1,151 +1,123 @@
-#include "../include/os.h"
-
-#define BUFFER_SIZE 512U
-#define PATH_SIZE 256U
+#include <ctype.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 struct counts {
-	uint64_t lines;
-	uint64_t words;
-	uint64_t bytes;
+	uintmax_t lines;
+	uintmax_t words;
+	uintmax_t bytes;
 };
 
-static int
-is_space(char value)
-{
-	return value == ' ' || value == '\t' || value == '\n' ||
-	    value == '\r' || value == '\v' || value == '\f';
-}
+enum { SHOW_LINES = 1, SHOW_WORDS = 2, SHOW_BYTES = 4 };
 
 static int
-count_descriptor(uint64_t descriptor, struct counts *counts)
+count_stream(FILE *input, struct counts *counts)
 {
-	char buffer[BUFFER_SIZE];
+	unsigned char buffer[8192];
 	int in_word = 0;
-	long amount;
-	counts->lines = 0;
-	counts->words = 0;
-	counts->bytes = 0;
-	while ((amount = u_read(descriptor, buffer, sizeof(buffer))) > 0) {
-		size_t i;
-		if (counts->bytes > UINT64_MAX - (uint64_t)amount)
-			return 0;
-		counts->bytes += (uint64_t)amount;
-		for (i = 0; i < (size_t)amount; i++) {
-			int whitespace = is_space(buffer[i]);
-			if (buffer[i] == '\n') {
-				if (counts->lines == UINT64_MAX)
-					return 0;
+	size_t amount;
+
+	*counts = (struct counts){0};
+	while ((amount = fread(buffer, 1, sizeof(buffer), input)) != 0) {
+		if (counts->bytes > UINTMAX_MAX - amount)
+			return EOVERFLOW;
+		counts->bytes += amount;
+		/* Both line and word counts are bounded by the checked byte count. */
+		for (size_t i = 0; i < amount; i++) {
+			if (buffer[i] == '\n')
 				counts->lines++;
-			}
-			if (whitespace)
+			if (isspace(buffer[i]))
 				in_word = 0;
 			else if (!in_word) {
-				if (counts->words == UINT64_MAX)
-					return 0;
 				counts->words++;
 				in_word = 1;
 			}
 		}
 	}
-	return amount == 0;
+	return ferror(input) ? (errno != 0 ? errno : EIO) : 0;
 }
 
 static void
-print_counts(const struct counts *counts, int lines, int words, int bytes,
-	const char *name)
+print_counts(const struct counts *counts, unsigned show, const char *name)
 {
-	int separated = 0;
-	if (lines) {
-		u_put_u64(counts->lines);
-		separated = 1;
-	}
-	if (words) {
-		if (separated)
-			u_puts(" ");
-		u_put_u64(counts->words);
-		separated = 1;
-	}
-	if (bytes) {
-		if (separated)
-			u_puts(" ");
-		u_put_u64(counts->bytes);
-		separated = 1;
-	}
-	if (name != NULL) {
-		if (separated)
-			u_puts(" ");
-		u_puts(name);
-	}
-	u_puts("\n");
-}
+	const uintmax_t values[] = {counts->lines, counts->words, counts->bytes};
+	const char *separator = "";
 
-static int
-count_file(const char *name, struct counts *counts)
-{
-	long descriptor;
-	int result;
-	if (u_streq(name, "-"))
-		return count_descriptor(0, counts);
-	descriptor = u_open(name, U_O_RDONLY);
-	if (descriptor < 0)
-		return 0;
-	result = count_descriptor((uint64_t)descriptor, counts);
-	if (u_close((uint64_t)descriptor) < 0)
-		result = 0;
-	return result;
+	for (unsigned i = 0; i < 3; i++) {
+		if (show & (1U << i)) {
+			printf("%s%" PRIuMAX, separator, values[i]);
+			separator = " ";
+		}
+	}
+	if (name != NULL)
+		printf(" %s", name);
+	putchar('\n');
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	int show_lines = 0;
-	int show_words = 0;
-	int show_bytes = 0;
-	uint64_t first_file = 1;
-	uint64_t i;
-	int failed = 0;
-	if (argc == 1) {
-		show_lines = show_words = show_bytes = 1;
-	} else {
-		while (first_file < argc && argv[first_file][0] == '-' &&
-		    argv[first_file][1] != '\0') {
-			const char *option = argv[first_file] + 1;
-			size_t j;
-			if (u_streq(argv[first_file], "--")) {
-				first_file++;
-				break;
-			}
-			for (j = 0; option[j] != '\0'; j++) {
-				if (option[j] == 'l') show_lines = 1;
-				else if (option[j] == 'w') show_words = 1;
-				else if (option[j] == 'c') show_bytes = 1;
-				else {
-					u_puts("usage: wc [-lwc] [file ...]\n");
-					return 1;
-				}
-			}
-			first_file++;
+	struct counts total = {0};
+	unsigned show = 0;
+	int option, failed = 0, overflow = 0;
+
+	opterr = 0;
+	while ((option = getopt(argc, argv, "lwc")) != -1) {
+		switch (option) {
+		case 'l': show |= SHOW_LINES; break;
+		case 'w': show |= SHOW_WORDS; break;
+		case 'c': show |= SHOW_BYTES; break;
+		default:
+			fputs("usage: wc [-lwc] [file ...]\n", stderr);
+			return 2;
 		}
-		if (!show_lines && !show_words && !show_bytes)
-			show_lines = show_words = show_bytes = 1;
 	}
-	if (first_file == argc) {
+	if (show == 0)
+		show = SHOW_LINES | SHOW_WORDS | SHOW_BYTES;
+	int files = argc - optind;
+	/* The implicit stdin input has no pathname column. */
+	int inputs = files == 0 ? 1 : files;
+	for (int i = 0; i < inputs; i++) {
+		const char *name = files == 0 ? NULL : argv[optind + i];
+		FILE *input = name == NULL || strcmp(name, "-") == 0 ? stdin :
+		    fopen(name, "rb");
 		struct counts counts;
-		if (!count_descriptor(0, &counts))
-			return 1;
-		print_counts(&counts, show_lines, show_words, show_bytes, NULL);
-		return 0;
-	}
-	for (i = first_file; i < argc; i++) {
-		struct counts counts;
-		if (!count_file(argv[i], &counts)) {
-			u_puts("wc: cannot read: ");
-			u_puts(argv[i]);
-			u_puts("\n");
+
+		if (input == NULL) {
+			fprintf(stderr, "wc: %s: %s\n", name, strerror(errno));
 			failed = 1;
 			continue;
 		}
-		print_counts(&counts, show_lines, show_words, show_bytes, argv[i]);
+		int error = count_stream(input, &counts);
+		if (input != stdin && fclose(input) != 0 && error == 0)
+			error = errno;
+		if (error != 0) {
+			fprintf(stderr, "wc: %s: %s\n", name != NULL ? name : "stdin",
+			    strerror(error));
+			failed = 1;
+			continue;
+		}
+		print_counts(&counts, show, name);
+		if (total.bytes > UINTMAX_MAX - counts.bytes) {
+			overflow = 1;
+		} else {
+			total.lines += counts.lines;
+			total.words += counts.words;
+			total.bytes += counts.bytes;
+		}
+	}
+	if (files > 1 && !overflow)
+		print_counts(&total, show, "total");
+	if (overflow) {
+		fputs("wc: total count overflow\n", stderr);
+		failed = 1;
+	}
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("wc: stdout");
+		failed = 1;
 	}
 	return failed;
 }
