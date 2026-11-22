@@ -52,7 +52,7 @@ $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h $(LIBC_A
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 # Utilities using the public POSIX runtime need libc startup and headers.
-POSIX_COREUTILS := ls rm
+POSIX_COREUTILS := ls rm uname
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(POSIX_COREUTILS))): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c $(LIBC_ARCHIVE) src/user/Makefile
 	mkdir -p $(@D)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@

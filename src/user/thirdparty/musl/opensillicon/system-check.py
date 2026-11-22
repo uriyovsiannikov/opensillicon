@@ -52,6 +52,10 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
             for line, expected in [
                 ('svctl list', 'console: running pid='),
                 ('host localhost', 'localhost has address 127.0.0.1'),
+                ('uname', 'OpenSillicon\n'),
+                ('uname -snrm', 'OpenSillicon opensillicon development amd64\n'),
+                ('uname -v', 'OpenSillicon development kernel\n'),
+                ('uname bad', 'usage: uname'),
                 ('pkg', 'usage: pkg repo URL'),
                 ('doas /bin/pkg', 'usage: pkg repo URL'),
                 ('touch /tmp/native-openat-check', None),
