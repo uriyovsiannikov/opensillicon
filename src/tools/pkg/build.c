@@ -11,8 +11,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static char files[PKG_MAX_FILES][PKG_PATH_SIZE];
-static size_t count;
+static char (*files)[PKG_PATH_SIZE];
+static size_t count, capacity;
 static int collect(const char *stage, const char *relative)
 {
 	char path[1024];
@@ -26,6 +26,16 @@ static int collect(const char *stage, const char *relative)
 		if (count == PKG_MAX_FILES || !pkg_path(relative) ||
 		    (st.st_mode & 07000))
 			return -1;
+		if (count == capacity) {
+			size_t next = capacity ? capacity * 2 : 16;
+			if (next > PKG_MAX_FILES)
+				next = PKG_MAX_FILES;
+			void *grown = realloc(files, next * sizeof(*files));
+			if (grown == NULL)
+				return -1;
+			files = grown;
+			capacity = next;
+		}
 		strcpy(files[count++], relative);
 		return 0;
 	}
@@ -72,14 +82,17 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	if (collect(argv[3], "") < 0 || !count) {
-		fprintf(stderr, "pkg-build: staging must contain 1..128 regular files "
-				"under usr/ or opt/; no links or special files\n");
+		fprintf(stderr, "pkg-build: staging must contain 1..%u regular files "
+				"under usr/ or opt/; no links or special files\n", PKG_MAX_FILES);
+		free(files);
 		return 1;
 	}
 	qsort(files, count, sizeof(files[0]), compare);
 	uint8_t *archive = calloc(1, PKG_MAX_SIZE);
-	if (!archive)
+	if (!archive) {
+		free(files);
 		return 1;
+	}
 	memcpy(archive, PKG_ARCHIVE_MAGIC, 8);
 	pkg_put_u32(archive + 12, (uint32_t)count);
 	strcpy((char *)archive + 16, argv[1]);
@@ -120,6 +133,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "pkg-build: %s\n", error);
 		goto done;
 	}
+	pkg_archive_release(&package);
 	char temporary[1024];
 	int n = snprintf(temporary, sizeof(temporary), "%s.tmp.XXXXXX", argv[4]);
 	if (n < 0 || (size_t)n >= sizeof(temporary))
@@ -145,6 +159,7 @@ int main(int argc, char **argv)
 	       used, argv[4]);
 	result = 0;
 done:
+	free(files);
 	free(archive);
 	return result;
 }

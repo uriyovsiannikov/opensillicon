@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #define PKG_MAX_SIZE (16U * 1024U * 1024U)
-#define PKG_MAX_FILES 128U
+#define PKG_MAX_FILES 1024U
 #define PKG_MAX_PACKAGES 256U
 #define PKG_HEADER_SIZE 304U
 #define PKG_ENTRY_SIZE 232U
@@ -23,7 +23,7 @@ struct pkg_file {
 struct pkg_archive {
 	const char *name, *version, *description;
 	uint32_t count, installed;
-	struct pkg_file files[PKG_MAX_FILES];
+	struct pkg_file *files;
 };
 struct pkg_index_entry {
 	char name[PKG_NAME_SIZE], version[PKG_VERSION_SIZE], hash[65];
@@ -35,7 +35,10 @@ uint32_t pkg_u32(const uint8_t *);
 void pkg_put_u32(uint8_t *, uint32_t);
 int pkg_identifier(const char *, size_t);
 int pkg_path(const char *);
-/* Parsers return NULL on success, a constant diagnostic on failure. */
+/* Parsers return NULL on success, a constant diagnostic on failure.
+ * A successful pkg_parse owns a file table; release it before parsing again.
+ * Input bytes must outlive the parsed archive. Failure leaves no allocation. */
 const char *pkg_parse(const uint8_t *, size_t, int record, struct pkg_archive *);
+void pkg_archive_release(struct pkg_archive *);
 const char *pkg_index_parse(char *, struct pkg_index_entry *, size_t *);
 #endif

@@ -92,6 +92,7 @@ static uint8_t *load_package(const char *filename, size_t *size,
 	}
 	if (error) {
 		fprintf(stderr, "pkg-server: %s: %s\n", filename, error);
+		pkg_archive_release(package);
 		free(bytes);
 		return NULL;
 	}
@@ -135,6 +136,7 @@ static char *make_index(size_t *length)
 		uint8_t hash[32];
 		pkg_sha256(bytes, size, hash);
 		pkg_hex(hash, e->hash);
+		pkg_archive_release(&package);
 		free(bytes);
 	}
 	qsort(entries, count, sizeof(*entries), compare_entries);
@@ -220,6 +222,7 @@ static void handle_client(int client)
 				if (bytes) {
 					reply(client, 200, "application/octet-stream",
 					      bytes, size);
+					pkg_archive_release(&package);
 					free(bytes);
 					return;
 				}

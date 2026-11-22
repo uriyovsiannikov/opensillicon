@@ -84,7 +84,8 @@ static int record_path(char out[256], const char *name)
 	char relative[128];
 	if (!pkg_identifier(name, PKG_NAME_SIZE))
 		return -1;
-	snprintf(relative, sizeof(relative), "var/db/pkg/%s.db", name);
+	snprintf(relative, sizeof(relative), "var/db/pkg/%.*s.db",
+	    (int)PKG_NAME_SIZE - 1, name);
 	return rooted(out, relative);
 }
 static int save_file(const char *relative, const void *bytes, size_t length)
@@ -165,6 +166,7 @@ static int installed_record(const char *name, struct pkg_archive *package,
 	if (!error && strcmp(package->name, name))
 		error = "package database name mismatch";
 	if (error) {
+		pkg_archive_release(package);
 		free(*bytes);
 		*bytes = NULL;
 		return fail(error);
@@ -227,6 +229,7 @@ static int check_reservations(const struct pkg_archive *package)
 				}
 			}
 		}
+		pkg_archive_release(&other);
 		free(bytes);
 		if (result)
 			break;
@@ -355,6 +358,7 @@ close_record:
 	if (close(fd) < 0)
 		result = 1;
 done:
+	pkg_archive_release(&package);
 	free(bytes);
 	return result;
 }
@@ -401,30 +405,32 @@ static int install_archive(const uint8_t *data, size_t size,
 	const char *error = pkg_parse(data, size, 0, &package);
 	if (error)
 		return fail(error);
+	int result = 1;
 	if (expected && (strcmp(package.name, expected->name) ||
-			 strcmp(package.version, expected->version)))
-		return fail("downloaded package does not match repository metadata");
+			 strcmp(package.version, expected->version))) {
+		fail("downloaded package does not match repository metadata");
+		goto release;
+	}
 	if (lock_database() < 0)
-		return 1;
+		goto release;
 	char db[256];
 	if (record_path(db, package.name) < 0)
-		return 1;
+		goto release;
 	uint8_t header[PKG_HEADER_SIZE];
 	memcpy(header, data, sizeof(header));
 	memcpy(header, PKG_RECORD_MAGIC, 8);
 	pkg_put_u32(header + 8, PKG_INCOMPLETE);
 	if (preflight(&package))
-		return 1;
+		goto release;
 	if (check_reservations(&package))
-		return 1;
+		goto release;
 	/* O_EXCL reserves ownership before any payload is written. Keep pending
 	 * records on error so partial installations are visible after a reboot. */
 	int record = open(db, O_WRONLY | O_NOFOLLOW | O_CREAT | O_EXCL, 0644);
 	if (record < 0) {
 		perror("pkg: reserve installation record");
-		return 1;
+		goto release;
 	}
-	int result = 1;
 	if (pkg_write_all(record, header, sizeof(header)) < 0)
 		goto bad_manifest;
 	for (uint32_t i = 0; i < package.count; i++)
@@ -472,6 +478,8 @@ failed:
 done:
 	if (close(record) < 0)
 		result = 1;
+release:
+	pkg_archive_release(&package);
 	return result;
 }
 static int install_remote(const char *name)
@@ -599,33 +607,42 @@ static int upgrade_one(const char *name)
 	if (installed_record(name, &old, &old_bytes))
 		return 1;
 	if (old.installed != PKG_INSTALLED) {
+		pkg_archive_release(&old);
 		free(old_bytes);
 		return fail("package has an incomplete transaction; remove or repair it before upgrading");
 	}
 	if (!strcmp(old.version, entry->version)) {
 		printf("%s %s is already current\n", name, old.version);
+		pkg_archive_release(&old);
 		free(old_bytes);
 		return 0;
 	}
 	uint8_t *bytes = NULL;
 	size_t size = 0;
 	if (download_entry(entry, &bytes, &size)) {
+		pkg_archive_release(&old);
 		free(old_bytes);
 		return 1;
 	}
 	struct pkg_archive next;
 	const char *error = pkg_parse(bytes, size, 0, &next);
 	if (error || strcmp(next.name, name) || strcmp(next.version, entry->version)) {
+		pkg_archive_release(&next);
 		free(bytes);
+		pkg_archive_release(&old);
 		free(old_bytes);
 		return fail(error ? error : "downloaded package does not match repository metadata");
 	}
 	if (preflight_upgrade(&old, &next)) {
+		pkg_archive_release(&next);
 		free(bytes);
+		pkg_archive_release(&old);
 		free(old_bytes);
 		return 1;
 	}
 	printf("Upgrading %s %s -> %s\n", name, old.version, next.version);
+	pkg_archive_release(&next);
+	pkg_archive_release(&old);
 	free(old_bytes);
 	if (remove_package(name)) {
 		free(bytes);
@@ -785,6 +802,7 @@ static int list_installed(void)
 			strcpy(listed->version, package.version);
 			strcpy(listed->description, package.description);
 		}
+		pkg_archive_release(&package);
 		free(bytes);
 	}
 	closedir(dir);

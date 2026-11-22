@@ -594,3 +594,7 @@ src/tools/pkg/repo/_pkges/xmms-1.2.11.spkg: $(XMMS_BUILD)/xmms \
 	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libz/LICENSE $(XMMS_STAGE)/usr/share/licenses/xmms/libz.LICENSE
 	install -D -m 644 $(XMMS_BUILD)/sources.tar.gz $(XMMS_STAGE)/usr/share/doc/xmms/sources.tar.gz
 	$(BUILD_DIR)/pkg/pkg-build xmms 1.2.11 $(XMMS_STAGE) $@ 'XMMS music player with native HDA output and WAV/MP3 decoders'
+
+.PHONY: check-pkg
+check-pkg:
+	python3 src/tools/checks/pkg.py

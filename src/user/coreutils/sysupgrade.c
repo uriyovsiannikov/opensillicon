@@ -93,6 +93,7 @@ static int fetch_release(struct pkg_archive *archive, uint8_t **package_bytes)
 	*package_bytes = bytes; bytes = NULL;
 	result = 0;
 done:
+	if (result) pkg_archive_release(archive);
 	free(index); free(bytes);
 	if (result) fputs("sysupgrade: unable to fetch a verified release\n", stderr);
 	return result;
@@ -244,17 +245,17 @@ int main(int argc, char **argv)
 	if (argc != 2 || (strcmp(argv[1], "check") && strcmp(argv[1], "apply"))) return usage();
 	struct pkg_archive archive = {0}; struct release release = {0}; uint8_t *package = NULL;
 	if (fetch_release(&archive, &package)) return 1;
-	int result = verify_manifest(&archive, &release);
-	if (result) { free(package); return 1; }
+	int result = 1;
+	if (verify_manifest(&archive, &release)) goto done;
 	unsigned running_major = 0, running_minor = 0;
 	(void)running_driver_api(&running_major, &running_minor);
 	printf("Verified OpenSillicon kernel release %s (driver ABI %u.%u)\n",
 	    release.version, running_major, running_minor);
-	if (!strcmp(argv[1], "check")) { free(package); return 0; }
+	if (!strcmp(argv[1], "check")) { result = 0; goto done; }
 	char esp_path[64];
 	uint8_t root_uuid[16];
 	if (locate_esp(esp_path, root_uuid)) {
-		fputs("sysupgrade: could not find this system's EFI partition\n", stderr); free(package); return 1;
+		fputs("sysupgrade: could not find this system's EFI partition\n", stderr); goto done;
 	}
 	struct storage_device device;
 	int error = storage_open(&device, esp_path, 1);
@@ -268,7 +269,11 @@ int main(int argc, char **argv)
 		if (!error)
 			error = close_error;
 	}
-	if (error) { fprintf(stderr, "sysupgrade: install failed (%d)\n", error); free(package); return 1; }
+	if (error) { fprintf(stderr, "sysupgrade: install failed (%d)\n", error); goto done; }
 	puts("Kernel and initramfs installed. Reboot to start the new kernel.");
-	free(package); return 0;
+	result = 0;
+done:
+	pkg_archive_release(&archive);
+	free(package);
+	return result;
 }

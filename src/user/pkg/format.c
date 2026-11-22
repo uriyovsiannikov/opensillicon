@@ -1,6 +1,7 @@
 #include "format.h"
 #include "sha256.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 uint32_t pkg_u32(const uint8_t *p)
@@ -62,28 +63,15 @@ int pkg_path(const char *path)
 	}
 	return 1;
 }
-const char *pkg_parse(const uint8_t *bytes, size_t size, int record,
-		      struct pkg_archive *out)
+void pkg_archive_release(struct pkg_archive *archive)
 {
-	if (size < PKG_HEADER_SIZE || size > PKG_MAX_SIZE)
-		return "invalid package length";
-	if (memcmp(bytes, record ? PKG_RECORD_MAGIC : PKG_ARCHIVE_MAGIC, 8))
-		return "unsupported package format";
-	if (!record && pkg_u32(bytes + 8) != size)
-		return "package length mismatch";
-	if (record && pkg_u32(bytes + 8) > PKG_DELETING)
-		return "invalid installation state";
-	out->name = (const char *)bytes + 16;
-	out->version = (const char *)bytes + 80;
-	out->description = (const char *)bytes + 112;
-	out->count = pkg_u32(bytes + 12);
-	out->installed = record ? pkg_u32(bytes + 8) : 0;
-	if (!pkg_identifier(out->name, PKG_NAME_SIZE) ||
-	    !pkg_identifier(out->version, PKG_VERSION_SIZE) ||
-	    !printable(out->description, PKG_DESCRIPTION_SIZE))
-		return "invalid package metadata";
-	if (!out->count || out->count > PKG_MAX_FILES)
-		return "invalid package file count";
+	free(archive->files);
+	*archive = (struct pkg_archive){0};
+}
+
+static const char *parse_files(const uint8_t *bytes, size_t size, int record,
+	struct pkg_archive *out)
+{
 	size_t offset = PKG_HEADER_SIZE;
 	for (uint32_t i = 0; i < out->count; i++) {
 		if (size - offset < PKG_ENTRY_SIZE)
@@ -125,6 +113,42 @@ const char *pkg_parse(const uint8_t *bytes, size_t size, int record,
 	}
 	return offset == size ? NULL : "unexpected trailing data";
 }
+
+const char *pkg_parse(const uint8_t *bytes, size_t size, int record,
+		      struct pkg_archive *out)
+{
+	*out = (struct pkg_archive){0};
+	if (size < PKG_HEADER_SIZE || size > PKG_MAX_SIZE)
+		return "invalid package length";
+	if (memcmp(bytes, record ? PKG_RECORD_MAGIC : PKG_ARCHIVE_MAGIC, 8))
+		return "unsupported package format";
+	if (!record && pkg_u32(bytes + 8) != size)
+		return "package length mismatch";
+	if (record && pkg_u32(bytes + 8) > PKG_DELETING)
+		return "invalid installation state";
+	out->name = (const char *)bytes + 16;
+	out->version = (const char *)bytes + 80;
+	out->description = (const char *)bytes + 112;
+	out->count = pkg_u32(bytes + 12);
+	out->installed = record ? pkg_u32(bytes + 8) : 0;
+	if (!pkg_identifier(out->name, PKG_NAME_SIZE) ||
+	    !pkg_identifier(out->version, PKG_VERSION_SIZE) ||
+	    !printable(out->description, PKG_DESCRIPTION_SIZE))
+		return "invalid package metadata";
+	if (!out->count || out->count > PKG_MAX_FILES ||
+	    out->count > (size - PKG_HEADER_SIZE) / PKG_ENTRY_SIZE)
+		return "invalid package file count";
+	out->files = calloc(out->count, sizeof(*out->files));
+	if (out->files == NULL) {
+		pkg_archive_release(out);
+		return "cannot allocate package file table";
+	}
+	const char *error = parse_files(bytes, size, record, out);
+	if (error != NULL)
+		pkg_archive_release(out);
+	return error;
+}
+
 static int copy_field(char *target, size_t capacity, const char *text)
 {
 	size_t n = strlen(text);
