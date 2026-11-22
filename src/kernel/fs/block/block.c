@@ -258,3 +258,18 @@ block_replace_partitions(
 	}
 	return 0;
 }
+
+int
+block_flush_all(void)
+{
+	int error = 0;
+
+	for (size_t i = 0; i < device_count; i++) {
+		if (devices[i]->parent != NULL)
+			continue;
+		int result = block_flush(devices[i]);
+		if (result != 0 && error == 0)
+			error = result;
+	}
+	return error;
+}

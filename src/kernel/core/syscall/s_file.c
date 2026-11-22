@@ -3,6 +3,7 @@
 #include "abi/dirent.h"
 
 #include "kernel/mount.h"
+#include "kernel/block.h"
 #include "kernel/process.h"
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
@@ -233,7 +234,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 	} break;
 	case SYSCALL_SYNC: {
-		int result = filesystem_sync_all();
+		int result = block_flush_all();
 		if (result)
 			syscall_error(frame, errno_from_kernel(result));
 		else

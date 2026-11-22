@@ -53,5 +53,7 @@ int block_read(struct block_device *device, uint64_t first_sector,
 int block_write(struct block_device *device, uint64_t first_sector,
 	uint32_t sector_count, const void *buffer);
 int block_flush(struct block_device *device);
+/* Flush root devices once; partitions share their parent's cache. */
+int block_flush_all(void);
 
 #endif

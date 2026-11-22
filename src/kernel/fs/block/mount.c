@@ -104,18 +104,3 @@ filesystem_unmount(const char *target)
 	memset(slot, 0, sizeof(*slot));
 	return 0;
 }
-
-int
-filesystem_sync_all(void)
-{
-	int error = 0;
-	for (size_t i = 0; i < block_device_count(); i++) {
-		struct block_device *block = block_device_at(i);
-		if (block->mounted) {
-			int result = block_flush(block);
-			if (result && !error)
-				error = result;
-		}
-	}
-	return error;
-}
