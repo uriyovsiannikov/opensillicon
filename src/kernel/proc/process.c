@@ -2005,12 +2005,6 @@ process_run_elf_internal(const void *image, size_t image_size,
 	return status;
 }
 
-uint64_t
-process_run_elf(const void *image, size_t image_size)
-{
-	return process_run_elf_internal(image, image_size, false, "elf");
-}
-
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
 uint64_t
 process_test_private_mapping_lifecycle(const void *image, size_t image_size)
@@ -2081,7 +2075,7 @@ read_executable_image(struct vnode *node, void **result, size_t *image_size)
 }
 
 uint64_t
-process_run_path(const char *path, bool startup_stack)
+process_run_path(const char *path)
 {
 	struct vnode *executable = NULL;
 	void *image;
@@ -2102,7 +2096,6 @@ process_run_path(const char *path, bool startup_stack)
 	if (error != 0)
 		return UINT64_MAX;
 	/* Path-based launches always receive the standard argc/envp/auxv stack. */
-	(void)startup_stack;
 	result = process_run_elf_internal(image, image_size, true, path);
 	(void)kheap_free(image);
 	return result;

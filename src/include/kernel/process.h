@@ -31,7 +31,6 @@ struct process_status {
 };
 
 void process_system_init(void);
-uint64_t process_run_elf(const void *image, size_t image_size);
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
 uint64_t process_test_private_mapping_lifecycle(const void *image,
 	size_t image_size);
@@ -40,7 +39,7 @@ uint64_t process_test_private_mapping_lifecycle(const void *image,
 void process_test_arm_user_fault_capture(void);
 bool process_test_user_fault_capture(uint64_t *vector, uint64_t *error_code);
 #endif
-uint64_t process_run_path(const char *path, bool startup_stack);
+uint64_t process_run_path(const char *path);
 struct fd_table *process_current_fd_table(void);
 uint64_t process_current_pid(void);
 uint64_t process_current_ppid(void);

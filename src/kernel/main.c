@@ -775,7 +775,7 @@ virtio_rng_probe_done:
 	if (!tty_keyboard_available())
 		usb_host_input_diagnostics();
 	{
-		uint64_t status = process_run_path("/sbin/init", true);
+		uint64_t status = process_run_path("/sbin/init");
 
 		if (status == UINT64_MAX)
 			klog("OpenSillicon: /sbin/init missing or failed to load; halting\n");
