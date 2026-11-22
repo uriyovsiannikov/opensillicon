@@ -209,12 +209,17 @@ elf_image_validate(const void *image, size_t image_size,
 		}
 		if (type != ELF_PROGRAM_LOAD)
 			continue;
-		if (plan->segment_count == ELF_MAX_LOAD_SEGMENTS || memory_size == 0 ||
-		    file_size > memory_size || (flags & ~7U) != 0 ||
+		if (file_size > memory_size || (flags & ~7U) != 0 ||
 		    (flags & ELF_FLAG_READ) == 0 ||
 		    (flags & (ELF_FLAG_WRITE | ELF_FLAG_EXECUTE)) ==
 		    (ELF_FLAG_WRITE | ELF_FLAG_EXECUTE) ||
-		    !range_in_file(offset, file_size, image_size) ||
+		    !range_in_file(offset, file_size, image_size))
+			return false;
+		/* A declared data PHDR can be empty when no writable sections exist.
+		 * It maps no pages; its unused address need not satisfy map alignment. */
+		if (memory_size == 0)
+			continue;
+		if (plan->segment_count == ELF_MAX_LOAD_SEGMENTS ||
 		    (virtual_address & (ELF_PAGE_SIZE - 1)) !=
 		    (offset & (ELF_PAGE_SIZE - 1)) ||
 		    (alignment > 1 && (!power_of_two(alignment) ||
