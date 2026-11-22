@@ -229,7 +229,8 @@ $(TINYX_BINARY): $(TINYX_CONFIG_STAMP) $(LIBC_ARCHIVE) $(LIBZ_ARCHIVE) \
 
 $(TINYX_BINARY): | $(BUILD_DIR)
 
-$(BUILD_DIR)/startx.o: src/tools/pkg/repo/_src/twm/startx/startx.c | $(BUILD_DIR)
+$(BUILD_DIR)/startx.o: src/tools/pkg/repo/_src/twm/startx/startx.c \
+		src/include/abi/ioctl.h $(LIBC_ARCHIVE) | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld

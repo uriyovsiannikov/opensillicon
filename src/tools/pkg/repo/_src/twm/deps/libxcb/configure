@@ -21545,7 +21545,7 @@ mingw*)
         have_win32="yes"
         lt_enable_auto_import="-Wl,--enable-auto-import"
         ;;
-linux*|elf*)
+linux*)
 
 printf "%s\n" "#define HAVE_ABSTRACT_SOCKETS 1" >>confdefs.h
 

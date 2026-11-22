@@ -148,7 +148,7 @@ from the copyright holders.
 /* others don't need this */
 #define SocketInitOnce() /**/
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(OPEN_SILLICON)
 #define HAVE_ABSTRACT_SOCKETS
 #endif
 

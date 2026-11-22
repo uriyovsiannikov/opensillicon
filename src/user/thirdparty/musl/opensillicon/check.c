@@ -783,44 +783,49 @@ static int network_check(void)
  }
  for(size_t i=0;i<sizeof sockets/sizeof sockets[0];i++) CHECK(close(sockets[i])==0);
  CHECK(close(channel[0])==0 && close(channel[1])==0);
- int abstract=socket(AF_UNIX,SOCK_STREAM,0);
- CHECK(abstract>=0);
- struct sockaddr_un abstract_name={.sun_family=AF_UNIX};
- memcpy(abstract_name.sun_path,"\0A\0B",4);
+ int name_listener=socket(AF_UNIX,SOCK_STREAM,0);
+ CHECK(name_listener>=0);
+ struct sockaddr_un listener_name={.sun_family=AF_UNIX,.sun_path="/musl-name-listener"};
+ socklen_t listener_name_length=offsetof(struct sockaddr_un,sun_path)+strlen(listener_name.sun_path)+1;
+ struct sockaddr_un unsupported_name={.sun_family=AF_UNIX};
+ memcpy(unsupported_name.sun_path,"\0A\0B",4);
+ socklen_t unsupported_length=offsetof(struct sockaddr_un,sun_path)+4;
+ CHECK(bind(name_listener,(struct sockaddr *)&unsupported_name,unsupported_length)==-1 && errno==EINVAL);
+ CHECK(connect(name_listener,(struct sockaddr *)&unsupported_name,unsupported_length)==-1 && errno==EINVAL);
  struct sockaddr_un queried;
  socklen_t queried_length=sizeof queried;
  memset(&queried,0xa5,sizeof queried);
- CHECK(getsockname(abstract,(struct sockaddr *)&queried,&queried_length)==0 &&
+ CHECK(getsockname(name_listener,(struct sockaddr *)&queried,&queried_length)==0 &&
      queried_length==sizeof queried.sun_family && queried.sun_family==AF_UNIX &&
      (unsigned char)queried.sun_path[0]==0xa5);
- CHECK(getpeername(abstract,(struct sockaddr *)&queried,&queried_length)==-1 && errno==ENOTCONN);
- queried_length=offsetof(struct sockaddr_un,sun_path)+4;
- CHECK(bind(abstract,(struct sockaddr *)&abstract_name,queried_length)==0);
- CHECK(getsockname(abstract,(struct sockaddr *)&queried,&queried_length)==0 &&
-     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
-     !memcmp(&queried,&abstract_name,queried_length));
- CHECK(listen(abstract,1)==0);
+ CHECK(getpeername(name_listener,(struct sockaddr *)&queried,&queried_length)==-1 && errno==ENOTCONN);
+ queried_length=listener_name_length;
+ CHECK(bind(name_listener,(struct sockaddr *)&listener_name,queried_length)==0);
+ CHECK(getsockname(name_listener,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==listener_name_length &&
+     !memcmp(&queried,&listener_name,queried_length));
+ CHECK(listen(name_listener,1)==0);
  int named_client=socket(AF_UNIX,SOCK_STREAM,0);
  CHECK(named_client>=0);
  struct sockaddr_un client_name={.sun_family=AF_UNIX,.sun_path="/musl-peer-name"};
  socklen_t client_name_length=offsetof(struct sockaddr_un,sun_path)+strlen(client_name.sun_path)+1;
  CHECK(bind(named_client,(struct sockaddr *)&client_name,sizeof client_name)==0);
- CHECK(connect(named_client,(struct sockaddr *)&abstract_name,queried_length)==0);
- int accepted=accept(abstract,NULL,NULL);
- CHECK(accepted>=0 && close(abstract)==0);
+ CHECK(connect(named_client,(struct sockaddr *)&listener_name,queried_length)==0);
+ int accepted=accept(name_listener,NULL,NULL);
+ CHECK(accepted>=0 && close(name_listener)==0);
  queried_length=sizeof queried;
  CHECK(getpeername(named_client,(struct sockaddr *)&queried,&queried_length)==0 &&
-     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
-     !memcmp(&queried,&abstract_name,queried_length));
+     queried_length==listener_name_length &&
+     !memcmp(&queried,&listener_name,queried_length));
  queried_length=sizeof queried;
  CHECK(getsockname(accepted,(struct sockaddr *)&queried,&queried_length)==0 &&
-     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
-     !memcmp(&queried,&abstract_name,queried_length));
+     queried_length==listener_name_length &&
+     !memcmp(&queried,&listener_name,queried_length));
  CHECK(close(named_client)==0);
  queried_length=sizeof queried;
  CHECK(getpeername(accepted,(struct sockaddr *)&queried,&queried_length)==0 &&
      queried_length==client_name_length && !strcmp(queried.sun_path,client_name.sun_path));
- CHECK(close(accepted)==0 && unlink(client_name.sun_path)==0);
+ CHECK(close(accepted)==0 && unlink(client_name.sun_path)==0 && unlink(listener_name.sun_path)==0);
  struct sockaddr_un address={.sun_family=AF_UNIX,.sun_path="/musl-socket"};
  int server=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
  CHECK(server>=0 && (fcntl(server,F_GETFD)&FD_CLOEXEC));

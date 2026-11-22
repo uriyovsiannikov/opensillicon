@@ -215,8 +215,7 @@ typedef struct _Xtransport_table {
 
 #define TRANS_LOCAL     (1<<0)  /* Local transport */
 #define TRANS_NOLISTEN  (1<<1)  /* Don't listen on this one */
-#define TRANS_ABSTRACT  (1<<2)  /* Use Linux abstract UNIX sockets */
-#define TRANS_KEEPFLAGS (TRANS_LOCAL | TRANS_ABSTRACT)
+#define TRANS_KEEPFLAGS TRANS_LOCAL
 
 #ifdef XTRANS_TRANSPORT_C /* only provide static function prototypes when
 			     building the transport.c file that has them in */

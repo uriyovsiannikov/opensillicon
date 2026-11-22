@@ -259,3 +259,10 @@ full native address length. A zero capacity performs a size query. IPv4 uses
 Slots 88, 89, 91 and 92 return ENOSYS. Rebuild static applications for ABI v13.
 The libc Unix-socket ENOSYS substitute is removed; accepted sockets preserve
 the listener's bound name and peer queries return the actual peer's name.
+
+Unix-domain sockets use filesystem names, directory permissions and socket
+vnodes. Linux abstract names (a leading NUL) are rejected with EINVAL; their
+separate namespace and duplicate lookup code are removed. TinyX, XCB and
+startx use `/tmp/.X11-unix/X0`. TinyX creates the socket directory, removes its
+listener node when closing, and obtains accepted endpoints with the shared
+getsockname/getpeername interface instead of copying the listener as its peer.

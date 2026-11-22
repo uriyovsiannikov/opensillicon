@@ -1,4 +1,5 @@
 /* OpenSillicon graphical session supervisor. */
+#include "abi/ioctl.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -6,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <time.h>
@@ -20,7 +22,7 @@ static int display_socket(void)
 	static const char path[] = "/tmp/.X11-unix/X0";
 	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (fd < 0) return -1;
-	memcpy(address.sun_path + 1, path, sizeof(path) - 1);
+	memcpy(address.sun_path, path, sizeof(path));
 	if (connect(fd, (struct sockaddr *)&address,
 	    offsetof(struct sockaddr_un, sun_path) + sizeof(path)) < 0) {
 		close(fd); return -1;
@@ -62,7 +64,7 @@ int main(void)
 	if (fd >= 0) { close(fd); fputs("startx: display :0 already active\n", stderr); return 1; }
 	if (signal(SIGINT, stop) == SIG_ERR || signal(SIGTERM, stop) == SIG_ERR)
 		return 1;
-	if (ioctl(STDOUT_FILENO, TIOCSFB, &framebuffer_console) < 0) {
+	if (ioctl(STDOUT_FILENO, OS_TIOCSFB, &framebuffer_console) < 0) {
 		perror("startx: cannot suppress framebuffer console output");
 		return 1;
 	}
@@ -120,7 +122,7 @@ cleanup:
 		while (waitpid(children[i], &status, 0) < 0 && errno == EINTR) {}
 	}
 	framebuffer_console = 1;
-	if (ioctl(STDOUT_FILENO, TIOCSFB, &framebuffer_console) < 0)
+	if (ioctl(STDOUT_FILENO, OS_TIOCSFB, &framebuffer_console) < 0)
 		perror("startx: cannot restore framebuffer console output");
 	return result;
 }

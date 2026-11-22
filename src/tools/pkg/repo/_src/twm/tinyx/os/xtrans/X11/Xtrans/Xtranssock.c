@@ -72,6 +72,7 @@ from the copyright holders.
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 
 #include <unistd.h>
 
@@ -86,7 +87,8 @@ from the copyright holders.
 #endif
 
 /* TinyX uses local UNIX domain sockets only. */
-#define UNIX_PATH "/tmp/.X11-unix/X"
+#define UNIX_DIR "/tmp/.X11-unix"
+#define UNIX_PATH UNIX_DIR "/X"
 
 static XtransConnInfo
 TRANS(SocketOpen) (void)
@@ -178,28 +180,18 @@ TRANS(SocketOpenCOTSServer) (Xtransport *thistrans, const char *protocol,
 
 #ifdef UNIXCONN
 static int
-set_sun_path(const char *port, const char *upath, char *path, int abstract)
+set_sun_path(const char *port, const char *upath, char *path)
 {
     struct sockaddr_un s;
-    ssize_t maxlen = sizeof(s.sun_path) - 1;
-    const char *at = "";
+    size_t maxlen = sizeof(s.sun_path) - 1;
 
     if (!port || !*port || !path)
-	return -1;
-
-#ifdef HAVE_ABSTRACT_SOCKETS
-    if (port[0] == '@')
-	upath = "";
-    else if (abstract)
-	at = "@";
-#endif
-
-    if (*port == '/') /* a full pathname */
-	upath = "";
-
-    if ((ssize_t)(strlen(at) + strlen(upath) + strlen(port)) > maxlen)
-	return -1;
-    snprintf(path, sizeof(s.sun_path), "%s%s%s", at, upath, port);
+        return -1;
+    if (*port == '/')
+        upath = "";
+    if (strlen(upath) + strlen(port) > maxlen)
+        return -1;
+    snprintf(path, sizeof(s.sun_path), "%s%s", upath, port);
     return 0;
 }
 #endif
@@ -257,10 +249,6 @@ TRANS(SocketUNIXCreateListener) (XtransConnInfo ciptr, const char *port,
     int namelen, status;
     char tmpport[108];
 
-    if (!(ciptr->transptr->flags & TRANS_ABSTRACT)) {
-        errno = EOPNOTSUPP;
-        return TRANS_CREATE_LISTENER_FAILED;
-    }
 
     memset(&sockname, 0, sizeof(sockname));
     sockname.sun_family = AF_UNIX;
@@ -268,22 +256,31 @@ TRANS(SocketUNIXCreateListener) (XtransConnInfo ciptr, const char *port,
         snprintf(tmpport, sizeof(tmpport), "%s%ld", UNIX_PATH, (long)getpid());
         port = tmpport;
     }
-    if (set_sun_path(port, UNIX_PATH, sockname.sun_path, 1) != 0)
+    if (set_sun_path(port, UNIX_PATH, sockname.sun_path) != 0)
         return TRANS_CREATE_LISTENER_FAILED;
 
-    sockname.sun_path[0] = '\0';
-    namelen = offsetof(struct sockaddr_un, sun_path) + 1 +
-              strlen(&sockname.sun_path[1]);
+    mode_t old_umask = umask(0);
+    int directory_result = mkdir(UNIX_DIR, 01777);
+    int directory_error = errno;
+    umask(old_umask);
+    if (directory_result < 0 && directory_error != EEXIST) {
+        errno = directory_error;
+        return TRANS_CREATE_LISTENER_FAILED;
+    }
+    namelen = offsetof(struct sockaddr_un, sun_path) + strlen(sockname.sun_path) + 1;
     status = TRANS(SocketCreateListener)(ciptr, (struct sockaddr *)&sockname,
                                          namelen, flags);
     if (status < 0)
         return status;
 
-    sockname.sun_path[0] = '@';
-    ciptr->addrlen = sizeof(sockname);
+    ciptr->addrlen = namelen;
     ciptr->addr = malloc(ciptr->addrlen);
-    if (!ciptr->addr)
+    if (!ciptr->addr) {
+        close(ciptr->fd);
+        ciptr->fd = -1;
+        unlink(sockname.sun_path);
         return TRANS_CREATE_LISTENER_FAILED;
+    }
     ciptr->family = AF_UNIX;
     memcpy(ciptr->addr, &sockname, ciptr->addrlen);
     return 0;
@@ -293,21 +290,18 @@ static int
 TRANS(SocketUNIXResetListener) (XtransConnInfo ciptr)
 {
     struct sockaddr_un *unsock = (struct sockaddr_un *)ciptr->addr;
-    char abstract_prefix;
     int result;
 
-    if (!(ciptr->transptr->flags & TRANS_ABSTRACT) || !unsock) {
+    if (!unsock) {
         errno = EOPNOTSUPP;
         return TRANS_RESET_FAILURE;
     }
     close(ciptr->fd);
+    unlink(unsock->sun_path);
     if ((ciptr->fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
         return TRANS_RESET_FAILURE;
 
-    abstract_prefix = unsock->sun_path[0];
-    unsock->sun_path[0] = '\0';
     result = bind(ciptr->fd, (struct sockaddr *)unsock, ciptr->addrlen);
-    unsock->sun_path[0] = abstract_prefix;
     if (result < 0 || listen(ciptr->fd, BACKLOG) < 0) {
         close(ciptr->fd);
         ciptr->fd = -1;
@@ -326,70 +320,44 @@ static XtransConnInfo
 TRANS(SocketUNIXAccept) (XtransConnInfo ciptr, int *status)
 
 {
-    XtransConnInfo	newciptr;
-    struct sockaddr_un	sockname;
-    socklen_t 		namelen = sizeof sockname;
+    XtransConnInfo newciptr = calloc(1, sizeof(struct _XtransConnInfo));
+    struct sockaddr_un local, peer;
+    socklen_t local_length = sizeof(local), peer_length = sizeof(peer);
 
-    prmsg (2, "SocketUNIXAccept(%p,%d)\n", (void *) ciptr, ciptr->fd);
-
-    if ((newciptr = calloc (1, sizeof(struct _XtransConnInfo))) == NULL)
-    {
-	prmsg (1, "SocketUNIXAccept: malloc() failed\n");
-	*status = TRANS_ACCEPT_BAD_MALLOC;
-	return NULL;
-    }
-
-    if ((newciptr->fd = accept (ciptr->fd,
-	(struct sockaddr *) &sockname, (void *)&namelen)) < 0)
-    {
-	prmsg (1, "SocketUNIXAccept: accept() failed\n");
-	free (newciptr);
-	*status = TRANS_ACCEPT_FAILED;
-	return NULL;
-    }
-
-	ciptr->addrlen = namelen;
-    /*
-     * Get the socket name and the peer name from the listener socket,
-     * since this is unix domain.
-     */
-
-    if ((newciptr->addr = malloc (ciptr->addrlen)) == NULL)
-    {
-        prmsg (1,
-        "SocketUNIXAccept: Can't allocate space for the addr\n");
-	close (newciptr->fd);
-	free (newciptr);
-	*status = TRANS_ACCEPT_BAD_MALLOC;
+    if (!newciptr) {
+        *status = TRANS_ACCEPT_BAD_MALLOC;
         return NULL;
     }
-
-    /*
-     * if the socket is abstract, we already modified the address to have a
-     * @ instead of the initial NUL, so no need to do that again here.
-     */
-
-    newciptr->addrlen = ciptr->addrlen;
-    memcpy (newciptr->addr, ciptr->addr, newciptr->addrlen);
-
-    if ((newciptr->peeraddr = malloc (ciptr->addrlen)) == NULL)
-    {
-        prmsg (1,
-	      "SocketUNIXAccept: Can't allocate space for the addr\n");
-	close (newciptr->fd);
-	if (newciptr->addr) free (newciptr->addr);
-	free (newciptr);
-	*status = TRANS_ACCEPT_BAD_MALLOC;
+    newciptr->fd = accept(ciptr->fd, NULL, NULL);
+    if (newciptr->fd < 0) {
+        free(newciptr);
+        *status = TRANS_ACCEPT_FAILED;
         return NULL;
     }
-
-    newciptr->peeraddrlen = ciptr->addrlen;
-    memcpy (newciptr->peeraddr, ciptr->addr, newciptr->addrlen);
-
+    if (getsockname(newciptr->fd, (struct sockaddr *)&local, &local_length) < 0 ||
+        getpeername(newciptr->fd, (struct sockaddr *)&peer, &peer_length) < 0 ||
+        local_length > sizeof(local) || peer_length > sizeof(peer)) {
+        close(newciptr->fd);
+        free(newciptr);
+        *status = TRANS_ACCEPT_FAILED;
+        return NULL;
+    }
+    newciptr->addr = malloc(local_length);
+    newciptr->peeraddr = malloc(peer_length);
+    if (!newciptr->addr || !newciptr->peeraddr) {
+        close(newciptr->fd);
+        free(newciptr->addr);
+        free(newciptr->peeraddr);
+        free(newciptr);
+        *status = TRANS_ACCEPT_BAD_MALLOC;
+        return NULL;
+    }
+    memcpy(newciptr->addr, &local, local_length);
+    memcpy(newciptr->peeraddr, &peer, peer_length);
+    newciptr->addrlen = local_length;
+    newciptr->peeraddrlen = peer_length;
     newciptr->family = AF_UNIX;
-
     *status = 0;
-
     return newciptr;
 }
 
@@ -463,7 +431,10 @@ static int
 TRANS(SocketUNIXClose) (XtransConnInfo ciptr)
 {
     prmsg (2,"SocketUNIXClose(%p,%d)\n", (void *) ciptr, ciptr->fd);
-    return close(ciptr->fd);
+    int result = close(ciptr->fd);
+    if ((ciptr->flags & 1) && ciptr->addr)
+        unlink(((struct sockaddr_un *)ciptr->addr)->sun_path);
+    return result;
 }
 
 #endif /* UNIXCONN */
@@ -474,11 +445,7 @@ TRANS(SocketUNIXClose) (XtransConnInfo ciptr)
 static Xtransport	TRANS(SocketLocalFuncs) = {
 	/* Socket Interface */
 	"local",
-#ifdef HAVE_ABSTRACT_SOCKETS
-	TRANS_LOCAL | TRANS_ABSTRACT,
-#else
 	TRANS_LOCAL,
-#endif
 
 #ifdef TRANS_SERVER
 	TRANS(SocketOpenCOTSServer),

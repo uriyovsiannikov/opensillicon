@@ -23,13 +23,6 @@
 
 #include "xtrans/X11/Xtrans/Xtransint.h"
 
-#ifdef OPEN_SILLICON
-/* The kernel's AF_UNIX namespace is opaque and has no socket filesystem nodes. */
-#ifndef HAVE_ABSTRACT_SOCKETS
-#define HAVE_ABSTRACT_SOCKETS 1
-#endif
-#endif
-
 #ifdef UNIXCONN
 #include "xtrans/X11/Xtrans/Xtranssock.c"
 #endif
