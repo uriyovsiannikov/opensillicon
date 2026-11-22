@@ -30,7 +30,7 @@ static void
 pty_free(void *pointer)
 {
 	if (!kheap_free(pointer)) {
-		klog("OpenSillicon panic: cannot release PTY allocation\n");
+		klog("panic: cannot release pty allocation\n");
 		kernel_halt();
 	}
 }
