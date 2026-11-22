@@ -766,35 +766,6 @@ vfs_remove_path_as(const char *path, bool directory, uint32_t uid,
 	return error;
 }
 
-int
-vfs_stat_path_as(const char *path, uint32_t uid, uint32_t gid,
-	struct vfs_stat *status)
-{
-	struct vnode *node;
-	int error;
-
-	if (status == NULL)
-		return -VFS_EINVAL;
-	error = vfs_lookup_as(path, uid, gid, &node);
-	if (error != 0)
-		return error;
-	*status = (struct vfs_stat){
-		.size = node->size,
-		.mode = node->mode,
-		.type = (uint32_t)node->type,
-		.uid = node->uid,
-		.gid = node->gid
-	};
-	vnode_put(node);
-	return 0;
-}
-
-int
-vfs_stat_path(const char *path, struct vfs_stat *status)
-{
-	return vfs_stat_path_as(path, 0, 0, status);
-}
-
 bool
 vfs_access(const struct vnode *node, uint32_t uid, uint32_t gid,
 	unsigned int requested)

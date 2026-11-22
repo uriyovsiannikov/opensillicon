@@ -33,14 +33,6 @@ enum vnode_type {
 	VNODE_SOCKET = 4
 };
 
-struct vfs_stat {
-	uint64_t size;
-	uint32_t mode;
-	uint32_t type;
-	uint32_t uid;
-	uint32_t gid;
-};
-
 struct vfs_dirent {
 	uint64_t inode;
 	uint64_t size;
@@ -118,9 +110,6 @@ int vfs_remove_path_as(const char *path, bool directory, uint32_t uid,
 	uint32_t gid);
 /* Check before canonicalization, which erases the final '.' or '..'. */
 bool vfs_path_has_dot_basename(const char *path);
-int vfs_stat_path(const char *path, struct vfs_stat *status);
-int vfs_stat_path_as(const char *path, uint32_t uid, uint32_t gid,
-	struct vfs_stat *status);
 int vfs_open(const char *path, uint32_t flags, uint32_t mode,
 	struct fd_object **result);
 int vfs_open_from_as(struct vnode *directory, const char *path, uint32_t flags,

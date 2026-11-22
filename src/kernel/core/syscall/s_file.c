@@ -1,68 +1,36 @@
 #include "syscall_internal.h"
+#include "abi/stat.h"
 
 #include "kernel/mount.h"
 #include "kernel/process.h"
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
 
-#define NATIVE_S_IFREG 0100000U
-#define NATIVE_S_IFDIR 0040000U
-#define NATIVE_S_IFCHR 0020000U
-#define NATIVE_S_IFSOCK 0140000U
 #define NATIVE_AT_SYMLINK_NOFOLLOW 0x100U
 
-/* musl 1.2.6 x86_64 arch/x86_64/kstat.h, also layout-compatible with its
- * public struct stat: timestamps are stored as sec/nsec pairs. */
-struct native_kstat {
-	uint64_t st_dev;
-	uint64_t st_ino;
-	uint64_t st_nlink;
-	uint32_t st_mode;
-	uint32_t st_uid;
-	uint32_t st_gid;
-	uint32_t pad0;
-	uint64_t st_rdev;
-	int64_t st_size;
-	int64_t st_blksize;
-	int64_t st_blocks;
-	int64_t st_atime_sec;
-	int64_t st_atime_nsec;
-	int64_t st_mtime_sec;
-	int64_t st_mtime_nsec;
-	int64_t st_ctime_sec;
-	int64_t st_ctime_nsec;
-	int64_t unused[3];
-};
-
-_Static_assert(sizeof(struct native_kstat) == 144,
-	"musl x86_64 kstat ABI size mismatch");
-_Static_assert(offsetof(struct native_kstat, st_size) == 48,
-	"musl x86_64 kstat st_size offset mismatch");
-_Static_assert(offsetof(struct native_kstat, st_atime_sec) == 72,
-	"musl x86_64 kstat timestamp offset mismatch");
 
 static int
-native_kstat_from_metadata(struct native_kstat *value,
+stat_from_metadata(struct os_stat *value,
 	const struct fd_metadata *metadata)
 {
 	if (value == NULL || metadata == NULL)
 		return -EINVAL;
 	if (metadata->size > INT64_MAX)
 		return -EOVERFLOW;
-	*value = (struct native_kstat){0};
+	*value = (struct os_stat){0};
 	value->st_ino = metadata->inode;
 	value->st_size = (int64_t)metadata->size;
 	value->st_mode = metadata->mode & 07777U;
 	value->st_uid = metadata->uid;
 	value->st_gid = metadata->gid;
 	if (metadata->type == VNODE_REGULAR)
-		value->st_mode |= NATIVE_S_IFREG;
+		value->st_mode |= OS_S_IFREG;
 	else if (metadata->type == VNODE_DIRECTORY)
-		value->st_mode |= NATIVE_S_IFDIR;
+		value->st_mode |= OS_S_IFDIR;
 	else if (metadata->type == VNODE_SOCKET)
-		value->st_mode |= NATIVE_S_IFSOCK;
+		value->st_mode |= OS_S_IFSOCK;
 	else if (metadata->type == VNODE_DEVICE)
-		value->st_mode |= NATIVE_S_IFCHR;
+		value->st_mode |= OS_S_IFCHR;
 	else
 		return -EOPNOTSUPP;
 	return 0;
@@ -549,7 +517,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 	case SYSCALL_FSTAT:
 		{
 			struct fd_metadata metadata;
-			struct native_kstat value;
+			struct os_stat value;
 			int result = fd_object_stat(fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi), &metadata);
 
@@ -557,7 +525,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			result = native_kstat_from_metadata(&value, &metadata);
+			result = stat_from_metadata(&value, &metadata);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
@@ -582,7 +550,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct fd_object *directory = NULL;
 			struct vnode *node = NULL;
 			struct fd_metadata metadata;
-			struct native_kstat value;
+			struct os_stat value;
 			struct os_credentials credentials;
 			int64_t directory_fd = (int64_t)frame->rdi;
 			uint32_t flags;
@@ -641,7 +609,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				.uid = node->uid,
 				.gid = node->gid
 			};
-			result = native_kstat_from_metadata(&value, &metadata);
+			result = stat_from_metadata(&value, &metadata);
 			vnode_put(node);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
@@ -654,43 +622,6 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			}
 			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rdx,
 			    &value, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
-	case SYSCALL_STAT:
-		{
-			char path[VFS_PATH_MAX];
-			char canonical[VFS_PATH_MAX];
-			struct vfs_stat status;
-			struct os_credentials credentials;
-			int result = copy_user_string(frame->rdi, path, sizeof(path));
-
-			if (result != 0) {
-				syscall_error(frame, (uint64_t)(-result));
-				break;
-			}
-			result = process_resolve_path(path, canonical,
-			    sizeof(canonical));
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ESRCH);
-				break;
-			}
-			result = vfs_stat_path_as(canonical,
-			    credentials.effective_uid, credentials.effective_gid,
-			    &status);
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rsi,
-			    &status, sizeof(status))) {
 				syscall_error(frame, EFAULT);
 				break;
 			}

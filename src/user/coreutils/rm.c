@@ -5,13 +5,13 @@
 static int
 remove_path(const char *path, int recursive, int force)
 {
-	struct u_stat status;
+	struct os_stat status;
 	if (u_stat_path(path, &status) < 0) {
 		if (force) return 0;
 		u_puts("rm: cannot access: "); u_puts(path); u_puts("\n");
 		return 1;
 	}
-	if (status.type == 2 && recursive) {
+	if (OS_S_ISDIR(status.st_mode) && recursive) {
 		struct u_dirent entry;
 		long fd = u_open(path, U_O_RDONLY | U_O_DIRECTORY);
 		int failed = 0;
@@ -35,7 +35,7 @@ remove_path(const char *path, int recursive, int force)
 		if (u_close((uint64_t)fd) < 0) failed = 1;
 		if (failed) return 1;
 	}
-	if (u_unlink(path, status.type == 2) < 0) {
+	if (u_unlink(path, OS_S_ISDIR(status.st_mode)) < 0) {
 		u_puts("rm: cannot remove: "); u_puts(path); u_puts("\n");
 		return 1;
 	}

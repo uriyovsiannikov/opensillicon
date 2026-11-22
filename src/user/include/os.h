@@ -11,6 +11,7 @@
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/credentials.h"
+#include "abi/stat.h"
 
 #define U_O_RDONLY 0U
 #define U_O_WRONLY 1U
@@ -35,14 +36,6 @@
 #define U_ICMP_ECHO_PAYLOAD_MAX 32U
 #define U_POWER_CONTROL_POWEROFF 1U
 #define U_POWER_CONTROL_REBOOT 2U
-
-struct u_stat {
-	uint64_t size;
-	uint32_t mode;
-	uint32_t type;
-	uint32_t uid;
-	uint32_t gid;
-};
 
 struct u_dirent {
 	uint64_t inode;
@@ -96,7 +89,7 @@ long u_open_mode(const char *path, uint64_t flags, uint32_t mode);
 long u_mkdir(const char *path, uint32_t mode);
 long u_unlink(const char *path, int directory);
 long u_close(uint64_t fd);
-long u_stat_path(const char *path, struct u_stat *status);
+long u_stat_path(const char *path, struct os_stat *status);
 int u_find_command(const char *name, char *path, size_t capacity);
 long u_readdir(uint64_t fd, struct u_dirent *entry);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);

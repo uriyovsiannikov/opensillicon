@@ -30,10 +30,10 @@ user_main(uint64_t argc, char **argv)
 	}
 	for (i = 1; i < argc; i++) {
 		char path[PATH_SIZE];
-		struct u_stat status;
+		struct os_stat status;
 		if (!resolve_command(argv[i], path) ||
-		    u_stat_path(path, &status) < 0 || status.type != 1 ||
-		    (status.mode & 0111U) == 0) {
+		    u_stat_path(path, &status) < 0 || !OS_S_ISREG(status.st_mode) ||
+		    (status.st_mode & 0111U) == 0) {
 			missing = 1;
 			continue;
 		}

@@ -27,8 +27,8 @@ long u_mkdir(const char *path, uint32_t mode)
 long u_unlink(const char *path, int directory)
 { return syscall4(SYSCALL_UNLINK, (uintptr_t)path, (uint64_t)(directory != 0), 0, 0); }
 long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
-long u_stat_path(const char *path, struct u_stat *status)
-{ return syscall4(SYSCALL_STAT, (uintptr_t)path, (uintptr_t)status, 0, 0); }
+long u_stat_path(const char *path, struct os_stat *status)
+{ return syscall4(SYSCALL_FSTATAT, OS_AT_FDCWD, (uintptr_t)path, (uintptr_t)status, 0); }
 long u_readdir(uint64_t fd, struct u_dirent *entry)
 { return syscall4(SYSCALL_READDIR, fd, (uintptr_t)entry, 0, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)

@@ -3,11 +3,11 @@
 #define PATH_SIZE 256U
 
 static const char *
-type_name(uint32_t type)
+type_name(uint32_t mode)
 {
-	if (type == 1)
+	if (OS_S_ISREG(mode))
 		return "regular file";
-	if (type == 2)
+	if (OS_S_ISDIR(mode))
 		return "directory";
 	return "unknown";
 }
@@ -35,7 +35,7 @@ user_main(uint64_t argc, char **argv)
 		return 1;
 	}
 	for (i = 1; i < argc; i++) {
-		struct u_stat status;
+		struct os_stat status;
 		if (u_stat_path(argv[i], &status) < 0) {
 			u_puts("stat: cannot stat: ");
 			u_puts(argv[i]);
@@ -46,11 +46,11 @@ user_main(uint64_t argc, char **argv)
 		u_puts("  File: ");
 		u_puts(argv[i]);
 		u_puts("\n  Type: ");
-		u_puts(type_name(status.type));
+		u_puts(type_name(status.st_mode));
 		u_puts("\n  Size: ");
-		u_put_u64(status.size);
+		u_put_u64(status.st_size);
 		u_puts(" bytes\n  Mode: ");
-		print_octal(status.mode);
+		print_octal(status.st_mode & 07777U);
 		u_puts("\n");
 	}
 	return failed;

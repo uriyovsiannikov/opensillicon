@@ -1,4 +1,4 @@
-/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v6.
+/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v7.
  * Never forward unknown numbers: the two number spaces overlap. */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -15,6 +15,7 @@
 #include "abi/syscall.h"
 #include "abi/credentials.h"
 #include "abi/termios.h"
+#include "abi/stat.h"
 #include "abi/signal.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 long __os_native_call(long n,long a,long b,long c,long d,long e,long f)
@@ -25,13 +26,12 @@ long __os_native_call(long n,long a,long b,long c,long d,long e,long f)
 #define call __os_native_call
 long __os_network(long,long,long,long,long,long,long);
 
-/* Kernel native_kstat and getdents64 deliberately use the x86-64 layout.
- * Fail the port build if musl changes these public ABI offsets. */
+/* The native stat contract and musl layout must agree at this boundary. */
 _Static_assert(sizeof(struct os_termios)==56, "termios ABI size");
-_Static_assert(sizeof(struct stat)==144, "stat ABI size");
-_Static_assert(offsetof(struct stat, st_mode)==24, "stat mode ABI");
-_Static_assert(offsetof(struct stat, st_size)==48, "stat size ABI");
-_Static_assert(offsetof(struct stat, st_atim)==72, "stat timestamps ABI");
+_Static_assert(sizeof(struct stat)==sizeof(struct os_stat), "stat ABI size");
+_Static_assert(offsetof(struct stat, st_mode)==offsetof(struct os_stat, st_mode), "stat mode ABI");
+_Static_assert(offsetof(struct stat, st_size)==offsetof(struct os_stat, st_size), "stat size ABI");
+_Static_assert(offsetof(struct stat, st_atim)==offsetof(struct os_stat, st_atime_sec), "stat timestamps ABI");
 _Static_assert(offsetof(struct dirent, d_name)==19, "getdents ABI");
 
 static long open_native(long dirfd, long path, long flags, long mode)

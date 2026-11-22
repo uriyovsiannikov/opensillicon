@@ -43,7 +43,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_OPENAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTATAT] = { .bsp = syscall_file_bsp },
-	[SYSCALL_STAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_GETDENTS] = { .bsp = syscall_file_bsp },
 	[SYSCALL_READDIR] = { .bsp = syscall_file_bsp },
 	/* Descriptor I/O */

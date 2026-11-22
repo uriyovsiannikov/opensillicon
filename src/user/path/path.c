@@ -4,7 +4,7 @@ int
 u_find_command(const char *name, char *path, size_t capacity)
 {
 	static const char *const directories[] = { "/bin/", "/usr/bin/" };
-	struct u_stat st;
+	struct os_stat st;
 	size_t length = u_strlen(name);
 
 	if (length == 0)
@@ -17,8 +17,8 @@ u_find_command(const char *name, char *path, size_t capacity)
 			path[j] = directories[i][j];
 		for (size_t j = 0; j <= length; j++)
 			path[prefix + j] = name[j];
-		if (u_stat_path(path, &st) == 0 && st.type == 1 &&
-		    (st.mode & 0111U) != 0)
+		if (u_stat_path(path, &st) == 0 && OS_S_ISREG(st.st_mode) &&
+		    (st.st_mode & 0111U) != 0)
 			return 1;
 	}
 	return 0;

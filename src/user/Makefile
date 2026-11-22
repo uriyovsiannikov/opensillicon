@@ -2,10 +2,10 @@
 $(BUILD_DIR)/user_start.o: src/user/start.S src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h | $(BUILD_DIR)
 	$(CC) $(USER_ASFLAGS) -Isrc/include -c $< -o $@
 
-$(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h src/include/abi/framebuffer.h src/include/abi/input.h | $(BUILD_DIR)
+$(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h src/include/abi/stat.h src/include/abi/framebuffer.h src/include/abi/input.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user_path.o: src/user/path/path.c src/user/include/os.h | $(BUILD_DIR)
+$(BUILD_DIR)/user_path.o: src/user/path/path.c src/user/include/os.h src/include/abi/stat.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/user_init.o: src/user/init/init.c src/include/common/logo_pixels.h \

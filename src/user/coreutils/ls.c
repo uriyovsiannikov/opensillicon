@@ -6,7 +6,7 @@ static int
 list_path(const char *argument)
 {
 	char path[PATH_SIZE];
-	struct u_stat status;
+	struct os_stat status;
 	struct u_dirent entry;
 	long descriptor;
 	long result;
@@ -27,7 +27,7 @@ list_path(const char *argument)
 		u_puts("\n");
 		return 1;
 	}
-	if (status.type != 2) {
+	if (!OS_S_ISDIR(status.st_mode)) {
 		u_puts(argument);
 		u_puts("\n");
 		return 0;
