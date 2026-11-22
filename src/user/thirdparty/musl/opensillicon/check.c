@@ -8,6 +8,7 @@
 #include <time.h>
 #include <sys/syscall.h>
 #include <sys/sysctl.h>
+#include <sys/utsname.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -689,6 +690,12 @@ static int network_check(void)
 }
 static int sysctl_check(void)
 {
+ struct utsname identity;
+ CHECK(uname(&identity)==0);
+ CHECK(!strcmp(identity.sysname,"OpenSillicon") && !strcmp(identity.machine,"amd64"));
+ CHECK(!strcmp(identity.nodename,"opensillicon") && !strcmp(identity.release,"development"));
+ CHECK(strstr(identity.version,identity.sysname)!=NULL);
+ CHECK(uname(NULL)==-1 && errno==EFAULT);
  static const struct { const char *name; int mib[2]; int kind; } nodes[]={
 #define CHECK_NODE(symbol,group,value,text,kind) {text,{group,symbol},kind},
   OS_SYSCTL_NODES(CHECK_NODE)

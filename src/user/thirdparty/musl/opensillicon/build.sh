@@ -10,6 +10,7 @@ flock 9
 # Preserve timestamps so repeated builds remain incremental.
 tar -C "$source" --exclude=./opensillicon -cf - . | tar -C "$build/source" -xf -
 cp -p "$port/include/sys/sysctl.h" "$build/source/include/sys/sysctl.h"
+cp -p "$port/overlay/uname.c" "$build/source/src/misc/uname.c"
 cp -p "$port/overlay/resolvconf.c" "$build/source/src/network/resolvconf.c"
 cp -p "$port/overlay/syscall_arch.h" "$build/source/arch/x86_64/syscall_arch.h"
 cp -p "$port/overlay/opensillicon.c" "$port/overlay/thread.c" "$port/overlay/network.c" "$port/overlay/sysctl.c" "$build/source/src/misc/"
