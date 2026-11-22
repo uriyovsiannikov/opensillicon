@@ -38,6 +38,7 @@
 #include "abi/socket.h"
 #include "abi/unix_socket.h"
 #include <sys/icmp.h>
+#include "abi/ioctl.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -699,6 +700,18 @@ static int terminal_check(void)
  struct winsize size={.ws_row=37,.ws_col=91}, retrieved;
  CHECK(ioctl(pair[1],TIOCSWINSZ,&size)==0 && ioctl(pair[1],TIOCGWINSZ,&retrieved)==0);
  CHECK(retrieved.ws_row==37 && retrieved.ws_col==91);
+ struct { struct os_winsize value; uint64_t guard; } native_window={.guard=0x12345678abcdef01ULL};
+ CHECK(__os_raw(SYSCALL_IOCTL,pair[1],OS_TIOCGWINSZ,(long)&native_window.value,0,0,0)==0);
+ CHECK(native_window.value.rows==37 && native_window.value.columns==91 &&
+     native_window.guard==0x12345678abcdef01ULL);
+ native_window.value=(struct os_winsize){42,96,800,600};
+ CHECK(__os_raw(SYSCALL_IOCTL,pair[1],OS_TIOCSWINSZ,(long)&native_window.value,0,0,0)==0);
+ CHECK(ioctl(pair[1],TIOCGWINSZ,&retrieved)==0 && retrieved.ws_row==42 &&
+     retrieved.ws_col==96 && retrieved.ws_xpixel==800 && retrieved.ws_ypixel==600);
+ CHECK(ioctl(pair[1],TIOCSWINSZ,(void *)1)==-1 && errno==EFAULT);
+ CHECK(ioctl(pair[1],TIOCGWINSZ,(void *)1)==-1 && errno==EFAULT);
+ CHECK(ioctl(pair[1],TIOCGWINSZ,&retrieved)==0 && retrieved.ws_row==42 && retrieved.ws_col==96);
+
  cfmakeraw(&tty);
  CHECK(tcsetattr(pair[1],TCSANOW,&tty)==0);
  CHECK(tcgetattr(pair[1],&tty)==0 && !(tty.c_lflag&ICANON) && !(tty.c_lflag&ECHO));

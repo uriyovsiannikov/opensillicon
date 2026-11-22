@@ -23,6 +23,7 @@ _Static_assert(LOCK_SH == OS_LOCK_SH && LOCK_EX == OS_LOCK_EX &&
 #include "abi/dirent.h"
 #include "abi/credentials.h"
 #include "abi/termios.h"
+#include "abi/ioctl.h"
 #include "abi/stat.h"
 #include "abi/signal.h"
 extern long __os_raw(long,long,long,long,long,long,long);
@@ -33,6 +34,28 @@ long __os_native_call(long n,long a,long b,long c,long d,long e,long f)
 }
 #define call __os_native_call
 long __os_network(long,long,long,long,long,long,long);
+
+#define CHECK_IOCTL(name) _Static_assert(name == OS_##name, #name " ioctl ABI")
+CHECK_IOCTL(TCGETS);
+CHECK_IOCTL(TCSETS);
+CHECK_IOCTL(TCSETSW);
+CHECK_IOCTL(TCSETSF);
+CHECK_IOCTL(TCSBRK);
+CHECK_IOCTL(TCFLSH);
+CHECK_IOCTL(TIOCGWINSZ);
+CHECK_IOCTL(TIOCSWINSZ);
+CHECK_IOCTL(FIONREAD);
+CHECK_IOCTL(FIONBIO);
+#undef CHECK_IOCTL
+_Static_assert(sizeof(struct winsize) == sizeof(struct os_winsize), "winsize ABI size");
+#define CHECK_WINDOW(public, native) \
+ _Static_assert(offsetof(struct winsize, public) == offsetof(struct os_winsize, native), "winsize " #public " offset"); \
+ _Static_assert(sizeof(((struct winsize *)0)->public) == sizeof(((struct os_winsize *)0)->native), "winsize " #public " width")
+CHECK_WINDOW(ws_row, rows);
+CHECK_WINDOW(ws_col, columns);
+CHECK_WINDOW(ws_xpixel, xpixel);
+CHECK_WINDOW(ws_ypixel, ypixel);
+#undef CHECK_WINDOW
 
 /* The native stat contract and musl layout must agree at this boundary. */
 _Static_assert(sizeof(struct os_termios)==56, "termios ABI size");

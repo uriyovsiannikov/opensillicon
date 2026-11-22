@@ -18,7 +18,7 @@ struct pty_state {
 	bool output_post;
 	bool output_newline_crlf;
 	bool eof;
-	uint16_t dimensions[4];
+	struct os_winsize dimensions;
 };
 
 struct pty_endpoint {
@@ -242,26 +242,23 @@ pty_bytes_available(struct fd_object *object, size_t *available)
 }
 
 int
-pty_window(struct fd_object *object, uint16_t dimensions[4], bool set)
+pty_window(struct fd_object *object, struct os_winsize *dimensions, bool set)
 {
 	struct pty_endpoint *endpoint;
 	if (!pty_is_object(object) || dimensions == NULL)
 		return -EINVAL;
 	endpoint = object->context;
-	for (unsigned int i = 0; i < 4; i++) {
-		if (set)
-			endpoint->pty->dimensions[i] = dimensions[i];
-		else
-			dimensions[i] = endpoint->pty->dimensions[i];
-	}
+	if (set)
+		endpoint->pty->dimensions = *dimensions;
+	else
+		*dimensions = endpoint->pty->dimensions;
 	return 0;
 }
 
 int
-pty_termios(struct fd_object *object, void *attributes, bool set)
+pty_termios(struct fd_object *object, struct os_termios *termios, bool set)
 {
  struct pty_endpoint *endpoint;
- struct os_termios *termios = attributes;
  if (!pty_is_object(object) || termios == NULL) return -EINVAL;
  endpoint = object->context;
  if (set) {

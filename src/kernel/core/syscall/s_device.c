@@ -19,18 +19,6 @@
 #include "kernel/unix_socket.h"
 #include "kernel/vmm.h"
 
-#define TIOCGWINSZ_REQUEST 0x5413U
-#define OS_FIONBIO 0x5421U
-#define TCGETS_REQUEST 0x5401U
-#define TCSETS_REQUEST 0x5402U
-#define TIOCSFB_REQUEST 0x4f530003U
-struct syscall_winsize {
-	uint16_t rows;
-	uint16_t columns;
-	uint16_t xpixel;
-	uint16_t ypixel;
-};
-
 struct interrupt_frame *
 syscall_device_bsp(struct interrupt_frame *frame)
 {
@@ -193,7 +181,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_IOCTL:
 		{
-			struct syscall_winsize window = { 0 };
+			struct os_winsize window = { 0 };
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
 
@@ -355,7 +343,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				frame->rax = 0;
 				break;
 			}
-			if (frame->rsi == TIOCSFB_REQUEST) {
+			if (frame->rsi == OS_TIOCSFB) {
 				int enabled;
 
 				if (!fd_object_is_console(object)) {
@@ -378,29 +366,29 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (pty_is_object(object) &&
-			    (frame->rsi == TIOCGWINSZ_REQUEST || frame->rsi == 0x5414U)) {
-				uint16_t dimensions[4];
-				bool set = frame->rsi == 0x5414U;
+			    (frame->rsi == OS_TIOCGWINSZ || frame->rsi == OS_TIOCSWINSZ)) {
+				struct os_winsize dimensions;
+				bool set = frame->rsi == OS_TIOCSWINSZ;
 				struct address_space *space = vmm_active_address_space();
-				if ((set && !vmm_copy_from_user(space, dimensions,
+				if ((set && !vmm_copy_from_user(space, &dimensions,
 				    frame->rdx, sizeof(dimensions))) ||
 				    (!set && !vmm_validate_user_write(space, frame->rdx,
 				    sizeof(dimensions)))) {
 					syscall_error(frame, EFAULT);
 					break;
 				}
-				(void)pty_window(object, dimensions, set);
+				(void)pty_window(object, &dimensions, set);
 				if (!set && !vmm_copy_to_user(space, frame->rdx,
-				    dimensions, sizeof(dimensions)))
+				    &dimensions, sizeof(dimensions)))
 					syscall_error(frame, EFAULT);
 				else
 					frame->rax = 0;
 				break;
 			}
 			if ((pty_is_object(object) || fd_object_is_terminal(object)) &&
-			    (frame->rsi == 0x5409U || frame->rsi == 0x540bU)) {
+			    (frame->rsi == OS_TCSBRK || frame->rsi == OS_TCFLSH)) {
 				int result = 0;
-				if (frame->rsi == 0x5409U) {
+				if (frame->rsi == OS_TCSBRK) {
 					/* Writes already reach the console or the PTY peer's receive
 					 * queue synchronously; there is no pending transmit queue. */
 					if (frame->rdx != 1) result = -EOPNOTSUPP;
@@ -412,9 +400,9 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if ((pty_is_object(object) || fd_object_is_terminal(object)) &&
-			    (frame->rsi >= TCGETS_REQUEST && frame->rsi <= 0x5404U)) {
+			    (frame->rsi >= OS_TCGETS && frame->rsi <= OS_TCSETSF)) {
 				struct os_termios attributes;
-				bool set = frame->rsi != TCGETS_REQUEST;
+				bool set = frame->rsi != OS_TCGETS;
 				struct address_space *space = vmm_active_address_space();
 				int result;
 
@@ -425,7 +413,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 					syscall_error(frame, EFAULT);
 					break;
 				}
-				if (frame->rsi == 0x5404U) {
+				if (frame->rsi == OS_TCSETSF) {
 					result = pty_is_object(object) ? pty_flush_input(object) : tty_flush_input();
 					if (result) { syscall_error(frame, errno_from_kernel(result)); break; }
 				}
@@ -460,7 +448,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, ENOTTY);
 				break;
 			}
-			if (frame->rsi != TIOCGWINSZ_REQUEST) {
+			if (frame->rsi != OS_TIOCGWINSZ) {
 				syscall_error(frame, ENOTTY);
 				break;
 			}
