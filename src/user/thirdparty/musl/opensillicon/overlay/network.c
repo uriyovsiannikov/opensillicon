@@ -9,6 +9,10 @@
 #include "abi/syscall.h"
 #include "abi/inet.h"
 #include "abi/socket.h"
+#include "abi/unix_socket.h"
+
+_Static_assert(sizeof(struct sockaddr_un) == sizeof(struct os_unix_address) &&
+    offsetof(struct sockaddr_un, sun_path) == offsetof(struct os_unix_address, path), "Unix address layout");
 
 _Static_assert(AF_UNIX == OS_AF_UNIX && AF_INET == OS_AF_INET, "socket families");
 _Static_assert(SOCK_STREAM == OS_SOCK_STREAM && SOCK_DGRAM == OS_SOCK_DGRAM, "socket types");
@@ -157,11 +161,15 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   if(!unix_socket && !tcp) return -ENOPROTOOPT;
   return call(unix_socket ? SYSCALL_UNIX_SETSOCKOPT : SYSCALL_TCP_SETSOCKOPT,a,b,c,d,e,0);
  case SYS_getsockname: case SYS_getpeername:
-  if(unix_socket) return -ENOSYS;
   if(!b || !c) return -EFAULT;
-  op=n==SYS_getsockname ? (tcp ? SYSCALL_TCP_GETSOCKNAME : SYSCALL_UDP_GETSOCKNAME) :
-      (tcp ? SYSCALL_TCP_GETPEERNAME : SYSCALL_UDP_GETPEERNAME);
-  r=call(op,a,(long)&ep,0,0,0,0);
+  op=n==SYS_getsockname ? SYSCALL_GETSOCKNAME : SYSCALL_GETPEERNAME;
+  if(unix_socket) {
+   socklen_t *length=(void *)c;
+   r=call(op,a,b,*length,0,0,0);
+   if(r>=0) *length=(socklen_t)r;
+   return r<0 ? r : 0;
+  }
+  r=call(op,a,(long)&ep,sizeof ep,0,0,0);
   return r<0 ? r : to_address(&ep,b,c);
  case SYS_sendto:
   if(kind==OS_SOCKET_KIND_UDP) d &= ~MSG_NOSIGNAL;

@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v12.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v13.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -250,3 +250,12 @@ ABI v12 replaces UDP_SOCKET, TCP_SOCKET and UNIX_SOCKET with SOCKET. The
 kernel validates domain, type and protocol once, then allocates the selected
 protocol socket. Slots 33, 43 and 81 return ENOSYS. Rebuild static applications
 against ABI v12. Native family/type/protocol constants live in `abi/socket.h`.
+
+ABI v13 replaces the four TCP/UDP address-query calls with GETSOCKNAME and
+GETPEERNAME, also implemented for Unix sockets. Both take a descriptor,
+address buffer and byte capacity, copy the available prefix and return the
+full native address length. A zero capacity performs a size query. IPv4 uses
+`os_ipv4_endpoint`; Unix sockets use `os_unix_address` from `abi/unix_socket.h`.
+Slots 88, 89, 91 and 92 return ENOSYS. Rebuild static applications for ABI v13.
+The libc Unix-socket ENOSYS substitute is removed; accepted sockets preserve
+the listener's bound name and peer queries return the actual peer's name.

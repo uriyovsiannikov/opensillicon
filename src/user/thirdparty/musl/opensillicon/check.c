@@ -34,6 +34,7 @@
 #include "abi/dirent.h"
 #include "abi/inet.h"
 #include "abi/socket.h"
+#include "abi/unix_socket.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -781,11 +782,59 @@ static int network_check(void)
  }
  for(size_t i=0;i<sizeof sockets/sizeof sockets[0];i++) CHECK(close(sockets[i])==0);
  CHECK(close(channel[0])==0 && close(channel[1])==0);
+ int abstract=socket(AF_UNIX,SOCK_STREAM,0);
+ CHECK(abstract>=0);
+ struct sockaddr_un abstract_name={.sun_family=AF_UNIX};
+ memcpy(abstract_name.sun_path,"\0A\0B",4);
+ struct sockaddr_un queried;
+ socklen_t queried_length=sizeof queried;
+ memset(&queried,0xa5,sizeof queried);
+ CHECK(getsockname(abstract,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==sizeof queried.sun_family && queried.sun_family==AF_UNIX &&
+     (unsigned char)queried.sun_path[0]==0xa5);
+ CHECK(getpeername(abstract,(struct sockaddr *)&queried,&queried_length)==-1 && errno==ENOTCONN);
+ queried_length=offsetof(struct sockaddr_un,sun_path)+4;
+ CHECK(bind(abstract,(struct sockaddr *)&abstract_name,queried_length)==0);
+ CHECK(getsockname(abstract,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
+     !memcmp(&queried,&abstract_name,queried_length));
+ CHECK(listen(abstract,1)==0);
+ int named_client=socket(AF_UNIX,SOCK_STREAM,0);
+ CHECK(named_client>=0);
+ struct sockaddr_un client_name={.sun_family=AF_UNIX,.sun_path="/musl-peer-name"};
+ socklen_t client_name_length=offsetof(struct sockaddr_un,sun_path)+strlen(client_name.sun_path)+1;
+ CHECK(bind(named_client,(struct sockaddr *)&client_name,sizeof client_name)==0);
+ CHECK(connect(named_client,(struct sockaddr *)&abstract_name,queried_length)==0);
+ int accepted=accept(abstract,NULL,NULL);
+ CHECK(accepted>=0 && close(abstract)==0);
+ queried_length=sizeof queried;
+ CHECK(getpeername(named_client,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
+     !memcmp(&queried,&abstract_name,queried_length));
+ queried_length=sizeof queried;
+ CHECK(getsockname(accepted,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==offsetof(struct sockaddr_un,sun_path)+4 &&
+     !memcmp(&queried,&abstract_name,queried_length));
+ CHECK(close(named_client)==0);
+ queried_length=sizeof queried;
+ CHECK(getpeername(accepted,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==client_name_length && !strcmp(queried.sun_path,client_name.sun_path));
+ CHECK(close(accepted)==0 && unlink(client_name.sun_path)==0);
  struct sockaddr_un address={.sun_family=AF_UNIX,.sun_path="/musl-socket"};
  int server=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
  CHECK(server>=0 && (fcntl(server,F_GETFD)&FD_CLOEXEC));
  CHECK(fcntl(server,F_GETFL)&O_NONBLOCK);
  CHECK(bind(server,(struct sockaddr *)&address,sizeof address)==0 && listen(server,2)==0);
+ queried_length=sizeof queried;
+ socklen_t server_name_length=offsetof(struct sockaddr_un,sun_path)+strlen(address.sun_path)+1;
+ CHECK(getsockname(server,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==server_name_length && !strcmp(queried.sun_path,address.sun_path));
+ struct { unsigned char bytes[3]; unsigned char guard; } short_name={.guard=0xb7};
+ queried_length=sizeof short_name.bytes;
+ CHECK(getsockname(server,(struct sockaddr *)short_name.bytes,&queried_length)==0 &&
+     queried_length==server_name_length && short_name.guard==0xb7 &&
+     !memcmp(short_name.bytes,&address,sizeof short_name.bytes));
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,server,0,0,0,0,0)==server_name_length);
  CHECK(accept(server,NULL,NULL)==-1 && errno==EAGAIN);
  int type=0; socklen_t length=sizeof type;
  CHECK(getsockopt(server,SOL_SOCKET,SO_TYPE,&type,&length)==0 && type==SOCK_STREAM);
@@ -800,6 +849,12 @@ static int network_check(void)
   close(server);
   int client=socket(AF_UNIX,SOCK_STREAM,0);
   if(client<0 || connect(client,(struct sockaddr *)&address,sizeof address)) _exit(90);
+  queried_length=sizeof queried;
+  if(getpeername(client,(struct sockaddr *)&queried,&queried_length) ||
+      queried_length!=server_name_length || strcmp(queried.sun_path,address.sun_path)) _exit(96);
+  queried_length=sizeof queried;
+  if(getsockname(client,(struct sockaddr *)&queried,&queried_length) ||
+      queried_length!=sizeof queried.sun_family || queried.sun_family!=AF_UNIX) _exit(97);
   if(send(client,"hello",5,0)!=5) _exit(91);
   char reply[3]={0};
   if(recv(client,reply,2,0)!=2 || strcmp(reply,"ok")) _exit(92);
@@ -824,6 +879,12 @@ static int network_check(void)
  CHECK(select(server+1,&reads,NULL,NULL,&timeout)==1 && FD_ISSET(server,&reads));
  int peer=accept4(server,NULL,NULL,SOCK_CLOEXEC);
  CHECK(peer>=0 && (fcntl(peer,F_GETFD)&FD_CLOEXEC));
+ queried_length=sizeof queried;
+ CHECK(getsockname(peer,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==server_name_length && !strcmp(queried.sun_path,address.sun_path));
+ queried_length=sizeof queried;
+ CHECK(getpeername(peer,(struct sockaddr *)&queried,&queried_length)==0 &&
+     queried_length==sizeof queried.sun_family && queried.sun_family==AF_UNIX);
  FD_ZERO(&reads); FD_SET(peer,&reads);
  timeout=(struct timeval){2,0};
  CHECK(select(peer+1,&reads,NULL,NULL,&timeout)==1);
@@ -864,19 +925,21 @@ static int network_check(void)
  length=sizeof local;
  CHECK(getsockname(udp,(struct sockaddr *)&local,&length)==0 && length==sizeof local && local.sin_port!=0);
  struct { struct os_ipv4_endpoint value; uint16_t guard; } native_endpoint={.guard=0xabcd};
- CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,udp,(long)&native_endpoint.value,0,0,0,0)==0);
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,udp,(long)&native_endpoint.value,sizeof native_endpoint.value,0,0,0)==sizeof native_endpoint.value);
  CHECK(native_endpoint.value.port==ntohs(local.sin_port) &&
      !memcmp(native_endpoint.value.address,&local.sin_addr,4) && native_endpoint.guard==0xabcd);
  struct os_ipv4_endpoint unchanged_endpoint=native_endpoint.value;
- const long name_calls[]={SYSCALL_UDP_GETSOCKNAME,SYSCALL_UDP_GETPEERNAME,
-     SYSCALL_TCP_GETSOCKNAME,SYSCALL_TCP_GETPEERNAME};
+ const long name_calls[]={SYSCALL_GETSOCKNAME,SYSCALL_GETPEERNAME};
  for(size_t i=0;i<sizeof name_calls/sizeof name_calls[0];i++) {
   CHECK(__os_raw(name_calls[i],-1,1,0,0,0,0)==-EBADF);
   CHECK(__os_raw(name_calls[i],0,1,0,0,0,0)==-ENOTSOCK);
  }
- CHECK(__os_raw(SYSCALL_TCP_GETSOCKNAME,udp,1,0,0,0,0)==-ENOTSOCK);
- CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,udp,1,0,0,0,0)==-EFAULT);
- CHECK(__os_raw(SYSCALL_UDP_GETPEERNAME,udp,(long)&native_endpoint.value,0,0,0,0)==-ENOTCONN);
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,udp,1,sizeof native_endpoint.value,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,udp,0,0,0,0,0)==sizeof native_endpoint.value);
+ struct { unsigned char bytes[3]; unsigned char guard; } prefix={.guard=0xa7};
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,udp,(long)prefix.bytes,sizeof prefix.bytes,0,0,0)==sizeof native_endpoint.value);
+ CHECK(!memcmp(prefix.bytes,&native_endpoint.value,sizeof prefix.bytes) && prefix.guard==0xa7);
+ CHECK(__os_raw(SYSCALL_GETPEERNAME,udp,(long)&native_endpoint.value,sizeof native_endpoint.value,0,0,0)==-ENOTCONN);
  CHECK(!memcmp(&unchanged_endpoint,&native_endpoint.value,sizeof unchanged_endpoint) && native_endpoint.guard==0xabcd);
  CHECK(recv(udp,message,sizeof message,0)==-1 && errno==EAGAIN);
  CHECK(recv(udp,message,(size_t)-1,0)==-1 && errno==EINVAL);
@@ -903,11 +966,10 @@ static int network_check(void)
  CHECK(connect(tcp,(struct sockaddr *)&remote,sizeof remote)==0);
  length=sizeof remote;
  CHECK(getpeername(tcp,(struct sockaddr *)&remote,&length)==0 && ntohs(remote.sin_port)==MUSL_TEST_TCP_PORT);
- CHECK(__os_raw(SYSCALL_TCP_GETPEERNAME,tcp,(long)&native_endpoint.value,0,0,0,0)==0);
+ CHECK(__os_raw(SYSCALL_GETPEERNAME,tcp,(long)&native_endpoint.value,sizeof native_endpoint.value,0,0,0)==sizeof native_endpoint.value);
  CHECK(native_endpoint.value.port==ntohs(remote.sin_port) &&
      !memcmp(native_endpoint.value.address,&remote.sin_addr,4) && native_endpoint.guard==0xabcd);
- CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,tcp,1,0,0,0,0)==-ENOTSOCK);
- CHECK(__os_raw(SYSCALL_TCP_GETSOCKNAME,tcp,1,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_GETSOCKNAME,tcp,1,sizeof native_endpoint.value,0,0,0)==-EFAULT);
  CHECK(send(tcp,"hello",5,0)==5);
  memset(message,0,sizeof message);
  int total=0;
@@ -1081,7 +1143,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,43,44,46,53,58,63,81,82,84,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,43,44,46,53,58,63,81,82,84,88,89,91,92,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);

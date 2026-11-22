@@ -182,7 +182,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		{
 			union {
 				struct os_ipv4_endpoint inet;
-				struct unix_socket_address local;
+				struct os_unix_address local;
 			} address;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
@@ -387,49 +387,43 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				frame->rax = 0;
 		}
 		break;
-	case SYSCALL_TCP_GETSOCKNAME:
-	case SYSCALL_TCP_GETPEERNAME:
-	case SYSCALL_UDP_GETSOCKNAME:
-	case SYSCALL_UDP_GETPEERNAME:
+	case SYSCALL_GETSOCKNAME:
+	case SYSCALL_GETPEERNAME:
 		{
-			struct os_ipv4_endpoint endpoint;
-			struct address_space *space = vmm_active_address_space();
+			union {
+				struct os_ipv4_endpoint inet;
+				struct os_unix_address local;
+			} address;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
-			bool tcp = number == SYSCALL_TCP_GETSOCKNAME ||
-			    number == SYSCALL_TCP_GETPEERNAME;
-			bool peer = number == SYSCALL_TCP_GETPEERNAME ||
-			    number == SYSCALL_UDP_GETPEERNAME;
+			bool peer = number == SYSCALL_GETPEERNAME;
+			size_t length = sizeof(address.inet);
 			int result;
 
 			if (object == NULL) {
 				syscall_error(frame, EBADF);
 				break;
 			}
-			if (!(tcp ? tcp_socket_is_object(object) : udp_socket_is_object(object))) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (!vmm_validate_user_write(space, frame->rsi,
-			    sizeof(endpoint))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			if (tcp)
-				result = tcp_socket_get_name(object, peer, &endpoint);
+			if (unix_socket_is_object(object))
+				result = unix_socket_get_name(object, peer, &address.local, &length);
+			else if (tcp_socket_is_object(object))
+				result = tcp_socket_get_name(object, peer, &address.inet);
+			else if (udp_socket_is_object(object))
+				result = peer ? udp_socket_peer_endpoint(object, &address.inet) :
+				    udp_socket_local_endpoint(object, &address.inet);
 			else
-				result = peer ? udp_socket_peer_endpoint(object, &endpoint) :
-				    udp_socket_local_endpoint(object, &endpoint);
+				result = -ENOTSOCK;
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			if (!vmm_copy_to_user(space, frame->rsi, &endpoint,
-			    sizeof(endpoint))) {
+			size_t amount = frame->rdx < length ? (size_t)frame->rdx : length;
+			if (amount != 0 && !vmm_copy_to_user(vmm_active_address_space(),
+			    frame->rsi, &address, amount)) {
 				syscall_error(frame, EFAULT);
 				break;
 			}
-			frame->rax = 0;
+			frame->rax = length;
 		}
 		break;
 	case SYSCALL_NET_GET_DNS_SERVER:

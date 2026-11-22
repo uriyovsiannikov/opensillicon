@@ -44,3 +44,4 @@ install -D -m 644 "$root/src/include/abi/time.h" "$build/sysroot/include/abi/tim
 install -D -m 644 "$root/src/include/abi/dirent.h" "$build/sysroot/include/abi/dirent.h"
 install -D -m 644 "$root/src/include/abi/inet.h" "$build/sysroot/include/abi/inet.h"
 install -D -m 644 "$root/src/include/abi/socket.h" "$build/sysroot/include/abi/socket.h"
+install -D -m 644 "$root/src/include/abi/unix_socket.h" "$build/sysroot/include/abi/unix_socket.h"

@@ -33,7 +33,7 @@ struct unix_socket_state {
 	uint32_t peer_gid;
 	size_t send_capacity;
 	size_t receive_capacity;
-	uint8_t path[UNIX_SOCKET_PATH_MAX];
+	uint8_t path[OS_UNIX_PATH_MAX];
 	size_t path_length;
 	uint8_t bytes[UNIX_SOCKET_BUFFER_SIZE];
 	size_t head;
@@ -312,10 +312,10 @@ unix_socket_create(struct fd_table *table)
 /* Abstract names retain their exact byte length. Pathnames stop at the first
  * NUL and go through normal cwd, directory search and inode checks. */
 static int
-resolve_address(const struct unix_socket_address *address, size_t length,
+resolve_address(const struct os_unix_address *address, size_t length,
     size_t *name_length, char canonical[VFS_PATH_MAX])
 {
-	char path[UNIX_SOCKET_PATH_MAX + 1];
+	char path[OS_UNIX_PATH_MAX + 1];
 	if (address == NULL || address->family != OS_AF_UNIX ||
 	    length < sizeof(address->family) + 1 || length > sizeof(*address))
 		return -EINVAL;
@@ -327,15 +327,16 @@ resolve_address(const struct unix_socket_address *address, size_t length,
 		path[i] = (char)address->path[i];
 		i++;
 	}
-	if (i == UNIX_SOCKET_PATH_MAX)
+	if (i == OS_UNIX_PATH_MAX)
 		return -ENAMETOOLONG;
 	path[i] = 0;
+	*name_length = i + 1;
 	return process_resolve_path(path, canonical, VFS_PATH_MAX);
 }
 
 int
 unix_socket_bind(struct fd_object *object,
-	const struct unix_socket_address *address, size_t length)
+	const struct os_unix_address *address, size_t length)
 {
 	struct unix_socket_state *state = socket_state(object);
 	struct os_credentials credentials;
@@ -374,12 +375,43 @@ unix_socket_bind(struct fd_object *object,
 				return -EADDRINUSE;
 			}
 		}
-		memcpy(state->path, address->path, path_length);
-		state->path_length = path_length;
 	}
+	memcpy(state->path, address->path, path_length);
+	state->path_length = path_length;
 	state->bound = true;
 	state_guard_leave(flags);
 	return 0;
+}
+
+int
+unix_socket_get_name(struct fd_object *object, bool peer,
+    struct os_unix_address *address, size_t *length)
+{
+	uint64_t flags = state_guard_enter();
+	struct unix_socket_state *state = socket_state(object);
+	int result = 0;
+
+	if (state == NULL) {
+		result = -ENOTSOCK;
+		goto out;
+	}
+	if (address == NULL || length == NULL) {
+		result = -EINVAL;
+		goto out;
+	}
+	if (peer) {
+		if (!state->connected || state->peer == NULL) {
+			result = -ENOTCONN;
+			goto out;
+		}
+		state = state->peer;
+	}
+	*address = (struct os_unix_address){.family = OS_AF_UNIX};
+	memcpy(address->path, state->path, state->path_length);
+	*length = sizeof(address->family) + state->path_length;
+out:
+	state_guard_leave(flags);
+	return result;
 }
 
 int
@@ -407,7 +439,7 @@ unix_socket_listen(struct fd_object *object, int backlog)
 
 int
 unix_socket_connect(struct fd_object *object,
-	const struct unix_socket_address *address, size_t length)
+	const struct os_unix_address *address, size_t length)
 {
 	struct unix_socket_state *client = socket_state(object);
 	struct unix_socket_state *listener = NULL;
@@ -474,6 +506,8 @@ unix_socket_connect(struct fd_object *object,
 	server->peer = client;
 	client->peer = server;
 	server->connected = true;
+	memcpy(server->path, listener->path, listener->path_length);
+	server->path_length = listener->path_length;
 	client->connected = true;
 	server->owner_pid = listener->owner_pid;
 	server->peer_pid = client->owner_pid;
