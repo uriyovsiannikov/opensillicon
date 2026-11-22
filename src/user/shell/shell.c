@@ -1,5 +1,7 @@
 #include <dirent.h>
 #include <errno.h>
+#include <paths.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -112,37 +114,80 @@ is_executable_entry(DIR *directory, const struct dirent *entry)
 	    S_ISREG(status.st_mode) && (status.st_mode & 0111U) != 0;
 }
 
-static long
-read_bin_commands(char names[][HELP_NAME_CAPACITY], size_t capacity)
+/* Visitors return zero to continue, or an error to stop the scan. */
+static int
+visit_path_commands(int (*visit)(const char *, void *), void *context)
 {
-	DIR *directory = opendir("/bin");
-	if (directory == NULL)
+	const char *path = getenv("PATH");
+	char *copy = strdup(path != NULL ? path : _PATH_DEFPATH);
+	if (copy == NULL)
 		return -1;
-	long count = 0;
-	for (;;) {
-		errno = 0;
-		struct dirent *entry = readdir(directory);
-		if (entry == NULL) {
-			if (errno != 0)
-				count = -1;
-			break;
-		}
-		if (!is_executable_entry(directory, entry))
+	char *remaining = copy, *component;
+	int result = 0;
+
+	while ((component = strsep(&remaining, ":")) != NULL) {
+		const char *name = *component != '\0' ? component : ".";
+		DIR *directory = opendir(name);
+		if (directory == NULL) {
+			if (errno == ENOMEM) {
+				result = -1;
+				break;
+			}
 			continue;
-		if ((size_t)count == capacity) {
-			count = -2;
-			break;
 		}
-		size_t length = strlen(entry->d_name);
-		if (length >= HELP_NAME_CAPACITY) {
-			count = -1;
-			break;
+		for (;;) {
+			errno = 0;
+			struct dirent *entry = readdir(directory);
+			if (entry == NULL) {
+				if (errno != 0)
+					result = -1;
+				break;
+			}
+			if (!is_executable_entry(directory, entry))
+				continue;
+			char *candidate;
+			if (asprintf(&candidate, "%s/%s", name, entry->d_name) < 0) {
+				result = -1;
+				break;
+			}
+			int executable = access(candidate, X_OK) == 0;
+			free(candidate);
+			if (!executable)
+				continue;
+			result = visit(entry->d_name, context);
+			if (result != 0)
+				break;
 		}
-		memcpy(names[count++], entry->d_name, length + 1);
+		if (closedir(directory) < 0 && result == 0)
+			result = -1;
+		if (result != 0)
+			break;
 	}
-	if (closedir(directory) < 0)
+	free(copy);
+	return result;
+}
+
+struct command_list {
+	char (*names)[HELP_NAME_CAPACITY];
+	size_t count;
+	size_t capacity;
+};
+
+static int
+collect_command_name(const char *name, void *context)
+{
+	struct command_list *list = context;
+
+	for (size_t i = 0; i < list->count; i++)
+		if (strcmp(list->names[i], name) == 0)
+			return 0;
+	if (list->count == list->capacity)
+		return -2;
+	size_t length = strlen(name);
+	if (length >= HELP_NAME_CAPACITY)
 		return -1;
-	return count;
+	memcpy(list->names[list->count++], name, length + 1);
+	return 0;
 }
 
 static void
@@ -157,9 +202,9 @@ print_help_commands(void)
 	}
 	for (size_t i = 0; i < internal_count; i++)
 		strcpy(names[i], internal_commands[i]);
-	long external_count = read_bin_commands(names + internal_count, HELP_COMMAND_LIMIT);
-	long listing_error = external_count < 0 ? external_count : 0;
-	uint64_t total = internal_count + (external_count < 0 ? 0 : (uint64_t)external_count);
+	struct command_list list = {names, internal_count, internal_count + HELP_COMMAND_LIMIT};
+	int listing_error = visit_path_commands(collect_command_name, &list);
+	uint64_t total = listing_error == 0 ? list.count : internal_count;
 	uint64_t columns = 1, max_columns = 4;
 	struct u_winsize terminal_size;
 
@@ -193,8 +238,8 @@ print_help_commands(void)
 	free(names);
 	if (listing_error != 0)
 		u_puts(listing_error == -2 ?
-		    "sh: /bin has more than 128 executable entries\n" :
-		    "sh: cannot read /bin; listed internal commands only\n");
+		    "sh: PATH has more than 128 external commands\n" :
+		    "sh: cannot read PATH commands; listed internal commands only\n");
 }
 
 static void
@@ -320,6 +365,22 @@ add_completion(struct completion_candidate *candidates, size_t *count,
 	(*count)++;
 }
 
+struct command_completion {
+	struct completion_candidate *candidates;
+	size_t *count;
+	const char *prefix;
+};
+
+static int
+collect_command_completion(const char *name, void *context)
+{
+	struct command_completion *completion = context;
+
+	add_completion(completion->candidates, completion->count, name, 0,
+	    completion->prefix);
+	return 0;
+}
+
 static size_t
 completion_common_prefix(const struct completion_candidate *candidates,
 	size_t count)
@@ -385,20 +446,8 @@ complete_line(char *line, size_t *length, size_t *cursor)
 		for (size_t i = 0; i < sizeof(internal_commands) /
 		    sizeof(internal_commands[0]); i++)
 			add_completion(candidates, &count, internal_commands[i], 0, word);
-		static const char *const directories[] = { "/bin", "/usr/bin" };
-		for (size_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++) {
-			directory = opendir(directories[i]);
-			if (directory != NULL) {
-				for (;;) {
-					entry = readdir(directory);
-					if (entry == NULL)
-						break;
-					if (is_executable_entry(directory, entry))
-						add_completion(candidates, &count, entry->d_name, 0, word);
-				}
-				(void)closedir(directory);
-			}
-		}
+		struct command_completion completion = {candidates, &count, word};
+		(void)visit_path_commands(collect_command_completion, &completion);
 	} else {
 		size_t prefix_length = slash == (size_t)-1 ? 0 : slash + 1;
 		if (prefix_length == 0) {
