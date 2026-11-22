@@ -416,27 +416,6 @@ R_PointToDist
 
 
 
-//
-// R_InitPointToAngle
-//
-void R_InitPointToAngle (void)
-{
-    // UNUSED - now getting from tables.c
-#if 0
-    int	i;
-    long	t;
-    float	f;
-//
-// slope (tangent) to angle lookup
-//
-    for (i=0 ; i<=SLOPERANGE ; i++)
-    {
-	f = atan( (float)i/SLOPERANGE )/(3.141592657*2);
-	t = 0xffffffff*f;
-	tantoangle[i] = t;
-    }
-#endif
-}
 
 
 //
@@ -457,21 +436,6 @@ fixed_t R_ScaleFromGlobalAngle (angle_t visangle)
     int			den;
 
     // UNUSED
-#if 0
-{
-    fixed_t		dist;
-    fixed_t		z;
-    fixed_t		sinv;
-    fixed_t		cosv;
-	
-    sinv = finesine[(visangle-rw_normalangle)>>ANGLETOFINESHIFT];	
-    dist = FixedDiv (rw_distance, sinv);
-    cosv = finecosine[(viewangle-visangle)>>ANGLETOFINESHIFT];
-    z = abs(FixedMul (dist, cosv));
-    scale = FixedDiv(projection, z);
-    return scale;
-}
-#endif
 
     anglea = ANG90 + (visangle-viewangle);
     angleb = ANG90 + (visangle-rw_normalangle);
@@ -499,38 +463,6 @@ fixed_t R_ScaleFromGlobalAngle (angle_t visangle)
 
 
 
-//
-// R_InitTables
-//
-void R_InitTables (void)
-{
-    // UNUSED: now getting from tables.c
-#if 0
-    int		i;
-    float	a;
-    float	fv;
-    int		t;
-    
-    // viewangle tangent table
-    for (i=0 ; i<FINEANGLES/2 ; i++)
-    {
-	a = (i-FINEANGLES/4+0.5)*PI*2/FINEANGLES;
-	fv = FRACUNIT*tan (a);
-	t = fv;
-	finetangent[i] = t;
-    }
-    
-    // finesine table
-    for (i=0 ; i<5*FINEANGLES/4 ; i++)
-    {
-	// OPTIMIZE: mirror...
-	a = (i+0.5)*PI*2/FINEANGLES;
-	t = FRACUNIT*sin (a);
-	finesine[i] = t;
-    }
-#endif
-
-}
 
 
 
@@ -768,11 +700,7 @@ void R_Init (void)
 {
     R_InitData ();
     printf (".");
-    R_InitPointToAngle ();
-    printf (".");
-    R_InitTables ();
     // viewwidth / viewheight / detailLevel are set by the defaults
-    printf (".");
 
     R_SetViewSize (screenblocks, detailLevel);
     R_InitPlanes ();

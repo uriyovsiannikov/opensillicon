@@ -214,17 +214,6 @@ static void LoadResponseFile(int argv_index)
     myargv = newargv;
     myargc = newargc;
 
-#if 0
-    // Disabled - Vanilla Doom does not do this.
-    // Display arguments
-
-    printf("%d command-line args:\n", myargc);
-
-    for (k=1; k<myargc; k++)
-    {
-        printf("'%s'\n", myargv[k]);
-    }
-#endif
 #endif
 }
 
@@ -262,4 +251,3 @@ char *M_GetExecutableName(void)
         return sep + 1;
     }
 }
-

@@ -591,16 +591,6 @@ void V_DrawRawScreen(byte *raw)
     memcpy(dest_screen, raw, SCREENWIDTH * SCREENHEIGHT);
 }
 
-//
-// V_Init
-// 
-void V_Init (void) 
-{ 
-    // no-op!
-    // There used to be separate screens that could be drawn to; these are
-    // now handled in the upper layers.
-}
-
 // Set the buffer that the code draws to.
 
 void V_UseBuffer(byte *buffer)

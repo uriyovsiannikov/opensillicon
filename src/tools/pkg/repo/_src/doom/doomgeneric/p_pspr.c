@@ -359,10 +359,6 @@ A_CheckReload
   pspdef_t*	psp )
 {
     P_CheckAmmo (player);
-#if 0
-    if (player->ammo[am_shell]<2)
-	P_SetPsprite (player, ps_weapon, S_DSNR1);
-#endif
 }
 
 
@@ -884,5 +880,3 @@ void P_MovePsprites (player_t* player)
     player->psprites[ps_flash].sx = player->psprites[ps_weapon].sx;
     player->psprites[ps_flash].sy = player->psprites[ps_weapon].sy;
 }
-
-

@@ -763,13 +763,6 @@ boolean G_Responder (event_t* ev)
 
     if (gamestate == GS_LEVEL) 
     { 
-#if 0 
-	if (devparm && ev->type == ev_keydown && ev->data1 == ';') 
-	{ 
-	    G_DeathMatchSpawnPlayer (0); 
-	    return true; 
-	} 
-#endif 
 	if (HU_Responder (ev)) 
 	    return true;	// chat ate the event 
 	if (ST_Responder (ev)) 
@@ -2304,7 +2297,4 @@ boolean G_CheckDemoStatus (void)
     } 
 	 
     return false; 
-} 
- 
- 
- 
+}
