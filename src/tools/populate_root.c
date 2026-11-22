@@ -373,6 +373,7 @@ main(int argc, char **argv)
 		    "root:*:0:0:OpenSillicon root:/:/bin/sh\n"
 		    "user:*:1000:1000:OpenSillicon user:/tmp:/bin/sh\n";
 		static const char group[] = "root:*:0:\nuser:*:1000:\n";
+		static const char hosts[] = "127.0.0.1 localhost\n";
 		static const char pkg_conf[] = "https://packages.chipset.bond\n";
 		static const char doas_conf[] =
 		    "permit nopass 1000 as root cmd /bin/pkg\n"
@@ -382,6 +383,7 @@ main(int argc, char **argv)
 		static const char resolv_conf[] = "# musl uses DHCP DNS when no nameserver is configured.\n";
 		if (add_data("/etc/passwd", passwd, sizeof(passwd) - 1, 0644) != 0 ||
 		    add_data("/etc/group", group, sizeof(group) - 1, 0644) != 0 ||
+		    add_data("/etc/hosts", hosts, sizeof(hosts) - 1, 0644) != 0 ||
 		    add_data("/etc/pkg.conf", pkg_conf, sizeof(pkg_conf) - 1, 0644) != 0 ||
 		    add_data("/etc/doas.conf", doas_conf, sizeof(doas_conf) - 1, 0644) != 0 ||
 		    add_data("/etc/resolv.conf", resolv_conf,
