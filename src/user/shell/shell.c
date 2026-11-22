@@ -45,24 +45,14 @@ history_slot(size_t position)
 	    HISTORY_CAPACITY;
 }
 
-static int
-same_text(const char *left, const char *right)
-{
-	while (*left != '\0' && *left == *right) {
-		left++;
-		right++;
-	}
-	return *left == *right;
-}
-
 static void
 remember_command(const char *line)
 {
 	size_t i;
 	if (line[0] == '\0')
 		return;
-	if (history_count != 0 && same_text(
-	    command_history[history_slot(history_count - 1)], line))
+	if (history_count != 0 && strcmp(
+	    command_history[history_slot(history_count - 1)], line) == 0)
 		return;
 	for (i = 0; i < LINE_CAPACITY - 1 && line[i] != '\0'; i++)
 		command_history[history_next][i] = line[i];
@@ -313,25 +303,16 @@ load_history_line(char *line, size_t *length, size_t *cursor)
 	*cursor = i;
 }
 
-static int
-has_prefix(const char *text, const char *prefix)
-{
-	size_t index = 0;
-	while (prefix[index] != '\0' && text[index] == prefix[index])
-		index++;
-	return prefix[index] == '\0';
-}
-
 static void
 add_completion(struct completion_candidate *candidates, size_t *count,
 	const char *name, int is_directory, const char *prefix)
 {
-	size_t length = u_strlen(name);
-	if (!has_prefix(name, prefix) || length >= HELP_NAME_CAPACITY ||
+	size_t length = strlen(name);
+	if (strncmp(name, prefix, strlen(prefix)) != 0 || length >= HELP_NAME_CAPACITY ||
 	    *count == COMPLETION_LIMIT)
 		return;
 	for (size_t i = 0; i < *count; i++)
-		if (u_streq(candidates[i].name, name))
+		if (strcmp(candidates[i].name, name) == 0)
 			return;
 	for (size_t i = 0; i <= length; i++)
 		candidates[*count].name[i] = name[i];
@@ -343,7 +324,7 @@ static size_t
 completion_common_prefix(const struct completion_candidate *candidates,
 	size_t count)
 {
-	size_t length = u_strlen(candidates[0].name);
+	size_t length = strlen(candidates[0].name);
 	for (size_t i = 1; i < count; i++) {
 		size_t j = 0;
 		while (j < length && candidates[i].name[j] != '\0' &&
@@ -441,7 +422,8 @@ complete_line(char *line, size_t *length, size_t *cursor)
 			}
 			if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
 				continue;
-			if (has_prefix(entry->d_name, word + prefix_length)) {
+			if (strncmp(entry->d_name, word + prefix_length,
+			    word_length - prefix_length) == 0) {
 				struct stat status;
 				int is_directory = fstatat(dirfd(directory), entry->d_name,
 				    &status, 0) == 0 && S_ISDIR(status.st_mode);
@@ -675,36 +657,36 @@ run_command(char *line, int interactive)
 	}
 	if (count == 0)
 		return 1;
-	if (count == 1 && u_streq(arguments[0], "!(crash)")) {
+	if (count == 1 && strcmp(arguments[0], "!(crash)") == 0) {
 		if (u_kernel_crash() < 0)
 			u_puts("sh: !(crash): permission denied\n");
 		return 1;
 	}
-	if (u_streq(arguments[count - 1], "&")) {
+	if (strcmp(arguments[count - 1], "&") == 0) {
 		arguments[--count] = NULL;
 		background = 1;
 	}
-	if (count != 0 && u_streq(arguments[0], "exec")) {
+	if (count != 0 && strcmp(arguments[0], "exec") == 0) {
 		for (size_t i = 1; i < count; i++)
 			arguments[i - 1] = arguments[i];
 		count--;
 	}
 	if (count == 0)
 		return 1;
-	if (u_streq(arguments[0], "help")) {
+	if (strcmp(arguments[0], "help") == 0) {
 		print_help_commands();
-	} else if (u_streq(arguments[0], "history")) {
+	} else if (strcmp(arguments[0], "history") == 0) {
 		if (count != 1)
 			u_puts("usage: history\n");
 		else
 			print_history();
-	} else if (u_streq(arguments[0], "cd")) {
+	} else if (strcmp(arguments[0], "cd") == 0) {
 		const char *destination = count > 1 ? arguments[1] : "/";
 
 		if (chdir(destination) < 0 ||
 		    getcwd(current_directory, sizeof(current_directory)) == NULL)
 			print_error("cd", destination);
-	} else if (u_streq(arguments[0], "exit")) {
+	} else if (strcmp(arguments[0], "exit") == 0) {
 		return 0;
 	} else {
 		arguments[count] = 0;
@@ -726,12 +708,12 @@ main(int argc, char **argv)
 		u_puts("OpenSillicon shell: getcwd failed\n");
 		u_exit(1);
 	}
-	if (argc == 3 && u_streq(argv[1], "-c")) {
+	if (argc == 3 && strcmp(argv[1], "-c") == 0) {
 		/* A command shell has no line editor and does not own the tty. */
 		(void)run_command(argv[2], 0);
 		u_exit(0);
 	}
-	if (argc == 2 && u_streq(argv[1], "--xterm")) {
+	if (argc == 2 && strcmp(argv[1], "--xterm") == 0) {
 		xterm_cursor = 1;
 	} else if (argc > 1) {
 		u_puts("usage: sh [-c command] [--xterm]\n");
