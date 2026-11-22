@@ -5,9 +5,6 @@ $(BUILD_DIR)/user_start.o: src/user/start.S src/user/include/os.h src/include/ab
 $(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h src/include/abi/framebuffer.h src/include/abi/input.h | $(BUILD_DIR)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user_path.o: src/user/path/path.c src/user/include/os.h | $(BUILD_DIR)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/user_init.o: src/user/init/init.c src/include/common/logo_pixels.h \
 		src/user/init/service.h src/user/include/os.h other/logo.png | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
@@ -69,14 +66,14 @@ $(BUILD_DIR)/coreutils/fetch.o: src/tools/pkg/repo/_src/fetch/fetch.c src/user/i
 	mkdir -p $(@D)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
-$(BUILD_DIR)/coreutils/fetch.elf: $(BUILD_DIR)/coreutils/fetch.o $(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
-	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/coreutils/fetch.o $(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o $(LIBC_ARCHIVE) -lgcc -o $@
+$(BUILD_DIR)/coreutils/fetch.elf: $(BUILD_DIR)/coreutils/fetch.o $(BUILD_DIR)/user_os.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
+	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/coreutils/fetch.o $(BUILD_DIR)/user_os.o $(LIBC_ARCHIVE) -lgcc -o $@
 
 $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/coreutils/%.o src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/coreutils/$*.o -o $@
 
 $(BUILD_DIR)/coreutils/host.o: src/user/coreutils/host.c src/user/include/os.h \
@@ -85,22 +82,22 @@ $(BUILD_DIR)/coreutils/host.o: src/user/coreutils/host.c src/user/include/os.h \
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/coreutils/host.elf: $(LIBC_BUILD_DIR)/crt1.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/coreutils/host.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/coreutils/host.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/init.elf: $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/user_os.o \
-        $(BUILD_DIR)/user_path.o $(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) src/user/c_linker.ld
+        $(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/user_os.o \
-		$(BUILD_DIR)/user_path.o $(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) -o $@
+		$(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/shell.elf: $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_shell.o src/user/c_linker.ld
 	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o \
-		$(BUILD_DIR)/user_os.o $(BUILD_DIR)/user_path.o \
+		$(BUILD_DIR)/user_os.o \
 		$(BUILD_DIR)/user_shell.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/populate_root: src/tools/populate_root.c src/kernel/fs/vfs/vfs.c \

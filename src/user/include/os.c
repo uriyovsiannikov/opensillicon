@@ -81,3 +81,21 @@ u_put_u64(uint64_t value)
 	while (count != 0)
 		u_putn(&digits[--count], 1);
 }
+
+size_t
+u_strlen(const char *string)
+{
+	size_t length = 0;
+	while (string[length] != '\0') length++;
+	return length;
+}
+
+int
+u_streq(const char *left, const char *right)
+{
+	while (*left != '\0' && *left == *right) {
+		left++;
+		right++;
+	}
+	return *left == *right;
+}

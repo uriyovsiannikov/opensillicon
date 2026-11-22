@@ -38,12 +38,6 @@ static size_t background_child_count;
 static int cursor_visible = 1;
 static int xterm_cursor;
 
-static int
-resolve(const char *path, char *absolute)
-{
-	return u_normalize_path(current_directory, path, absolute, PATH_CAPACITY);
-}
-
 static size_t
 history_slot(size_t position)
 {
@@ -384,7 +378,6 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	static struct completion_candidate candidates[COMPLETION_LIMIT];
 	char word[LINE_CAPACITY];
 	char directory_name[PATH_CAPACITY];
-	char directory_path[PATH_CAPACITY];
 	size_t start = *cursor;
 	size_t word_length;
 	size_t slash = (size_t)-1;
@@ -427,27 +420,15 @@ complete_line(char *line, size_t *length, size_t *cursor)
 		}
 	} else {
 		size_t prefix_length = slash == (size_t)-1 ? 0 : slash + 1;
-		if (slash == (size_t)-1) {
-			if (!resolve(".", directory_path))
-				return;
+		if (prefix_length == 0) {
+			strcpy(directory_name, ".");
 		} else {
 			if (prefix_length >= sizeof(directory_name))
 				return;
-			for (size_t i = 0; i < prefix_length; i++)
-				directory_name[i] = word[i];
+			memcpy(directory_name, word, prefix_length);
 			directory_name[prefix_length] = '\0';
-			if (prefix_length == 1 && directory_name[0] == '/') {
-				directory_name[0] = '/';
-				directory_name[1] = '\0';
-			} else {
-				directory_name[prefix_length - 1] = '\0';
-				if (directory_name[0] == '\0')
-					directory_name[0] = '.', directory_name[1] = '\0';
-			}
-			if (!resolve(directory_name, directory_path))
-				return;
 		}
-		directory = opendir(directory_path);
+		directory = opendir(directory_name);
 		if (directory == NULL)
 			return;
 		int read_error = 0;
@@ -718,17 +699,11 @@ run_command(char *line, int interactive)
 		else
 			print_history();
 	} else if (u_streq(arguments[0], "cd")) {
-		char path[PATH_CAPACITY];
 		const char *destination = count > 1 ? arguments[1] : "/";
 
-		if (!resolve(destination, path) || u_chdir(path) < 0 ||
-		    u_getcwd(path, sizeof(path)) < 0) {
+		if (chdir(destination) < 0 ||
+		    getcwd(current_directory, sizeof(current_directory)) == NULL)
 			print_error("cd", destination);
-		} else {
-			for (size_t i = 0; path[i] != '\0'; i++)
-				current_directory[i] = path[i];
-			current_directory[u_strlen(path)] = '\0';
-		}
 	} else if (u_streq(arguments[0], "exit")) {
 		return 0;
 	} else {

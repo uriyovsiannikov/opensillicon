@@ -79,9 +79,15 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('wc -z', 'usage: wc'),
                 ('stat /tmp/native-openat-check', '  Mode: 644'),
                 ('stat -L /tmp/native-openat-check', '  Type: regular file'),
+                ('cd /tmp/native-openat-check/..', 'sh: cd: /tmp/native-openat-check/.. failed'),
+                ('cd /tmp/no-such-dir/..', 'sh: cd: /tmp/no-such-dir/.. failed'),
+                ('pwd', '/\n'),
                 ('rm /tmp/native-openat-check', None),
                 ('mkdir /tmp/dir-check', None),
                 ('touch /tmp/dir-check/entry', None),
+                ('cd /tmp/dir-check', None),
+                ('stat ent\t', '  Type: regular file'),
+                ('cd /', None),
                 ('help', 'Available commands:'),
                 ('whic\tls', '/bin/ls'),
                 ('which ./bin/ls', './bin/ls'),
@@ -105,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 end = wait_for(expected, offset) if expected is not None else offset
                 # Kernel diagnostics can appear between the cwd and prompt writes.
                 prompt = wait_for('# ', end)
-                finished = wait_for('/% ', prompt)
+                finished = wait_for('% ', prompt)
                 if expected is None:
                     output = log.read_text(errors='replace')[offset:finished]
                     assert 'sh: command exited status' not in output, output

@@ -82,7 +82,5 @@ int u_streq(const char *left, const char *right);
 void u_puts(const char *string);
 void u_putn(const char *string, size_t length);
 void u_put_u64(uint64_t value);
-int u_normalize_path(const char *cwd, const char *path, char *output,
-	size_t capacity);
 
 #endif
