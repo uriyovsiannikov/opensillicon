@@ -11,9 +11,11 @@
 #include <sys/mman.h>
 #include <stdint.h>
 #include <termios.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include "abi/syscall.h"
 #include "abi/fcntl.h"
+#include "abi/time.h"
 #include "abi/credentials.h"
 #include "abi/termios.h"
 #include "abi/stat.h"
@@ -34,6 +36,14 @@ _Static_assert(offsetof(struct stat, st_mode)==offsetof(struct os_stat, st_mode)
 _Static_assert(offsetof(struct stat, st_size)==offsetof(struct os_stat, st_size), "stat size ABI");
 _Static_assert(offsetof(struct stat, st_atim)==offsetof(struct os_stat, st_atime_sec), "stat timestamps ABI");
 _Static_assert(offsetof(struct dirent, d_name)==19, "getdents ABI");
+
+_Static_assert(sizeof(struct timespec)==sizeof(struct os_timespec), "timespec ABI size");
+_Static_assert(offsetof(struct timespec, tv_sec)==offsetof(struct os_timespec, tv_sec), "timespec seconds ABI");
+_Static_assert(offsetof(struct timespec, tv_nsec)==offsetof(struct os_timespec, tv_nsec), "timespec nanoseconds ABI");
+_Static_assert(sizeof(((struct timespec *)0)->tv_sec)==sizeof(int64_t), "timespec seconds width");
+_Static_assert(sizeof(((struct timespec *)0)->tv_nsec)==sizeof(int64_t), "timespec nanoseconds width");
+_Static_assert(CLOCK_REALTIME==OS_CLOCK_REALTIME, "realtime clock ABI");
+_Static_assert(CLOCK_MONOTONIC==OS_CLOCK_MONOTONIC, "monotonic clock ABI");
 
 /* Matching flag values need no per-bit translation. */
 #define CHECK_OPEN_FLAG(name) _Static_assert(name == OS_##name, #name " ABI")

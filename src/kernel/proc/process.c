@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "abi/syscall.h"
+#include "abi/time.h"
 #include "arch/x86_64/fpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/user.h"
@@ -245,7 +246,7 @@ process_set_interrupted_result(struct process *process)
 {
 	if (process->nanosleep_active &&
 	    process->nanosleep_remaining_address != 0) {
-		struct { int64_t tv_sec; int64_t tv_nsec; } remaining;
+		struct os_timespec remaining;
 		uint64_t elapsed = timer_ticks() - process->nanosleep_start_tick;
 		uint64_t elapsed_ticks = elapsed > 0 ? elapsed - 1 : 0;
 		uint64_t elapsed_seconds = elapsed_ticks / TIMER_TICK_HZ;

@@ -738,6 +738,13 @@ static void handle_sleep_signal(int signo)
 static int nanosleep_check(void)
 {
  struct timespec zero={0}, before, after;
+ struct { struct timespec value; uint64_t guard; } clock_value={.guard=0xfedcba9876543210ULL};
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&clock_value.value)==0);
+ CHECK(clock_value.value.tv_sec>=0 && clock_value.value.tv_nsec>=0 &&
+     clock_value.value.tv_nsec<1000000000 && clock_value.guard==0xfedcba9876543210ULL);
+ CHECK(__os_raw(SYSCALL_CLOCK_GETTIME,1,1,0,0,0,0)==-EFAULT);
+ CHECK(clock_gettime((clockid_t)-1,&clock_value.value)==-1 && errno==EINVAL);
+ CHECK(clock_value.guard==0xfedcba9876543210ULL);
  struct { struct timespec value; uint64_t guard; } remaining={.guard=0x12345678abcdef00ULL};
  CHECK(nanosleep(&zero,NULL)==0);
  struct timespec invalid={-1,0};

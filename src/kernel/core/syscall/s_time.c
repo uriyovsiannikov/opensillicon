@@ -1,15 +1,9 @@
 #include "syscall_internal.h"
+#include "abi/time.h"
 
 #include "kernel/process.h"
 #include "kernel/timer.h"
 #include "kernel/vmm.h"
-
-#define CLOCK_MONOTONIC_ID 1U
-
-struct native_timespec {
-	int64_t tv_sec;
-	int64_t tv_nsec;
-};
 
 bool
 syscall_time_local(struct interrupt_frame **result_frame)
@@ -20,7 +14,7 @@ syscall_time_local(struct interrupt_frame **result_frame)
 	switch (frame->rax) {
 	case SYSCALL_NANOSLEEP:
 		{
-			struct native_timespec request;
+			struct os_timespec request;
 			struct address_space *space = vmm_active_address_space();
 			uint64_t ticks;
 
@@ -72,11 +66,11 @@ syscall_time_local(struct interrupt_frame **result_frame)
 		return true;
 	case SYSCALL_CLOCK_GETTIME:
 		{
-			struct native_timespec value;
+			struct os_timespec value;
 			struct address_space *space = vmm_active_address_space();
 			uint64_t ticks;
 
-			if (frame->rdi != CLOCK_MONOTONIC_ID && frame->rdi != 0) {
+			if (frame->rdi != OS_CLOCK_MONOTONIC && frame->rdi != OS_CLOCK_REALTIME) {
 				syscall_error(frame, EINVAL);
 				return true;
 			}
@@ -87,7 +81,7 @@ syscall_time_local(struct interrupt_frame **result_frame)
 			}
 			ticks = timer_ticks();
 			value.tv_sec = (int64_t)(ticks / TIMER_TICK_HZ);
-			if (frame->rdi == 0) {
+			if (frame->rdi == OS_CLOCK_REALTIME) {
 				uint64_t epoch;
 				if (!timer_realtime_epoch(&epoch) ||
 				    epoch > INT64_MAX - (uint64_t)value.tv_sec) {
