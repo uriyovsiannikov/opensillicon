@@ -1,44 +1,27 @@
-#include "../include/os.h"
+#include <libgen.h>
+#include <stdio.h>
+#include <string.h>
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	const char *path;
-	size_t length;
-	size_t begin;
-	size_t end;
-	if (argc < 2 || argc > 3) {
-		u_puts("usage: basename path [suffix]\n");
+	int first = argc > 1 && strcmp(argv[1], "--") == 0 ? 2 : 1;
+
+	if (argc - first < 1 || argc - first > 2) {
+		fputs("usage: basename path [suffix]\n", stderr);
+		return 2;
+	}
+	char *name = basename(argv[first]);
+	if (argc - first == 2) {
+		size_t length = strlen(name), suffix = strlen(argv[first + 1]);
+		if (suffix != 0 && suffix < length &&
+		    memcmp(name + length - suffix, argv[first + 1], suffix) == 0)
+			name[length - suffix] = '\0';
+	}
+	puts(name);
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("basename: stdout");
 		return 1;
-	}
-	path = argv[1];
-	length = u_strlen(path);
-	while (length > 1 && path[length - 1] == '/')
-		length--;
-	begin = length;
-	while (begin > 0 && path[begin - 1] != '/')
-		begin--;
-	if (length == 0) {
-		u_puts(".\n");
-		return 0;
-	}
-	end = length;
-	if (argc == 3) {
-		size_t suffix_length = u_strlen(argv[2]);
-		if (suffix_length < end - begin && suffix_length != 0) {
-			size_t i;
-			for (i = 0; i < suffix_length; i++)
-				if (path[end - suffix_length + i] != argv[2][i])
-					break;
-			if (i == suffix_length)
-				end -= suffix_length;
-		}
-	}
-	if (end == begin && path[0] == '/')
-		u_puts("/\n");
-	else {
-		u_putn(path + begin, end - begin);
-		u_puts("\n");
 	}
 	return 0;
 }
