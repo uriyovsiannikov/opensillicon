@@ -405,6 +405,37 @@ static int nested_signal_check(void)
  CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
  return 0;
 }
+static int shell_path_check(void)
+{
+ const char *cases[][2]={
+  {"PATH=/missing:/sbin","init --shell-path-check"},
+  {"PATH=/missing","/sbin/init --shell-path-check"},
+  {"PATH=","./sbin/init --shell-path-check"}
+ };
+ for(size_t i=0;i<sizeof cases/sizeof cases[0];i++) {
+  int channel[2]; CHECK(pipe(channel)==0);
+  pid_t child=fork(); CHECK(child>=0);
+  if(!child) {
+   close(channel[0]);
+   if(dup2(channel[1],STDOUT_FILENO)<0) _exit(120);
+   close(channel[1]);
+   char *args[]={"sh","-c",(char *)cases[i][1],NULL};
+   char *env[]={(char *)cases[i][0],"MUSL_SHELL_CHECK=present",NULL};
+   execve("/bin/sh",args,env);
+   _exit(121);
+  }
+  CHECK(close(channel[1])==0);
+  char output[128]; size_t used=0; ssize_t amount;
+  while(used<sizeof output-1 && (amount=read(channel[0],output+used,sizeof output-1-used))>0)
+   used+=(size_t)amount;
+  output[used]=0;
+  CHECK(close(channel[0])==0);
+  int status;
+  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+  CHECK(!strcmp(output,"SHELL_PATH_OK\n"));
+ }
+ return 0;
+}
 static int process_check(void)
 {
  sigset_t set, old, current;
@@ -819,6 +850,12 @@ static int sysctl_check(void)
 }
 int main(int argc, char **argv)
 {
+ if(argc==2 && !strcmp(argv[1],"--shell-path-check")) {
+  const char *env=getenv("MUSL_SHELL_CHECK"), *term=getenv("TERM");
+  if(!env || strcmp(env,"present") || !term || strcmp(term,"xterm")) return 122;
+  puts("SHELL_PATH_OK");
+  return 0;
+ }
  if(argc==3 && !strcmp(argv[1],"--cloexec-check")) {
   return fcntl(atoi(argv[2]),F_GETFD)==-1 && errno==EBADF ? 29 : 104;
  }
@@ -869,6 +906,8 @@ int main(int argc, char **argv)
  if(nested_result) return nested_result;
  int process_result=process_check();
  if(process_result) return process_result;
+ int shell_result=shell_path_check();
+ if(shell_result) return shell_result;
  int terminal_result=terminal_check();
  if(terminal_result) return terminal_result;
  int curses_result=curses_check();

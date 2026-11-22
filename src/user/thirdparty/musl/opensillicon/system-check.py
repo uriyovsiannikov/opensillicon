@@ -53,6 +53,8 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('svctl list', 'console: running pid='),
                 ('host localhost', 'localhost has address 127.0.0.1'),
                 ('uname', 'OpenSillicon\n'),
+                ('./bin/uname', 'OpenSillicon\n'),
+                ('no-such-command', 'sh: command not found: no-such-command'),
                 ('sleep 0', None),
                 ('sleep 1', None),
                 ('sleep bad', 'usage: sleep whole-seconds'),

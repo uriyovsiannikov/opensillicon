@@ -28,8 +28,6 @@ static const char *const internal_commands[] = {
 	"help", "cd", "exit", "history"
 };
 
-static const char *const default_environment[]={"TERM=xterm",NULL};
-static const char *const *shell_environment=default_environment;
 static char current_directory[PATH_CAPACITY] = "/";
 static char command_history[HISTORY_CAPACITY][LINE_CAPACITY];
 static size_t history_count;
@@ -219,37 +217,11 @@ static void
 command_external(const char *const argv[], int background,
 	int interactive)
 {
-	char path[PATH_CAPACITY];
 	const char *command = argv[0];
 	long child;
 	long wait_result;
 	int status = 0;
 
-	if (command[0] == '/') {
-		if (u_strlen(command) >= sizeof(path)) {
-			print_error("exec", command);
-			return;
-		}
-		for (size_t i = 0; command[i] != '\0'; i++)
-			path[i] = command[i];
-		path[u_strlen(command)] = '\0';
-	} else {
-		int has_slash = 0;
-		for (size_t i = 0; command[i] != '\0'; i++)
-			if (command[i] == '/')
-				has_slash = 1;
-		if (has_slash) {
-			if (!resolve(command, path)) {
-				print_error("exec", command);
-				return;
-			}
-		} else if (!u_find_command(command, path, sizeof(path))) {
-			u_puts("sh: command not found: ");
-			u_puts(command);
-			u_puts("\n");
-			return;
-		}
-	}
 	if (interactive && u_ioctl(0, U_TIOCCANON, 0) < 0) {
 		print_error("tty mode", "canonical");
 		return;
@@ -267,8 +239,14 @@ command_external(const char *const argv[], int background,
 		goto resume_editor;
 	}
 	if (child == 0) {
-		(void)execve(path, (char *const *)argv, (char *const *)shell_environment);
-		print_error("exec", path);
+		(void)execvp(command, (char *const *)argv);
+		if (errno == ENOENT || errno == ENOTDIR) {
+			u_puts("sh: command not found: ");
+			u_puts(command);
+			u_puts("\n");
+		} else {
+			print_error("exec", command);
+		}
 		u_exit(127);
 	}
 	if (!background) {
@@ -765,10 +743,10 @@ int
 main(int argc, char **argv)
 {
 	char line[LINE_CAPACITY];
-	extern char **environ;
-
-	if (environ != NULL && environ[0] != NULL)
-		shell_environment = (const char *const *)environ;
+	if (getenv("TERM") == NULL && setenv("TERM", "xterm", 0) != 0) {
+		u_puts("OpenSillicon shell: cannot initialize TERM\n");
+		return 1;
+	}
 	if (u_getcwd(current_directory, sizeof(current_directory)) < 0) {
 		u_puts("OpenSillicon shell: getcwd failed\n");
 		u_exit(1);
