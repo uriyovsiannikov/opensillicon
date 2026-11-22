@@ -1,42 +1,26 @@
-#include "../include/os.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define MAX_VALUE 1000000000000ULL
 
 static int
 parse_value(const char *text, uint64_t *value)
 {
-	uint64_t parsed = 0;
-	if (*text == '\0')
+	char *end;
+	if (*text < '0' || *text > '9')
 		return 0;
-	while (*text != '\0') {
-		uint64_t digit;
-		if (*text < '0' || *text > '9')
-			return 0;
-		digit = (uint64_t)(*text++ - '0');
-		if (parsed > (MAX_VALUE - digit) / 10)
-			return 0;
-		parsed = parsed * 10 + digit;
-	}
+	errno = 0;
+	unsigned long long parsed = strtoull(text, &end, 10);
+	if (errno != 0 || *end != '\0' || parsed > MAX_VALUE)
+		return 0;
 	*value = parsed;
 	return 1;
 }
 
-static void
-print_value(uint64_t value)
-{
-	char digits[20];
-	size_t length = 0;
-	do {
-		digits[length++] = (char)('0' + value % 10);
-		value /= 10;
-	} while (value != 0);
-	while (length != 0)
-		u_putn(&digits[--length], 1);
-	u_puts("\n");
-}
-
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	uint64_t first = 1, step = 1, last, value;
 	if (argc == 2) {
@@ -57,13 +41,14 @@ user_main(uint64_t argc, char **argv)
 	if (first > last)
 		return 0;
 	for (value = first;;) {
-		print_value(value);
+		if (printf("%" PRIu64 "\n", value) < 0)
+			return 1;
 		if (last - value < step)
 			break;
 		value += step;
 	}
-	return 0;
+	return fflush(stdout) == EOF;
 usage:
-	u_puts("usage: seq [first [step]] last\n");
+	fputs("usage: seq [first [step]] last\n", stderr);
 	return 1;
 }

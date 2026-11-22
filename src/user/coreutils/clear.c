@@ -1,14 +1,14 @@
-#include "../include/os.h"
+#include <stdio.h>
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	static const char sequence[] = "\033[0m\033[2J\033[H";
 	(void)argv;
 	if (argc != 1) {
-		u_puts("clear: arguments are unsupported\n");
+		fputs("clear: arguments are unsupported\n", stderr);
 		return 1;
 	}
-	return u_write(1, sequence, sizeof(sequence) - 1) ==
-	    (long)(sizeof(sequence) - 1) ? 0 : 1;
+	return fwrite(sequence, 1, sizeof(sequence) - 1, stdout) !=
+	    sizeof(sequence) - 1 || fflush(stdout) == EOF;
 }

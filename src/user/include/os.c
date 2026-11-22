@@ -19,9 +19,7 @@ long u_write(uint64_t fd, const void *buffer, size_t length)
 long u_read(uint64_t fd, void *buffer, size_t length)
 { return syscall4(SYSCALL_READ, fd, (uintptr_t)buffer, length, 0); }
 long u_open(const char *path, uint64_t flags)
-{ return u_open_mode(path, flags, 0); }
-long u_open_mode(const char *path, uint64_t flags, uint32_t mode)
-{ return syscall4(SYSCALL_OPENAT, OS_AT_FDCWD, (uintptr_t)path, flags, mode); }
+{ return syscall4(SYSCALL_OPENAT, OS_AT_FDCWD, (uintptr_t)path, flags, 0); }
 long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)
 { return syscall4(SYSCALL_IOCTL, fd, request, (uintptr_t)argument, 0); }

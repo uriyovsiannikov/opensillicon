@@ -1,3 +1,5 @@
-#include "../include/os.h"
-
-int user_main(void) { return 1; }
+int
+main(void)
+{
+	return 1;
+}

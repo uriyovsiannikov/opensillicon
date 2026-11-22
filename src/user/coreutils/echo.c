@@ -1,27 +1,15 @@
-#include "../include/os.h"
-
-static int
-write_all(const char *text, size_t length)
-{
-	while (length != 0) {
-		long amount = u_write(1, text, length);
-		if (amount <= 0 || (size_t)amount > length)
-			return 0;
-		text += (size_t)amount;
-		length -= (size_t)amount;
-	}
-	return 1;
-}
+#include <stdio.h>
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t i;
-	for (i = 1; i < argc; i++) {
-		if (i != 1 && !write_all(" ", 1))
+	for (int i = 1; i < argc; i++) {
+		if (i != 1 && putchar(' ') == EOF)
 			return 1;
-		if (!write_all(argv[i], u_strlen(argv[i])))
+		if (fputs(argv[i], stdout) == EOF)
 			return 1;
 	}
-	return write_all("\n", 1) ? 0 : 1;
+	if (putchar('\n') == EOF)
+		return 1;
+	return fflush(stdout) == EOF;
 }

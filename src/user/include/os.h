@@ -50,7 +50,6 @@ _Static_assert(sizeof(struct u_icmp_echo_request) == 56,
 long u_write(uint64_t fd, const void *buffer, size_t length);
 long u_read(uint64_t fd, void *buffer, size_t length);
 long u_open(const char *path, uint64_t flags);
-long u_open_mode(const char *path, uint64_t flags, uint32_t mode);
 long u_close(uint64_t fd);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_network_ipv4_config(struct u_ipv4_config *config);
