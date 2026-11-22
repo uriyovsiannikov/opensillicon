@@ -609,6 +609,38 @@ static int module_file_check(void)
  return 0;
 }
 
+static int shared_mapping_check(void)
+{
+ CHECK(__os_raw(SYSCALL_SHM_CREATE,0,0,0,0,0,0)==-EINVAL);
+ for(int attempt=0;attempt<3;attempt++) {
+  long base=__os_raw(SYSCALL_SHM_CREATE,8193,0,0,0,0,0);
+  CHECK(base>0);
+  volatile unsigned char *shared=(void *)base;
+  for(size_t i=0;i<8193;i++) CHECK(shared[i]==0);
+  shared[0]=7; shared[4096]=8; shared[8192]=9;
+  pid_t child=fork(); CHECK(child>=0);
+  if(!child) {
+   if(shared[0]!=7 || shared[4096]!=8 || shared[8192]!=9) _exit(120);
+   shared[0]=17; shared[4096]=18; shared[8192]=19;
+   if(attempt==1) {
+    char address[32]; snprintf(address,sizeof address,"%lu",(unsigned long)base);
+    char *args[]={"shm-exec","--shm-exec-check",address,NULL};
+    execv("/sbin/init",args); _exit(121);
+   }
+   if(attempt==2 && (__os_raw(SYSCALL_SHM_DETACH,base,0,0,0,0,0) ||
+       write(1,(const void *)base,1)!=-1 || errno!=EFAULT)) _exit(122);
+   _exit(31);
+  }
+  int status;
+  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) &&
+      WEXITSTATUS(status)==(attempt==1 ? 30 : 31));
+  CHECK(shared[0]==17 && shared[4096]==18 && shared[8192]==19);
+  CHECK(__os_raw(SYSCALL_SHM_DETACH,base,0,0,0,0,0)==0);
+  CHECK(write(1,(const void *)base,1)==-1 && errno==EFAULT);
+ }
+ return 0;
+}
+
 static int exec_limits_check(void)
 {
  char argument[OS_EXEC_ARG_BYTES_MAX+1], environment[OS_EXEC_ENV_BYTES_MAX+1];
@@ -1431,6 +1463,10 @@ static int sysctl_check(void)
 }
 int main(int argc, char **argv)
 {
+ if(argc==3 && !strcmp(argv[1],"--shm-exec-check")) {
+  const void *old_mapping=(void *)(uintptr_t)strtoull(argv[2],NULL,10);
+  return write(1,old_mapping,1)==-1 && errno==EFAULT ? 30 : 123;
+ }
  if(argc>=2 && !strcmp(argv[1],"--exec-limits-check")) {
   size_t arg_bytes=0, env_bytes=0, env_count=0;
   for(int i=0;i<argc;i++) arg_bytes+=strlen(argv[i])+1;
@@ -1507,6 +1543,8 @@ int main(int argc, char **argv)
  if(nested_result) return nested_result;
  int module_result=module_file_check();
  if(module_result) return module_result;
+ int shared_result=shared_mapping_check();
+ if(shared_result) return shared_result;
  int exec_result=exec_limits_check();
  if(exec_result) return exec_result;
  int process_result=process_check();

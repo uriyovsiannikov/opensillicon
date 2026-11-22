@@ -166,10 +166,6 @@ syscall_dispatch(struct interrupt_frame *frame)
 			bool private_memory = syscall_private_memory(number);
 			bool shared_memory = number == SYSCALL_SHM_CREATE ||
 			    number == SYSCALL_SHM_DETACH;
-#if defined(KERNEL_TEST_SHM_ALLOC_FAILURE) || defined(KERNEL_TEST_SHM_LIFECYCLE) || defined(KERNEL_TEST_SHM_FORK_FAILURE)
-			if (shared_memory)
-				process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
-#endif
 			process_channel_wait_begin();
 			if (route != NULL && route->local != NULL &&
 			    route->local(&frame)) {

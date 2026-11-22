@@ -163,10 +163,6 @@ process_table_owned_here(void)
 }
 
 #define current_process (*process_current_slot())
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-static uint64_t test_shm_reap_releases;
-static uint64_t test_shm_exec_releases;
-#endif
 
 static struct process *find_child(struct process *parent, uint64_t pid,
 	bool zombie_only);
@@ -1196,10 +1192,6 @@ process_system_init(void)
 	reported_ap_wait_resume = 0;
 	reported_ap_timer_wait = 0;
 	reported_ap_timer_resume = 0;
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-	test_shm_reap_releases = 0;
-	test_shm_exec_releases = 0;
-#endif
 	initialized = true;
 }
 
@@ -1861,19 +1853,6 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 	return frame;
 }
 
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-uint64_t
-process_test_shm_reap_releases(void)
-{
-	return test_shm_reap_releases;
-}
-
-uint64_t
-process_test_shm_exec_releases(void)
-{
-	return test_shm_exec_releases;
-}
-#endif
 
 static uint64_t
 process_run_elf_internal(const void *image, size_t image_size,
@@ -2228,27 +2207,13 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	}
 #endif
 	if (old_image != NULL) {
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-		uint64_t live_before = shm_test_live_pages();
-#endif
 		release_loaded_image(old_image);
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-		if (shm_test_live_pages() < live_before)
-			test_shm_exec_releases++;
-#endif
 	} else {
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-		uint64_t live_before = shm_test_live_pages();
-#endif
 		if (!address_space_destroy_with_pages(old_space) ||
 		    !kheap_free(old_space)) {
 			klog("panic: exec could not release old address space\n");
 			kernel_halt();
 		}
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-		if (shm_test_live_pages() < live_before)
-			test_shm_exec_releases++;
-#endif
 	}
 	process->initial_user_stack = stack_top;
 	os_signal_exec_state(&process->signals);
@@ -2351,17 +2316,7 @@ reap_child(struct process *parent, struct process *child,
 		return false;
 	}
 	remove_process(child);
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-	{
-		uint64_t live_before = shm_test_live_pages();
-
-		release_process(child);
-		if (shm_test_live_pages() < live_before)
-			test_shm_reap_releases++;
-	}
-#else
 	release_process(child);
-#endif
 	*error = 0;
 	return true;
 }

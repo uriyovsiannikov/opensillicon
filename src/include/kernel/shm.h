@@ -9,9 +9,6 @@
 #define SHM_ARENA_START 0x0000700000000000ULL
 #define SHM_ARENA_END 0x00007fffffffc000ULL
 
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-uint64_t shm_test_live_pages(void);
-#endif
 
 struct shm_object {
 	/* Shared between independently owned per-process mapping sets. */
@@ -45,8 +42,6 @@ bool shm_object_release(struct shm_object *object);
 void shm_mapping_set_init(struct shm_mapping_set *set);
 /* On success, attach_owned transfers the caller's existing reference. */
 bool shm_mapping_attach_owned(struct shm_mapping_set *set, uint64_t base,
-	struct shm_object *object);
-bool shm_mapping_attach_reference(struct shm_mapping_set *set, uint64_t base,
 	struct shm_object *object);
 bool shm_mapping_detach(struct shm_mapping_set *set, uint64_t base,
 	shm_unmap_page_callback unmap_page, void *context);

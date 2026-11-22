@@ -61,10 +61,6 @@ int process_signal_mask(int how, const uint64_t *set, uint64_t *old_set);
 struct interrupt_frame *process_sigaction(struct interrupt_frame *frame,
 	unsigned int signo, uint64_t new_action, uint64_t old_action,
 	uint64_t *error);
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-uint64_t process_test_shm_reap_releases(void);
-uint64_t process_test_shm_exec_releases(void);
-#endif
 enum process_slice_stop {
 	PROCESS_SLICE_TIMER,
 	PROCESS_SLICE_SYSCALL,

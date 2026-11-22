@@ -43,10 +43,6 @@ static struct spinlock address_space_lifecycle_lock = SPINLOCK_INITIALIZER;
 static struct spinlock kernel_mapping_lock = SPINLOCK_INITIALIZER;
 static bool unmap_user_page(struct address_space *space,
 	uint64_t virtual_address, uint64_t *physical_address, bool allow_private);
-#ifdef KERNEL_TEST_SHM_FORK_FAILURE
-static bool test_shm_fork_failure_armed;
-static size_t test_shm_fork_mapped_pages;
-#endif
 
 static bool
 address_space_valid(const struct address_space *space)
@@ -464,9 +460,10 @@ user_leaf_entry(const struct address_space *space, uint64_t virtual_address,
 }
 
 static bool
-map_shared_page(struct address_space *space, uint64_t virtual_address,
+map_shared_page(void *context, uint64_t virtual_address,
 	uint64_t physical_address)
 {
+	struct address_space *space = context;
 	uint64_t *leaf_table;
 	unsigned int leaf_index;
 	uint64_t mapped_physical;
@@ -1996,31 +1993,6 @@ free_user_leaves(uint64_t table_physical, unsigned int level)
 }
 
 static bool
-clone_shared_map_page(void *context, uint64_t virtual_address,
-	uint64_t physical_address)
-{
-#ifdef KERNEL_TEST_SHM_FORK_FAILURE
-	if (test_shm_fork_failure_armed) {
-		if (test_shm_fork_mapped_pages++ == 1) {
-			test_shm_fork_failure_armed = false;
-			klog("test: injected shared fork mapping failure\n");
-			return false;
-		}
-	}
-#endif
-	return map_shared_page(context, virtual_address, physical_address);
-}
-
-#ifdef KERNEL_TEST_SHM_FORK_FAILURE
-void
-vmm_test_arm_shm_fork_failure(void)
-{
-	test_shm_fork_mapped_pages = 0;
-	test_shm_fork_failure_armed = true;
-}
-#endif
-
-static bool
 address_space_destroy_with_pages_locked(struct address_space *space)
 {
 	uint64_t *root;
@@ -2225,7 +2197,7 @@ address_space_clone_locked(const struct address_space *source,
 		goto fail;
 	}
 	if (!shm_mapping_set_clone(&source->shared_mappings,
-	    &destination->shared_mappings, clone_shared_map_page,
+	    &destination->shared_mappings, map_shared_page,
 	    unmap_shared_page, destination))
 		goto fail;
 	return true;

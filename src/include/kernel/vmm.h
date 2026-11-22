@@ -109,9 +109,6 @@ int vmm_private_unmap_complete(struct address_space *space, uint64_t base,
 	uint64_t length);
 int vmm_private_protect(struct address_space *space, uint64_t base,
 	uint64_t length, unsigned int protection);
-#ifdef KERNEL_TEST_SHM_FORK_FAILURE
-void vmm_test_arm_shm_fork_failure(void);
-#endif
 bool address_space_create(struct address_space *space);
 bool address_space_activate(const struct address_space *space);
 bool address_space_destroy(struct address_space *space);

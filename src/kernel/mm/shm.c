@@ -7,19 +7,7 @@
 #include "kernel/shm.h"
 #include "kernel/vmm.h"
 
-#ifdef KERNEL_TEST_SHM_ALLOC_FAILURE
-static bool fail_shared_allocation_once = true;
-#endif
 
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-static uint64_t test_live_pages;
-
-uint64_t
-shm_test_live_pages(void)
-{
-	return test_live_pages;
-}
-#endif
 
 static _Noreturn void
 shm_invariant_failure(const char *message)
@@ -76,13 +64,6 @@ shm_object_create(size_t page_count, struct shm_object **object_out)
 	object->references = 1;
 	object->page_count = page_count;
 	while (allocated < page_count) {
-#ifdef KERNEL_TEST_SHM_ALLOC_FAILURE
-		if (fail_shared_allocation_once && allocated == 1) {
-			fail_shared_allocation_once = false;
-			klog("test: injected shared backing allocation failure\n");
-			goto fail;
-		}
-#endif
 		if (!pmm_alloc_page(&object->pages[allocated]))
 			goto fail;
 		if (!zero_physical_page(object->pages[allocated])) {
@@ -93,11 +74,6 @@ shm_object_create(size_t page_count, struct shm_object **object_out)
 		}
 		allocated++;
 	}
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-	if ((uint64_t)page_count > UINT64_MAX - test_live_pages)
-		shm_invariant_failure("OpenSillicon panic: shared test page count overflow\n");
-	test_live_pages += (uint64_t)page_count;
-#endif
 	*object_out = object;
 	return true;
 
@@ -145,11 +121,6 @@ shm_object_release(struct shm_object *object)
 	    references - 1, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
 	if (references != 1)
 		return true;
-#ifdef KERNEL_TEST_SHM_LIFECYCLE
-	if ((uint64_t)object->page_count > test_live_pages)
-		shm_invariant_failure("OpenSillicon panic: shared test page count underflow\n");
-	test_live_pages -= (uint64_t)object->page_count;
-#endif
 	for (i = 0; i < object->page_count; i++) {
 		if (!pmm_free_page(object->pages[i]))
 			shm_invariant_failure(
@@ -237,24 +208,6 @@ shm_mapping_attach_owned(struct shm_mapping_set *set, uint64_t base,
 	if (mapping == NULL)
 		return false;
 	/* Success transfers the caller's existing object reference to this node. */
-	mapping_publish(set, mapping);
-	return true;
-}
-
-bool
-shm_mapping_attach_reference(struct shm_mapping_set *set, uint64_t base,
-	struct shm_object *object)
-{
-	struct shm_mapping *mapping = mapping_allocate(set, base, object);
-
-	if (mapping == NULL)
-		return false;
-	if (!shm_object_retain(object)) {
-		if (!kheap_free(mapping))
-			shm_invariant_failure(
-			    "OpenSillicon panic: failed to release shared mapping\n");
-		return false;
-	}
 	mapping_publish(set, mapping);
 	return true;
 }
