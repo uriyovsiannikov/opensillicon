@@ -84,6 +84,8 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('touch /tmp/dir-check/entry', None),
                 ('help', 'Available commands:'),
                 ('whic\tls', '/bin/ls'),
+                ('which ./bin/ls', './bin/ls'),
+                ('which no-such-command', 'sh: command exited status 1'),
                 ('stat /tmp/dir-che\tentry', '  Type: regular file'),
                 ('ls /tmp/dir-check', 'entry\n'),
                 ('rm /tmp/dir-check', 'is a directory'),

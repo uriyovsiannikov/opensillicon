@@ -1,44 +1,84 @@
-#include "../include/os.h"
-
-#define PATH_SIZE 256U
+#include <errno.h>
+#include <paths.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int
-resolve_command(const char *command, char *path)
+is_executable(const char *path)
 {
-	size_t i;
-	if (command[0] == '/')
-		return u_normalize_path("/", command, path, PATH_SIZE);
-	for (i = 0; command[i] != '\0'; i++) {
-		if (command[i] == '/') {
-			char cwd[PATH_SIZE];
-			if (u_getcwd(cwd, sizeof(cwd)) < 0)
-				return 0;
-			return u_normalize_path(cwd, command, path, PATH_SIZE);
-		}
+	struct stat status;
+
+	return stat(path, &status) == 0 && S_ISREG(status.st_mode) &&
+	    access(path, X_OK) == 0;
+}
+
+static int
+find_command(const char *name, const char *path)
+{
+	size_t name_length = strlen(name);
+
+	if (name_length == 0)
+		return 0;
+	if (strchr(name, '/') != NULL) {
+		if (!is_executable(name))
+			return 0;
+		puts(name);
+		return 1;
 	}
-	return u_find_command(command, path, PATH_SIZE);
+	for (;;) {
+		const char *end = strchr(path, ':');
+		size_t length = end != NULL ? (size_t)(end - path) : strlen(path);
+
+		if (length > SIZE_MAX - name_length - 2) {
+			errno = ENOMEM;
+			return -1;
+		}
+		char *candidate = malloc(length + name_length + 2);
+		if (candidate == NULL)
+			return -1;
+		memcpy(candidate, path, length);
+		if (length != 0)
+			candidate[length++] = '/';
+		memcpy(candidate + length, name, name_length + 1);
+		int found = is_executable(candidate);
+		if (found)
+			puts(candidate);
+		free(candidate);
+		if (found)
+			return 1;
+		if (end == NULL)
+			return 0;
+		path = end + 1;
+	}
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t i;
-	int missing = 0;
-	if (argc < 2) {
-		u_puts("usage: which command ...\n");
-		return 1;
+	int failed = 0;
+
+	opterr = 0;
+	if (getopt(argc, argv, "") != -1 || optind == argc) {
+		fputs("usage: which command ...\n", stderr);
+		return 2;
 	}
-	for (i = 1; i < argc; i++) {
-		char path[PATH_SIZE];
-		struct os_stat status;
-		if (!resolve_command(argv[i], path) ||
-		    u_stat_path(path, &status) < 0 || !OS_S_ISREG(status.st_mode) ||
-		    (status.st_mode & 0111U) == 0) {
-			missing = 1;
-			continue;
-		}
-		u_puts(path);
-		u_puts("\n");
+	const char *path = getenv("PATH");
+	if (path == NULL)
+		path = _PATH_DEFPATH;
+	for (int i = optind; i < argc; i++) {
+		int found = find_command(argv[i], path);
+		if (found < 0)
+			perror("which");
+		if (found <= 0)
+			failed = 1;
 	}
-	return missing;
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("which: stdout");
+		failed = 1;
+	}
+	return failed;
 }
