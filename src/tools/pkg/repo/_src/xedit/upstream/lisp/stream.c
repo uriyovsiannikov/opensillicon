@@ -792,7 +792,7 @@ Lisp_PipeBroken(LispBuiltin *builtin)
 		    STRFUN(builtin), STROBJ(pipe_stream));
 
     if ((pid = PIDPSTREAMP(pipe_stream)) > 0) {
-	retval = waitpid(pid, &status, WNOHANG | WUNTRACED);
+	retval = waitpid(pid, &status, WNOHANG);
 	if (retval == pid || (retval == -1 && errno == ECHILD))
 	    result = T;
     }

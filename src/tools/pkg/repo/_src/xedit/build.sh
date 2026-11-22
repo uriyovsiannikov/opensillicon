@@ -7,7 +7,7 @@ stage="$root/src/build/pkg/xedit-stage"
 cc=${CC:-gcc}
 make -C "$root" src/build/x11/.apps-ready
 mkdir -p "$out" "$stage/usr/bin" "$stage/usr/share/licenses/xedit" "$stage/usr/share/X11/app-defaults" "$stage/usr/share/xedit"
-cflags="-std=gnu11 -O2 -DNDEBUG -DOPEN_SILLICON -D_DEFAULT_SOURCE -D_BSD_SOURCE -DXEDIT -DLISP -DO_NOCTTY=0 -DWUNTRACED=0 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/x11/prefix/include -I$root/src/build/x11/libX11/include -I$src -I$src/lisp -I$src/lisp/mp -I$src/lisp/re"
+cflags="-std=gnu11 -O2 -DNDEBUG -DOPEN_SILLICON -D_DEFAULT_SOURCE -D_BSD_SOURCE -DXEDIT -DLISP -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/x11/prefix/include -I$root/src/build/x11/libX11/include -I$src -I$src/lisp -I$src/lisp/mp -I$src/lisp/re"
 compile() {
 	$cc $cflags -isystem "$($cc -print-file-name=include)" -idirafter /usr/include "$@"
 }
