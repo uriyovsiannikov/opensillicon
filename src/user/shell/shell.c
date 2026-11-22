@@ -1,3 +1,8 @@
+#include <dirent.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdbool.h>
 
@@ -115,102 +120,65 @@ print_error(const char *operation, const char *path)
 }
 
 static int
-is_executable_entry(const struct u_dirent *entry)
+is_executable_entry(DIR *directory, const struct dirent *entry)
 {
-	return entry->type == 1 && (entry->mode & 0111U) != 0 &&
-	    !u_streq(entry->name, ".") && !u_streq(entry->name, "..");
+	struct stat status;
+	return strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..") &&
+	    fstatat(dirfd(directory), entry->d_name, &status, 0) == 0 &&
+	    S_ISREG(status.st_mode) && (status.st_mode & 0111U) != 0;
 }
 
 static long
-count_bin_commands(void)
+read_bin_commands(char names[][HELP_NAME_CAPACITY], size_t capacity)
 {
-	struct u_dirent entry;
-	long descriptor = u_open("/bin", U_O_RDONLY | U_O_DIRECTORY);
-	long result;
-	long count = 0;
-	if (descriptor < 0)
+	DIR *directory = opendir("/bin");
+	if (directory == NULL)
 		return -1;
-	while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0) {
-		if (is_executable_entry(&entry)) {
-			if (count == HELP_COMMAND_LIMIT) {
-				(void)u_close((uint64_t)descriptor);
-				return -2;
-			}
-			count++;
+	long count = 0;
+	for (;;) {
+		errno = 0;
+		struct dirent *entry = readdir(directory);
+		if (entry == NULL) {
+			if (errno != 0)
+				count = -1;
+			break;
 		}
+		if (!is_executable_entry(directory, entry))
+			continue;
+		if ((size_t)count == capacity) {
+			count = -2;
+			break;
+		}
+		size_t length = strlen(entry->d_name);
+		if (length >= HELP_NAME_CAPACITY) {
+			count = -1;
+			break;
+		}
+		memcpy(names[count++], entry->d_name, length + 1);
 	}
-	if (u_close((uint64_t)descriptor) < 0 || result < 0)
+	if (closedir(directory) < 0)
 		return -1;
 	return count;
-}
-
-static int
-bin_command_at(uint64_t requested, char *name)
-{
-	struct u_dirent entry;
-	long descriptor = u_open("/bin", U_O_RDONLY | U_O_DIRECTORY);
-	long result;
-	uint64_t index = 0;
-	if (descriptor < 0)
-		return 0;
-	while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0) {
-		size_t length;
-		if (!is_executable_entry(&entry))
-			continue;
-		if (index++ != requested)
-			continue;
-		for (length = 0; length < sizeof(entry.name) &&
-		    entry.name[length] != '\0'; length++)
-			name[length] = entry.name[length];
-		if (length == sizeof(entry.name)) {
-			(void)u_close((uint64_t)descriptor);
-			return 0;
-		}
-		name[length] = '\0';
-		(void)u_close((uint64_t)descriptor);
-		return 1;
-	}
-	(void)u_close((uint64_t)descriptor);
-	return 0;
-}
-
-static int
-help_command_at(uint64_t requested, uint64_t external_count, char *name)
-{
-	size_t internal_count = sizeof(internal_commands) /
-	    sizeof(internal_commands[0]);
-	size_t i;
-	if (requested < internal_count) {
-		const char *source = internal_commands[requested];
-		for (i = 0; source[i] != '\0'; i++)
-			name[i] = source[i];
-		name[i] = '\0';
-		return 1;
-	}
-	if (requested >= internal_count + external_count)
-		return 0;
-	return bin_command_at(requested - internal_count, name);
 }
 
 static void
 print_help_commands(void)
 {
-	long external_count;
-	uint64_t total;
-	uint64_t columns = 1;
-	uint64_t rows;
-	uint64_t row;
-	uint64_t max_columns = 4;
-	struct u_winsize terminal_size;
-	long listing_error = 0;
-
-	external_count = count_bin_commands();
-	if (external_count < 0) {
-		listing_error = external_count;
-		external_count = 0;
+	size_t internal_count = sizeof(internal_commands) / sizeof(internal_commands[0]);
+	char (*names)[HELP_NAME_CAPACITY] = calloc(internal_count + HELP_COMMAND_LIMIT,
+	    sizeof(*names));
+	if (names == NULL) {
+		u_puts("sh: cannot allocate command list\n");
+		return;
 	}
-	total = sizeof(internal_commands) / sizeof(internal_commands[0]) +
-	    (uint64_t)external_count;
+	for (size_t i = 0; i < internal_count; i++)
+		strcpy(names[i], internal_commands[i]);
+	long external_count = read_bin_commands(names + internal_count, HELP_COMMAND_LIMIT);
+	long listing_error = external_count < 0 ? external_count : 0;
+	uint64_t total = internal_count + (external_count < 0 ? 0 : (uint64_t)external_count);
+	uint64_t columns = 1, max_columns = 4;
+	struct u_winsize terminal_size;
+
 	while (columns * columns < total)
 		columns++;
 	if (u_ioctl(1, 0x5413U, &terminal_size) == 0) {
@@ -220,25 +188,17 @@ print_help_commands(void)
 	}
 	if (columns > max_columns)
 		columns = max_columns;
-	rows = (total + columns - 1) / columns;
+	uint64_t rows = (total + columns - 1) / columns;
 	u_puts("Available commands:\n");
-	for (row = 0; row < rows; row++) {
-		uint64_t column;
-		for (column = 0; column < columns; column++) {
+	for (uint64_t row = 0; row < rows; row++) {
+		for (uint64_t column = 0; column < columns; column++) {
 			uint64_t index = row * columns + column;
-			char name[HELP_NAME_CAPACITY];
-			size_t length;
-			uint64_t spaces;
 			if (index >= total)
 				continue;
-			if (!help_command_at(index, (uint64_t)external_count, name)) {
-				u_puts("sh: cannot read command entry\n");
-				return;
-			}
-			length = u_strlen(name);
-			u_puts(name);
+			size_t length = strlen(names[index]);
+			u_puts(names[index]);
 			if (column + 1 < columns && index + 1 < total) {
-				spaces = length < HELP_COLUMN_WIDTH ?
+				uint64_t spaces = length < HELP_COLUMN_WIDTH ?
 				    HELP_COLUMN_WIDTH - length : 2;
 				while (spaces-- != 0)
 					u_puts(" ");
@@ -246,6 +206,7 @@ print_help_commands(void)
 		}
 		u_puts("\n");
 	}
+	free(names);
 	if (listing_error != 0)
 		u_puts(listing_error == -2 ?
 		    "sh: /bin has more than 128 executable entries\n" :
@@ -439,19 +400,18 @@ insert_completion(char *line, size_t *length, size_t *cursor,
 static void
 complete_line(char *line, size_t *length, size_t *cursor)
 {
-	/* The process user stack is one page; keep this scratch table in BSS. */
+	/* Keep the bounded completion table off the process stack. */
 	static struct completion_candidate candidates[COMPLETION_LIMIT];
 	char word[LINE_CAPACITY];
-	char directory[PATH_CAPACITY];
+	char directory_name[PATH_CAPACITY];
 	char directory_path[PATH_CAPACITY];
 	size_t start = *cursor;
 	size_t word_length;
 	size_t slash = (size_t)-1;
 	size_t count = 0;
 	int command_position = 1;
-	long descriptor;
-	long result;
-	struct u_dirent entry;
+	DIR *directory;
+	struct dirent *entry;
 
 	while (start != 0 && line[start - 1] != ' ' && line[start - 1] != '\t')
 		start--;
@@ -473,12 +433,16 @@ complete_line(char *line, size_t *length, size_t *cursor)
 			add_completion(candidates, &count, internal_commands[i], 0, word);
 		static const char *const directories[] = { "/bin", "/usr/bin" };
 		for (size_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++) {
-			descriptor = u_open(directories[i], U_O_RDONLY | U_O_DIRECTORY);
-			if (descriptor >= 0) {
-				while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0)
-					if (is_executable_entry(&entry))
-						add_completion(candidates, &count, entry.name, 0, word);
-				(void)u_close((uint64_t)descriptor);
+			directory = opendir(directories[i]);
+			if (directory != NULL) {
+				for (;;) {
+					entry = readdir(directory);
+					if (entry == NULL)
+						break;
+					if (is_executable_entry(directory, entry))
+						add_completion(candidates, &count, entry->d_name, 0, word);
+				}
+				(void)closedir(directory);
 			}
 		}
 	} else {
@@ -487,34 +451,44 @@ complete_line(char *line, size_t *length, size_t *cursor)
 			if (!resolve(".", directory_path))
 				return;
 		} else {
-			if (prefix_length >= sizeof(directory))
+			if (prefix_length >= sizeof(directory_name))
 				return;
 			for (size_t i = 0; i < prefix_length; i++)
-				directory[i] = word[i];
-			directory[prefix_length] = '\0';
-			if (prefix_length == 1 && directory[0] == '/') {
-				directory[0] = '/';
-				directory[1] = '\0';
+				directory_name[i] = word[i];
+			directory_name[prefix_length] = '\0';
+			if (prefix_length == 1 && directory_name[0] == '/') {
+				directory_name[0] = '/';
+				directory_name[1] = '\0';
 			} else {
-				directory[prefix_length - 1] = '\0';
-				if (directory[0] == '\0')
-					directory[0] = '.', directory[1] = '\0';
+				directory_name[prefix_length - 1] = '\0';
+				if (directory_name[0] == '\0')
+					directory_name[0] = '.', directory_name[1] = '\0';
 			}
-			if (!resolve(directory, directory_path))
+			if (!resolve(directory_name, directory_path))
 				return;
 		}
-		descriptor = u_open(directory_path, U_O_RDONLY | U_O_DIRECTORY);
-		if (descriptor < 0)
+		directory = opendir(directory_path);
+		if (directory == NULL)
 			return;
-		while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0) {
-			if (u_streq(entry.name, ".") || u_streq(entry.name, ".."))
+		int read_error = 0;
+		for (;;) {
+			errno = 0;
+			entry = readdir(directory);
+			if (entry == NULL) {
+				read_error = errno;
+				break;
+			}
+			if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
 				continue;
-			if (has_prefix(entry.name, word + prefix_length))
-				add_completion(candidates, &count, entry.name,
-				    entry.type == 2, word + prefix_length);
+			if (has_prefix(entry->d_name, word + prefix_length)) {
+				struct stat status;
+				int is_directory = fstatat(dirfd(directory), entry->d_name,
+				    &status, 0) == 0 && S_ISDIR(status.st_mode);
+				add_completion(candidates, &count, entry->d_name,
+				    is_directory, word + prefix_length);
+			}
 		}
-		(void)u_close((uint64_t)descriptor);
-		if (result < 0)
+		if (closedir(directory) < 0 || read_error != 0)
 			count = 0;
 		if (count != 0) {
 			char replacement[PATH_CAPACITY];
@@ -560,13 +534,10 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	}
 	if (count == 0)
 		return;
-	if (count > 1) {
-		size_t common_length = completion_common_prefix(candidates, count);
-		if (common_length > word_length)
-			insert_completion(line, length, cursor,
-			    candidates[0].name + word_length,
-			    common_length - word_length);
-	}
+	size_t common_length = completion_common_prefix(candidates, count);
+	if (common_length > word_length)
+		insert_completion(line, length, cursor,
+		    candidates[0].name + word_length, common_length - word_length);
 	if (count == 1 && *cursor == *length)
 		insert_completion(line, length, cursor, " ", 1);
 	if (count > 1) {
@@ -583,8 +554,6 @@ complete_line(char *line, size_t *length, size_t *cursor)
 	}
 	redraw_line(line, *length, *cursor);
 }
-
-
 
 static int
 read_command_line(char *line)

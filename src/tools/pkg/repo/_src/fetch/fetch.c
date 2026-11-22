@@ -1,3 +1,6 @@
+#include <dirent.h>
+#include <errno.h>
+#include <string.h>
 #include "include/os.h"
 
 #define LOGO_WIDTH 24U
@@ -205,18 +208,22 @@ write_dynamic_information(size_t row)
 	if (row == 4)
 		return write_memory();
 	if (row == 5) {
-		struct u_dirent entry;
-		long descriptor = u_open("/bin", U_O_RDONLY | U_O_DIRECTORY);
-		long result;
+		DIR *directory = opendir("/bin");
 		uint64_t count = 0;
-		if (descriptor < 0)
+		int read_error = 0;
+		if (directory == NULL)
 			return write_string("unavailable");
-		while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0) {
-			if (!u_streq(entry.name, ".") && !u_streq(entry.name, ".."))
+		for (;;) {
+			errno = 0;
+			struct dirent *entry = readdir(directory);
+			if (entry == NULL) {
+				read_error = errno;
+				break;
+			}
+			if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
 				count++;
 		}
-		(void)u_close((uint64_t)descriptor);
-		if (result < 0)
+		if (closedir(directory) < 0 || read_error != 0)
 			return write_string("unavailable");
 		u_put_u64(count);
 		return 1;
@@ -241,7 +248,7 @@ write_dynamic_information(size_t row)
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	size_t row;
 	(void)argv;

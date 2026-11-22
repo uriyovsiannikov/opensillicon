@@ -59,6 +59,9 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('rm /tmp/native-openat-check', None),
                 ('mkdir /tmp/dir-check', None),
                 ('touch /tmp/dir-check/entry', None),
+                ('help', 'Available commands:'),
+                ('whic\tls', '/bin/ls\n'),
+                ('stat /tmp/dir-che\tentry', '  Type: regular file'),
                 ('ls /tmp/dir-check', 'entry\n'),
                 ('rm /tmp/dir-check', 'is a directory'),
                 ('ls /tmp/dir-check', 'entry\n'),
@@ -71,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
             ]:
                 offset = len(log.read_text(errors='replace'))
                 for char in line + '\n':
-                    key = {' ': 'spc', '\n': 'ret', '/': 'slash', '-': 'minus', '.': 'dot', ':': 'shift-semicolon'}.get(char, char)
+                    key = {' ': 'spc', '\n': 'ret', '\t': 'tab', '/': 'slash', '-': 'minus', '.': 'dot', ':': 'shift-semicolon'}.get(char, char)
                     command('human-monitor-command', {'command-line': 'sendkey ' + key + ' 1'})
                     time.sleep(.03)
                 end = wait_for(expected, offset) if expected is not None else offset
