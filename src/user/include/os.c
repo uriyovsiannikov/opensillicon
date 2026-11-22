@@ -22,8 +22,6 @@ long u_open(const char *path, uint64_t flags)
 { return u_open_mode(path, flags, 0); }
 long u_open_mode(const char *path, uint64_t flags, uint32_t mode)
 { return syscall4(SYSCALL_OPENAT, OS_AT_FDCWD, (uintptr_t)path, flags, mode); }
-long u_mkdir(const char *path, uint32_t mode)
-{ return syscall4(SYSCALL_MKDIR, (uintptr_t)path, mode, 0, 0); }
 long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)
 { return syscall4(SYSCALL_IOCTL, fd, request, (uintptr_t)argument, 0); }
@@ -41,8 +39,6 @@ long u_kldload(const char *path)
 { return syscall4(SYSCALL_KLDLOAD, (uintptr_t)path, 0, 0, 0); }
 long u_kldunload(const char *name)
 { return syscall4(SYSCALL_KLDUNLOAD, (uintptr_t)name, 0, 0, 0); }
-long u_getcwd(char *buffer, size_t capacity)
-{ return syscall4(SYSCALL_GETCWD, (uintptr_t)buffer, capacity, 0, 0); }
 long u_getpid(void) { return syscall4(SYSCALL_GETPID, 0, 0, 0, 0); }
 long u_process_info(struct os_process_info *entries, size_t capacity)
 { return syscall4(SYSCALL_PROCESS_INFO, (uintptr_t)entries, capacity, 0, 0); }
