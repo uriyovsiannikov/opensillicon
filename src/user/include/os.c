@@ -24,8 +24,6 @@ long u_open_mode(const char *path, uint64_t flags, uint32_t mode)
 { return syscall4(SYSCALL_OPENAT, OS_AT_FDCWD, (uintptr_t)path, flags, mode); }
 long u_mkdir(const char *path, uint32_t mode)
 { return syscall4(SYSCALL_MKDIR, (uintptr_t)path, mode, 0, 0); }
-long u_unlink(const char *path, int directory)
-{ return syscall4(SYSCALL_UNLINK, (uintptr_t)path, (uint64_t)(directory != 0), 0, 0); }
 long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
 long u_stat_path(const char *path, struct os_stat *status)
 { return syscall4(SYSCALL_FSTATAT, OS_AT_FDCWD, (uintptr_t)path, (uintptr_t)status, 0); }

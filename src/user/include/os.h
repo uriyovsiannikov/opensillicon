@@ -70,7 +70,6 @@ long u_read(uint64_t fd, void *buffer, size_t length);
 long u_open(const char *path, uint64_t flags);
 long u_open_mode(const char *path, uint64_t flags, uint32_t mode);
 long u_mkdir(const char *path, uint32_t mode);
-long u_unlink(const char *path, int directory);
 long u_close(uint64_t fd);
 long u_stat_path(const char *path, struct os_stat *status);
 int u_find_command(const char *name, char *path, size_t capacity);
