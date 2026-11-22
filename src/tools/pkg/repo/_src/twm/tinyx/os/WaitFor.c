@@ -65,30 +65,13 @@ SOFTWARE.
 #include "misc.h"
 
 #include "osdep.h"
-#include <X11/Xpoll.h>
+#include "fdset.h"
 #include "dixstruct.h"
 #include "opaque.h"
 
 /* This is just a fallback to errno to hide the differences between unix and
    Windows in the code */
 #define GetErrno() errno
-
-/* modifications by raphael */
-int
-mffs(fd_mask mask)
-{
-    int i;
-
-    if (!mask) return 0;
-    i = 1;
-    while (!(mask & 1))
-    {
-	i++;
-	mask >>= 1;
-    }
-    return i;
-}
-
 
 struct _OsTimerRec {
     OsTimerPtr		next;
@@ -319,17 +302,14 @@ WaitForSomething(int *pClientsReady)
     nready = 0;
     if (XFD_ANYSET (&clientsReadable))
     {
-	for (i=0; i<howmany(XFD_SETSIZE, NFDBITS); i++)
+	int highest_priority = 0;
+	for (curclient = 0; curclient < XFD_SETSIZE; curclient++)
 	{
-	    int highest_priority = 0;
-
-	    while (clientsReadable.fds_bits[i])
+	    if (FD_ISSET(curclient, &clientsReadable))
 	    {
 	        int client_priority, client_index;
 
-		curclient = ffs (clientsReadable.fds_bits[i]) - 1;
-		client_index = /* raphael: modified */
-			ConnectionTranslation[curclient + (i * (sizeof(fd_mask) * 8))];
+		client_index = ConnectionTranslation[curclient];
 		/*  We implement "strict" priorities.
 		 *  Only the highest priority client is returned to
 		 *  dix.  If multiple clients at the same priority are
@@ -359,7 +339,7 @@ WaitForSomething(int *pClientsReady)
 		{
 		    pClientsReady[nready++] = client_index;
 		}
-		clientsReadable.fds_bits[i] &= ~(((fd_mask)1L) << curclient);
+		FD_CLR(curclient, &clientsReadable);
 	    }
 	}
     }

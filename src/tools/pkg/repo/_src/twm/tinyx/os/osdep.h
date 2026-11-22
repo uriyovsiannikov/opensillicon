@@ -78,7 +78,7 @@ SOFTWARE.
 #endif
 #endif
 
-#include <X11/Xpoll.h>
+#include "fdset.h"
 
 /*
  * MAXSOCKS is used only for initialising MaxClients when no other method
@@ -187,10 +187,6 @@ extern ConnectionOutputPtr FreeOutputs;
 extern OsCommPtr AvailableInput;
 
 extern WorkQueuePtr workQueue;
-
-/* added by raphael */
-#define ffs mffs
-extern int mffs(fd_mask);
 
 /* in auth.c */
 extern void GenerateRandomData (int len, char *buf);

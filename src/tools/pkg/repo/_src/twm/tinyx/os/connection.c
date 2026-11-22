@@ -87,7 +87,7 @@ SOFTWARE.
 #include <sys/uio.h>
 #include "misc.h"		/* for typedef of pointer */
 #include "osdep.h"
-#include <X11/Xpoll.h>
+#include "fdset.h"
 #include "opaque.h"
 #include "dixstruct.h"
 
@@ -576,16 +576,14 @@ EstablishNewConnections(ClientPtr clientUnused, pointer closure)
 		CloseDownClient(client);
 	}
     }
-    for (i = 0; i < howmany(XFD_SETSIZE, NFDBITS); i++)
+    for (curconn = 0; curconn < XFD_SETSIZE; curconn++)
     {
-      while (readyconnections.fds_bits[i])
+      if (FD_ISSET(curconn, &readyconnections))
       {
 	XtransConnInfo trans_conn, new_trans_conn;
 	int status;
 
-	curconn = ffs (readyconnections.fds_bits[i]) - 1;
-	readyconnections.fds_bits[i] &= ~((fd_mask)1 << curconn);
-	curconn += (i * (sizeof(fd_mask)*8));
+	FD_CLR(curconn, &readyconnections);
 
 	if ((trans_conn = lookup_trans_conn (curconn)) == NULL)
 	    continue;
@@ -710,30 +708,23 @@ CloseDownFileDescriptor(OsCommPtr oc)
 void
 CheckConnections(void)
 {
-    fd_mask		mask;
     fd_set		tmask;
-    int			curclient, curoff;
-    int			i;
+    int			curclient;
     struct timeval	notime;
     int r;
 
     notime.tv_sec = 0;
     notime.tv_usec = 0;
 
-    for (i=0; i<howmany(XFD_SETSIZE, NFDBITS); i++)
+    for (curclient = 0; curclient < XFD_SETSIZE; curclient++)
     {
-	mask = AllClients.fds_bits[i];
-        while (mask)
-    	{
-	    curoff = ffs (mask) - 1;
-	    curclient = curoff + (i * (sizeof(fd_mask)*8));
-            FD_ZERO(&tmask);
-            FD_SET(curclient, &tmask);
-            r = Select (curclient + 1, &tmask, NULL, NULL, &notime);
-            if (r < 0)
-		CloseDownClient(clients[ConnectionTranslation[curclient]]);
-	    mask &= ~((fd_mask)1 << curoff);
-	}
+        if (!FD_ISSET(curclient, &AllClients))
+            continue;
+        FD_ZERO(&tmask);
+        FD_SET(curclient, &tmask);
+        r = Select(curclient + 1, &tmask, NULL, NULL, &notime);
+        if (r < 0)
+            CloseDownClient(clients[ConnectionTranslation[curclient]]);
     }
 }
 

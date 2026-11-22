@@ -68,7 +68,7 @@ SOFTWARE.
 #include <X11/Xproto.h>
 #include "os.h"
 #include "osdep.h"
-#include <X11/Xpoll.h>
+#include "fdset.h"
 #include "opaque.h"
 #include "dixstruct.h"
 #include "misc.h"
@@ -587,8 +587,8 @@ static int padlength[4] = {0, 3, 2, 1};
 void
 FlushAllOutput(void)
 {
-    int index, base;
-    fd_mask mask; /* raphael */
+    int index, descriptor;
+    fd_set pending;
     OsCommPtr oc;
     ClientPtr client;
     Bool newoutput = NewOutputPending;
@@ -607,15 +607,13 @@ FlushAllOutput(void)
     CriticalOutputPending = FALSE;
     NewOutputPending = FALSE;
 
-    for (base = 0; base < howmany(XFD_SETSIZE, NFDBITS); base++)
+    XFD_COPYSET(&OutputPending, &pending);
+    FD_ZERO(&OutputPending);
+    for (descriptor = 0; descriptor < XFD_SETSIZE; descriptor++)
     {
-	mask = OutputPending.fds_bits[ base ];
-	OutputPending.fds_bits[ base ] = 0;
-	while (mask)
+	if (FD_ISSET(descriptor, &pending))
 	{
-	    index = ffs(mask) - 1;
-	    mask &= ~lowbit(mask);
-	    if ((index = ConnectionTranslation[(base * (sizeof(fd_mask)*8)) + index]) == 0)
+	    if ((index = ConnectionTranslation[descriptor]) == 0)
 		continue;
 	    client = clients[index];
 	    if (client->clientGone)

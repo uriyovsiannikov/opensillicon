@@ -15,6 +15,7 @@ libos_la_SOURCES = 	\
 	mitauth.c	\
 	oscolor.c	\
 	osdep.h		\
+	fdset.h		\
 	osinit.c	\
 	utils.c		\
 	xstrans.c	\
