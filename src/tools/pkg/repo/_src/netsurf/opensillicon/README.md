@@ -36,8 +36,9 @@ emulated as a successful operation.
 
 ## Native changes
 
-libnsfb constructors are retained by the linker script and called from a
-native main wrapper. The automatic frontend selector now records the chosen
+libnsfb constructors are retained by the linker script and run once by musl
+startup. A native main wrapper ignores SIGPIPE before entering the browser.
+The automatic frontend selector now records the chosen
 surface type instead of accidentally choosing the last (RAM) surface. XCB
 windows get a name/class and standard close protocol. Pointer shapes are
 converted to core X11 source/mask cursors; X owns cursor movement, independent
