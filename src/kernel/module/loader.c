@@ -71,7 +71,7 @@ kernel_module_load_path(const char *name, const char *path)
 	enum kernel_module_error result;
 	if (!name_valid(name, &name_length) || path == NULL)
 		return KERNEL_MODULE_INVALID_ARGUMENT;
-	error = vfs_open(path, VFS_O_RDONLY, 0, &file);
+	error = vfs_open(path, OS_O_RDONLY, 0, &file);
 	if (error != 0)
 		return error == -2 ? KERNEL_MODULE_NOT_FOUND : KERNEL_MODULE_IO_ERROR;
 	if (fd_object_stat(file, &stat) != 0) {

@@ -261,7 +261,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 				memcpy(name, canonical + begin, name_length);
 				name[name_length] = '\0';
 			}
-			result = vfs_open_as(canonical, VFS_O_RDONLY, 0, 0, 0, &file);
+			result = vfs_open_as(canonical, OS_O_RDONLY, 0, 0, 0, &file);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;

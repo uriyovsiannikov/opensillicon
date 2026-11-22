@@ -5,20 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "abi/fcntl.h"
+
 #define VFS_PATH_MAX 256U
 #define VFS_NAME_MAX 255U
 
-#define VFS_O_RDONLY 0U
-#define VFS_O_WRONLY 1U
-#define VFS_O_RDWR 2U
-#define VFS_O_ACCMODE 3U
-#define VFS_O_CREAT 0x40U
-#define VFS_O_EXCL 0x80U
-#define VFS_O_TRUNC 0x200U
-#define VFS_O_APPEND 0x400U
-#define VFS_O_CLOEXEC 0x80000U
-#define VFS_O_DIRECTORY 0x10000U
-#define VFS_O_NONBLOCK 0x800U
 #define VFS_ACCESS_EXEC 0x01U
 #define VFS_ACCESS_WRITE 0x02U
 #define VFS_ACCESS_READ 0x04U

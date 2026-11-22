@@ -824,7 +824,7 @@ file_read(void *context, uint64_t offset, void *buffer, size_t length,
 {
 	struct vfs_file_context *file = context;
 
-	if ((file->flags & VFS_O_ACCMODE) == VFS_O_WRONLY)
+	if ((file->flags & OS_O_ACCMODE) == OS_O_WRONLY)
 		return -EBADF;
 	if (file->node->type == VNODE_DIRECTORY)
 		return -EISDIR;
@@ -850,7 +850,7 @@ static int
 file_prepare_write(void *context, uint32_t uid)
 {
 	struct vfs_file_context *file = context;
-	if ((file->flags & VFS_O_ACCMODE) == VFS_O_RDONLY)
+	if ((file->flags & OS_O_ACCMODE) == OS_O_RDONLY)
 		return -EBADF;
 	if (file->node->operations->write == NULL)
 		return -EROFS;
@@ -863,7 +863,7 @@ file_write(void *context, uint64_t offset, const void *buffer, size_t length,
 {
 	struct vfs_file_context *file = context;
 
-	if ((file->flags & VFS_O_ACCMODE) == VFS_O_RDONLY)
+	if ((file->flags & OS_O_ACCMODE) == OS_O_RDONLY)
 		return -EBADF;
 	if (file->node->type == VNODE_DIRECTORY)
 		return -EISDIR;
@@ -880,7 +880,7 @@ file_readdir(void *context, uint64_t index, struct vfs_dirent *entry)
 
 	if (file->node->type != VNODE_DIRECTORY)
 		return -ENOTDIR;
-	if ((file->flags & VFS_O_ACCMODE) != VFS_O_RDONLY)
+	if ((file->flags & OS_O_ACCMODE) != OS_O_RDONLY)
 		return -EBADF;
 	if (file->node->operations->readdir == NULL)
 		return -EBADF;
@@ -1060,8 +1060,8 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
  uint32_t mode, uint32_t uid, uint32_t gid, struct fd_object **result)
 
 {
-	const uint32_t allowed = VFS_O_ACCMODE | VFS_O_CREAT | VFS_O_EXCL | VFS_O_TRUNC |
-	    VFS_O_DIRECTORY | VFS_O_NONBLOCK | VFS_O_APPEND | VFS_O_CLOEXEC;
+	const uint32_t allowed = OS_O_ACCMODE | OS_O_CREAT | OS_O_EXCL | OS_O_TRUNC |
+	    OS_O_DIRECTORY | OS_O_NONBLOCK | OS_O_APPEND | OS_O_CLOEXEC;
 	struct vfs_file_context *context;
 	struct vnode *node = NULL;
 	struct fd_object *file;
@@ -1070,11 +1070,11 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	int error;
 
 	if (result == NULL || (flags & ~allowed) != 0 ||
-	    (flags & VFS_O_ACCMODE) == VFS_O_ACCMODE ||
-	    ((flags & (VFS_O_CREAT | VFS_O_DIRECTORY)) ==
-	    (VFS_O_CREAT | VFS_O_DIRECTORY)) ||
-	    ((flags & VFS_O_TRUNC) != 0 &&
-	    (flags & VFS_O_ACCMODE) == VFS_O_RDONLY))
+	    (flags & OS_O_ACCMODE) == OS_O_ACCMODE ||
+	    ((flags & (OS_O_CREAT | OS_O_DIRECTORY)) ==
+	    (OS_O_CREAT | OS_O_DIRECTORY)) ||
+	    ((flags & OS_O_TRUNC) != 0 &&
+	    (flags & OS_O_ACCMODE) == OS_O_RDONLY))
 		return -EINVAL;
 	*result = NULL;
 	if (directory == NULL) error = canonicalize_path(path, canonical, uid, gid);
@@ -1096,16 +1096,16 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 		(void)kheap_free(context);
 		return -ENOMEM;
 	}
-	file->status_flags = flags & (VFS_O_ACCMODE | VFS_O_NONBLOCK | VFS_O_APPEND);
+	file->status_flags = flags & (OS_O_ACCMODE | OS_O_NONBLOCK | OS_O_APPEND);
 	error = directory ? vfs_lookup_from_as(directory,path,uid,gid,&node) :
 	    vfs_lookup_as(canonical, uid, gid, &node);
 	context->node = node;
-	if (error == 0 && (flags & (VFS_O_CREAT | VFS_O_EXCL)) ==
-	    (VFS_O_CREAT | VFS_O_EXCL)) {
+	if (error == 0 && (flags & (OS_O_CREAT | OS_O_EXCL)) ==
+	    (OS_O_CREAT | OS_O_EXCL)) {
 		error = -EEXIST;
 		goto fail;
 	}
-	if (error == -ENOENT && (flags & VFS_O_CREAT) != 0) {
+	if (error == -ENOENT && (flags & OS_O_CREAT) != 0) {
 		error = directory ? create_from_as(directory,path,mode,uid,gid,&node) :
 		    vfs_create_path_as(path, VNODE_REGULAR, mode, uid, gid, &node);
 		context->node = node;
@@ -1118,21 +1118,21 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 		goto fail;
 	}
 	if (node->type == VNODE_DIRECTORY &&
-	    (flags & VFS_O_ACCMODE) != VFS_O_RDONLY) {
+	    (flags & OS_O_ACCMODE) != OS_O_RDONLY) {
 		error = -EISDIR;
 		goto fail;
 	}
-	if ((flags & VFS_O_DIRECTORY) != 0 && node->type != VNODE_DIRECTORY) {
+	if ((flags & OS_O_DIRECTORY) != 0 && node->type != VNODE_DIRECTORY) {
 		error = -ENOTDIR;
 		goto fail;
 	}
 	{
 		unsigned int requested = 0;
-		if ((flags & VFS_O_ACCMODE) == VFS_O_RDONLY ||
-		    (flags & VFS_O_ACCMODE) == VFS_O_RDWR)
+		if ((flags & OS_O_ACCMODE) == OS_O_RDONLY ||
+		    (flags & OS_O_ACCMODE) == OS_O_RDWR)
 			requested |= VFS_ACCESS_READ;
-		if ((flags & VFS_O_ACCMODE) == VFS_O_WRONLY ||
-		    (flags & VFS_O_ACCMODE) == VFS_O_RDWR)
+		if ((flags & OS_O_ACCMODE) == OS_O_WRONLY ||
+		    (flags & OS_O_ACCMODE) == OS_O_RDWR)
 			requested |= VFS_ACCESS_WRITE;
 		/* The parent-directory check authorizes the descriptor of a new
 		 * file even when the creation mode itself grants no further access. */
@@ -1141,12 +1141,12 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 			goto fail;
 		}
 	}
-	if ((flags & VFS_O_ACCMODE) != VFS_O_RDONLY &&
+	if ((flags & OS_O_ACCMODE) != OS_O_RDONLY &&
 	    node->operations->write == NULL && node->operations->open_device == NULL) {
 		error = -EROFS;
 		goto fail;
 	}
-	if ((flags & VFS_O_TRUNC) != 0) {
+	if ((flags & OS_O_TRUNC) != 0) {
 		if (node->type == VNODE_DIRECTORY || node->operations->truncate == NULL) {
 			error = node->type == VNODE_DIRECTORY ? -EISDIR : -EROFS;
 			goto fail;
@@ -1159,10 +1159,10 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	}
     if (node->operations->open_device != NULL) {
         struct fd_object *device = NULL;
-        error = node->operations->open_device(node, flags & ~VFS_O_CLOEXEC, &device);
+        error = node->operations->open_device(node, flags & ~OS_O_CLOEXEC, &device);
         if (error != 0) goto fail;
         if (device == NULL) { error = -ENOMEM; goto fail; }
-        device->status_flags = flags & (VFS_O_ACCMODE | VFS_O_NONBLOCK | VFS_O_APPEND);
+        device->status_flags = flags & (OS_O_ACCMODE | OS_O_NONBLOCK | OS_O_APPEND);
         fd_object_put(file);
         *result = device;
         return 0;

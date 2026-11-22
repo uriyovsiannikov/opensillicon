@@ -509,7 +509,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			if (flags & VFS_O_CLOEXEC)
+			if (flags & OS_O_CLOEXEC)
 				(void)fd_set_descriptor_flags(table, result, FD_DESCRIPTOR_CLOEXEC);
 			frame->rax = (uint64_t)result;
 		}

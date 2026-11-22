@@ -13,6 +13,7 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #include "abi/syscall.h"
+#include "abi/fcntl.h"
 #include "abi/credentials.h"
 #include "abi/termios.h"
 #include "abi/stat.h"
@@ -34,6 +35,22 @@ _Static_assert(offsetof(struct stat, st_size)==offsetof(struct os_stat, st_size)
 _Static_assert(offsetof(struct stat, st_atim)==offsetof(struct os_stat, st_atime_sec), "stat timestamps ABI");
 _Static_assert(offsetof(struct dirent, d_name)==19, "getdents ABI");
 
+/* Matching flag values need no per-bit translation. */
+#define CHECK_OPEN_FLAG(name) _Static_assert(name == OS_##name, #name " ABI")
+CHECK_OPEN_FLAG(O_RDONLY);
+CHECK_OPEN_FLAG(O_WRONLY);
+CHECK_OPEN_FLAG(O_RDWR);
+/* musl includes O_PATH in O_ACCMODE; native VFS rejects O_PATH unchanged. */
+_Static_assert((O_ACCMODE & ~O_PATH) == OS_O_ACCMODE, "access mode ABI");
+CHECK_OPEN_FLAG(O_CREAT);
+CHECK_OPEN_FLAG(O_EXCL);
+CHECK_OPEN_FLAG(O_TRUNC);
+CHECK_OPEN_FLAG(O_APPEND);
+CHECK_OPEN_FLAG(O_NONBLOCK);
+CHECK_OPEN_FLAG(O_DIRECTORY);
+CHECK_OPEN_FLAG(O_CLOEXEC);
+#undef CHECK_OPEN_FLAG
+
 static long open_native(long dirfd, long path, long flags, long mode)
 {
  /* No symlinks exist in this VFS. O_NOFOLLOW is consequently satisfied.
@@ -41,15 +58,8 @@ static long open_native(long dirfd, long path, long flags, long mode)
  const long allowed=O_ACCMODE|O_CREAT|O_EXCL|O_TRUNC|O_DIRECTORY|
      O_NONBLOCK|O_CLOEXEC|O_NOFOLLOW|O_LARGEFILE|O_APPEND|O_NOCTTY;
  if(flags & ~allowed) return -EOPNOTSUPP;
- long native=flags & O_ACCMODE;
- if(flags & O_CREAT) native|=0x40;
- if(flags & O_EXCL) native|=0x80;
- if(flags & O_TRUNC) native|=0x200;
- if(flags & O_DIRECTORY) native|=0x10000;
- if(flags & O_NONBLOCK) native|=0x800;
- if(flags & O_APPEND) native|=0x400;
- if(flags & O_CLOEXEC) native|=0x80000;
- return call(SYSCALL_OPENAT,dirfd,path,native,mode,0,0);
+ return call(SYSCALL_OPENAT,dirfd,path,
+     flags & ~(O_NOFOLLOW|O_LARGEFILE|O_NOCTTY),mode,0,0);
 }
 
 static long fcntl_native(long fd,long cmd,long arg)
@@ -61,14 +71,10 @@ static long fcntl_native(long fd,long cmd,long arg)
  case F_SETFD:
   if(arg & ~FD_CLOEXEC) return -EINVAL;
   return call(SYSCALL_FCNTL,fd,2,arg,0,0,0);
- case F_GETFL: {
-  long r=call(SYSCALL_FCNTL,fd,3,0,0,0,0);
-  if(r<0) return r;
-  return (r & 3) | ((r & 0x800) ? O_NONBLOCK : 0) | ((r & 0x400) ? O_APPEND : 0);
- }
+ case F_GETFL: return call(SYSCALL_FCNTL,fd,3,0,0,0,0);
  case F_SETFL:
   if(arg & ~(O_ACCMODE|O_NONBLOCK|O_LARGEFILE|O_APPEND)) return -EOPNOTSUPP;
-  return call(SYSCALL_FCNTL,fd,4,((arg & O_NONBLOCK) ? 0x800 : 0) | ((arg & O_APPEND) ? 0x400 : 0),0,0,0);
+  return call(SYSCALL_FCNTL,fd,4,arg & (O_NONBLOCK|O_APPEND),0,0,0);
  default: return -ENOSYS;
  }
 }

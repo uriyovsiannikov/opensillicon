@@ -200,7 +200,7 @@ klog_flush_boot_log(void)
 	panic_context_length = 0;
 	spinlock_unlock_irqrestore(&log_lock, flags);
 	error = vfs_open("/tmp/btlog.log",
-	    VFS_O_WRONLY | VFS_O_CREAT | VFS_O_TRUNC, 0644, &file);
+	    OS_O_WRONLY | OS_O_CREAT | OS_O_TRUNC, 0644, &file);
 	if (error != 0) {
 		klog("could not create /tmp/btlog.log\n");
 		return;

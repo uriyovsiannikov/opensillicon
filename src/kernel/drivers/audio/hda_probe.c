@@ -656,7 +656,7 @@ int hda_tone_snapshot(char *buffer,size_t capacity,size_t *length) {return snaps
 
 int hda_audio_open(struct vnode *node,uint32_t flags,struct fd_object **result)
 {
-    if((flags&VFS_O_ACCMODE)!=VFS_O_WRONLY)return -EINVAL;
+    if((flags&OS_O_ACCMODE)!=OS_O_WRONLY)return -EINVAL;
     hda_audio_poll();
     if(__atomic_test_and_set(&busy,__ATOMIC_ACQUIRE))return -EBUSY;
     if(audio.active||audio.closing){__atomic_clear(&busy,__ATOMIC_RELEASE);return -EBUSY;}

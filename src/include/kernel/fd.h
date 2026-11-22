@@ -5,13 +5,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "abi/fcntl.h"
+
 #define FD_TABLE_CAPACITY 32U
 #define FD_POLL_READ 0x01U
 #define FD_POLL_WRITE 0x02U
 #define FD_POLL_ERROR 0x04U
 #define FD_POLL_HANGUP 0x08U
-#define FD_STATUS_APPEND 0x00000400U
-#define FD_STATUS_NONBLOCK 0x00000800U
 #define FD_DESCRIPTOR_CLOEXEC 0x00000001U
 
 struct vfs_dirent;

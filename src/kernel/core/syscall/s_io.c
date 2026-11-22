@@ -26,8 +26,6 @@
 #define NATIVE_F_GETFL 3U
 #define NATIVE_F_SETFL 4U
 #define NATIVE_F_SETOWN 8U
-#define NATIVE_O_NONBLOCK FD_STATUS_NONBLOCK
-#define NATIVE_O_ACCMODE 3U
 
 struct syscall_iovec {
 	uint64_t base;
@@ -639,7 +637,7 @@ syscall_io_local(struct interrupt_frame **result_frame)
 		{
 			uint32_t descriptors[2];
 			uint64_t flags = frame->rsi;
-			if (flags & ~(uint64_t)(VFS_O_CLOEXEC | VFS_O_NONBLOCK)) {
+			if (flags & ~(uint64_t)(OS_O_CLOEXEC | OS_O_NONBLOCK)) {
 				syscall_error(frame, EINVAL);
 				return true;
 			}
@@ -655,15 +653,15 @@ syscall_io_local(struct interrupt_frame **result_frame)
 				syscall_error(frame, errno_from_kernel(result));
 				return true;
 			}
-			if (flags & VFS_O_CLOEXEC) {
+			if (flags & OS_O_CLOEXEC) {
 				(void)fd_set_descriptor_flags(table,reader,FD_DESCRIPTOR_CLOEXEC);
 				(void)fd_set_descriptor_flags(table,writer,FD_DESCRIPTOR_CLOEXEC);
 			}
-			if (flags & VFS_O_NONBLOCK) {
+			if (flags & OS_O_NONBLOCK) {
 				struct fd_object *read_end = fd_object_for_descriptor(table,reader);
 				struct fd_object *write_end = fd_object_for_descriptor(table,writer);
-				__atomic_fetch_or(&read_end->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
-				__atomic_fetch_or(&write_end->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
+				__atomic_fetch_or(&read_end->status_flags, OS_O_NONBLOCK, __ATOMIC_RELAXED);
+				__atomic_fetch_or(&write_end->status_flags, OS_O_NONBLOCK, __ATOMIC_RELAXED);
 			}
 			descriptors[0] = (uint32_t)reader;
 			descriptors[1] = (uint32_t)writer;
@@ -811,8 +809,8 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			case NATIVE_F_SETFL:
 				__atomic_store_n(&object->status_flags,
 				    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
-				    NATIVE_O_ACCMODE) | ((uint32_t)frame->rdx &
-				    (NATIVE_O_NONBLOCK | FD_STATUS_APPEND)), __ATOMIC_RELAXED);
+				    OS_O_ACCMODE) | ((uint32_t)frame->rdx &
+				    (OS_O_NONBLOCK | OS_O_APPEND)), __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
 				break;
@@ -827,12 +825,12 @@ syscall_io_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_DUP3:
 		{
-			if (frame->rdx & ~(uint64_t)VFS_O_CLOEXEC) {
+			if (frame->rdx & ~(uint64_t)OS_O_CLOEXEC) {
 				syscall_error(frame, EINVAL);
 				break;
 			}
 			int result = fd_dup_to(current_fd_table(), frame->rdi,
-			    frame->rsi, (frame->rdx & VFS_O_CLOEXEC) ?
+			    frame->rsi, (frame->rdx & OS_O_CLOEXEC) ?
 			    FD_DESCRIPTOR_CLOEXEC : 0);
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));

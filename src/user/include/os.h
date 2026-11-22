@@ -4,14 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "abi/fcntl.h"
+
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/credentials.h"
 #include "abi/process_info.h"
 
-#define U_O_RDONLY 0U
-#define U_O_WRONLY 1U
-#define U_O_CREAT 0x40U
 #define U_EXEC_ARG_MAX 16U
 #define U_TIOCSRAW 0x4f530001U
 #define U_TIOCCANON 0x4f530002U

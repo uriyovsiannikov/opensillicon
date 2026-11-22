@@ -39,3 +39,4 @@ make install > install.log 2>&1
 cp -R "$port/include/." "$build/sysroot/include/"
 
 install -D -m 644 "$root/src/include/abi/sysctl.h" "$build/sysroot/include/abi/sysctl.h"
+install -D -m 644 "$root/src/include/abi/fcntl.h" "$build/sysroot/include/abi/fcntl.h"

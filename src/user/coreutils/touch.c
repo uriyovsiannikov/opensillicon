@@ -10,7 +10,7 @@ user_main(uint64_t argc, char **argv)
 		return 1;
 	}
 	for (i = 1; i < argc; i++) {
-		long fd = u_open_mode(argv[i], U_O_WRONLY | U_O_CREAT, 0666);
+		long fd = u_open_mode(argv[i], OS_O_WRONLY | OS_O_CREAT, 0666);
 		if (fd < 0) {
 			u_puts("touch: cannot create: "); u_puts(argv[i]); u_puts("\n");
 			failed = 1;

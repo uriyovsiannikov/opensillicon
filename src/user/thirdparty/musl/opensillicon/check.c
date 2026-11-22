@@ -60,6 +60,9 @@ static int files_check(void)
  errno=0;
  CHECK(open("data",O_CREAT|O_EXCL|O_WRONLY,0600)==-1 && errno==EEXIST);
  CHECK(stat("data",&st)==0 && st.st_size==3);
+ CHECK(open("data",O_PATH)==-1 && errno==EINVAL);
+ CHECK(open("path-create",O_PATH|O_CREAT|O_WRONLY,0600)==-1 && errno==EINVAL);
+ CHECK(stat("path-create",&st)==-1 && errno==ENOENT);
  char canonical[256];
  CHECK(realpath("./data",canonical)==canonical && !strcmp(canonical,"/musl-files/data"));
  CHECK(readlink("data",canonical,sizeof canonical)==-1 && errno==EINVAL);

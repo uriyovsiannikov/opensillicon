@@ -331,7 +331,7 @@ bool
 fd_object_nonblocking(const struct fd_object *object)
 {
 	return object != NULL &&
-	    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) & FD_STATUS_NONBLOCK) != 0;
+	    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) & OS_O_NONBLOCK) != 0;
 }
 
 int
@@ -466,7 +466,7 @@ fd_object_write_as(struct fd_object *object, const void *buffer, size_t length,
 	/* Regular-file writes execute serially on the BSP. Select EOF and perform
 	 * this write in the same syscall, including writes through duplicated FDs. */
 	if (length && (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
-	    FD_STATUS_APPEND) && object->operations->stat != NULL) {
+	    OS_O_APPEND) && object->operations->stat != NULL) {
 		struct fd_metadata metadata;
 		error = object->operations->stat(object->context, &metadata);
 		if (error) return error;

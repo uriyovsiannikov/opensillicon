@@ -299,9 +299,9 @@ syscall_device_bsp(struct interrupt_frame *frame)
 					break;
 				}
 				if (enabled)
-					__atomic_fetch_or(&object->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
+					__atomic_fetch_or(&object->status_flags, OS_O_NONBLOCK, __ATOMIC_RELAXED);
 				else
-					__atomic_fetch_and(&object->status_flags, ~FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
+					__atomic_fetch_and(&object->status_flags, ~OS_O_NONBLOCK, __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
 				break;

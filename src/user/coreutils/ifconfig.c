@@ -15,7 +15,7 @@ print_interface(void)
 {
 	char name[32];
 	long length = 0;
-	long fd = u_open("/proc/netif", U_O_RDONLY);
+	long fd = u_open("/proc/netif", OS_O_RDONLY);
 	if (fd >= 0) {
 		length = u_read((uint64_t)fd, name, sizeof(name));
 		u_close((uint64_t)fd);
