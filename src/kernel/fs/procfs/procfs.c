@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/cyclone_net.h"
 #include "kernel/process.h"
@@ -16,10 +17,6 @@
 #include "kernel/hda_probe.h"
 #include "arch/x86_64/pci.h"
 
-#define PROCFS_EINVAL 22
-#define PROCFS_ENOENT 2
-#define PROCFS_ENOMEM 12
-#define PROCFS_ENOTDIR 20
 #define PROCFS_CONTENT_MAX 16384U
 #define PROCFS_TICK_HZ 100U
 
@@ -260,10 +257,10 @@ static int
 procfs_make_audiopci(uint64_t inode, struct procfs_node **result)
 {
     struct procfs_node *node = procfs_allocate("audiopci", PROCFS_AUDIOPCI, VNODE_REGULAR, inode);
-    if (!node) return -PROCFS_ENOMEM;
+    if (!node) return -ENOMEM;
     if (!append_text(node, "Audio PCI diagnostic v1 (read-only)\n") ||
         !pci_enumerate(procfs_audiopci_entry, node)) {
-        vnode_put(&node->vnode); return -PROCFS_EINVAL;
+        vnode_put(&node->vnode); return -EINVAL;
     }
     if (node->content_length == strlen("Audio PCI diagnostic v1 (read-only)\n"))
         (void)append_text(node, "No PCI multimedia functions found. For USB audio also run usbconf.\n");
@@ -277,9 +274,9 @@ procfs_make_pci(uint64_t inode, struct procfs_node **result, bool network)
 {
 	struct procfs_node *node = procfs_allocate(network ? "netpci" : "pci",
 	    network ? PROCFS_NETPCI : PROCFS_PCI, VNODE_REGULAR, inode);
-	if (node == NULL) return -PROCFS_ENOMEM;
+	if (node == NULL) return -ENOMEM;
 	if (!pci_enumerate(network ? procfs_netpci_entry : procfs_pci_entry, node)) {
-		vnode_put(&node->vnode); return -PROCFS_EINVAL;
+		vnode_put(&node->vnode); return -EINVAL;
 	}
 	node->vnode.size = node->content_length; *result = node; return 0;
 }
@@ -289,7 +286,7 @@ procfs_make_usb(uint64_t inode, struct procfs_node **result)
 {
 	struct procfs_node *node = procfs_allocate("usb", PROCFS_USB, VNODE_REGULAR, inode);
 	struct usb_host_device_info devices[USB_HOST_DEVICE_MAX];
-	if (node == NULL) return -PROCFS_ENOMEM;
+	if (node == NULL) return -ENOMEM;
 	if (!append_text(node, "controllers: ") || !append_u64(node, usb_host_controller_count()) ||
 	    !append_text(node, "\nactive: ") || !append_u64(node, usb_host_available()) ||
 	    !append_text(node, "\n")) goto overflow;
@@ -299,16 +296,16 @@ procfs_make_usb(uint64_t inode, struct procfs_node **result)
 		    !append_u64(node, devices[i].index) || !append_text(node, "\n")) goto overflow;
 	node->vnode.size = node->content_length; *result = node; return 0;
 overflow:
-	vnode_put(&node->vnode); return -PROCFS_EINVAL;
+	vnode_put(&node->vnode); return -EINVAL;
 }
 
 static int
 procfs_make_disks(uint64_t inode, struct procfs_node **result)
 {
 	struct procfs_node *node = procfs_allocate("disks", PROCFS_DISKS, VNODE_REGULAR, inode);
-	if (node == NULL) return -PROCFS_ENOMEM;
+	if (node == NULL) return -ENOMEM;
 	if (!append_text(node, "NAME SECTORS SECTOR_SIZE BYTES\n")) {
-		vnode_put(&node->vnode); return -PROCFS_EINVAL;
+		vnode_put(&node->vnode); return -EINVAL;
 	}
 	for (size_t i = 0; i < block_device_count(); i++) {
 		struct block_device *device = block_device_at(i);
@@ -316,7 +313,7 @@ procfs_make_disks(uint64_t inode, struct procfs_node **result)
 		    !append_u64(node, device->sector_count) || !append_text(node, " ") ||
 		    !append_u64(node, device->logical_sector_size) || !append_text(node, " ") ||
 		    !append_u64(node, device->sector_count * device->logical_sector_size) || !append_text(node, "\n")) {
-			vnode_put(&node->vnode); return -PROCFS_EINVAL;
+			vnode_put(&node->vnode); return -EINVAL;
 		}
 	}
 	node->vnode.size = node->content_length; *result = node; return 0;
@@ -367,7 +364,7 @@ procfs_make_self(uint64_t inode, struct procfs_node **result)
 		return error;
 	node = procfs_allocate("self", PROCFS_SELF, VNODE_REGULAR, inode);
 	if (node == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	if (!append_text(node, "Pid:\t") || !append_u64(node, current.pid) ||
 	    !append_text(node, "\nPPid:\t") ||
 	    !append_u64(node, current.parent_pid) ||
@@ -377,7 +374,7 @@ procfs_make_self(uint64_t inode, struct procfs_node **result)
 	    !append_text(node, "\nExitStatus:\t") ||
 	    !append_u64(node, current.exit_status) || !append_text(node, "\n")) {
 		vnode_put(&node->vnode);
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	}
 	node->content[node->content_length] = '\0';
 	node->vnode.size = node->content_length;
@@ -394,7 +391,7 @@ procfs_make_uptime(uint64_t inode, struct procfs_node **result)
 	uint64_t fractional;
 
 	if (node == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	ticks = timer_ticks();
 	fractional = ticks % PROCFS_TICK_HZ;
 	if (!append_u64(node, ticks / PROCFS_TICK_HZ) ||
@@ -404,7 +401,7 @@ procfs_make_uptime(uint64_t inode, struct procfs_node **result)
 		(char)('0' + fractional % 10U), '\0'
 	    }) || !append_text(node, "\n")) {
 		vnode_put(&node->vnode);
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	}
 	node->content[node->content_length] = '\0';
 	node->vnode.size = node->content_length;
@@ -421,13 +418,13 @@ procfs_make_meminfo(uint64_t inode, struct procfs_node **result)
 	uint64_t free = pmm_free_pages();
 
 	if (node == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	/* PMM frames are 4096 bytes; report KiB in one immutable snapshot. */
 	if (!append_text(node, "MemTotal: ") || !append_u64(node, total * 4U) ||
 	    !append_text(node, " kB\nMemFree: ") ||
 	    !append_u64(node, free * 4U) || !append_text(node, " kB\n")) {
 		vnode_put(&node->vnode);
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	}
 	node->vnode.size = node->content_length;
 	*result = node;
@@ -462,7 +459,7 @@ procfs_make_cpuinfo(uint64_t inode, struct procfs_node **result)
 	size_t brand_start = 0;
 
 	if (node == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	procfs_cpuid(0, &max_leaf, &ebx, &ecx, &edx);
 	if (max_leaf >= 1U) {
 		procfs_cpuid(1, &signature, &ebx, &ecx, &edx);
@@ -505,7 +502,7 @@ procfs_make_cpuinfo(uint64_t inode, struct procfs_node **result)
 	    !append_u64(node, stepping) || !append_text(node, "\nmodel name: ") ||
 	    !append_text(node, brand + brand_start) || !append_text(node, "\n")) {
 		vnode_put(&node->vnode);
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	}
 	node->vnode.size = node->content_length;
 	*result = node;
@@ -520,7 +517,7 @@ procfs_make_modules(uint64_t inode, struct procfs_node **result)
 	struct kernel_module_snapshot_entry entries[KERNEL_MODULE_LIMIT];
 	size_t count;
 	if (node == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	count = kernel_module_snapshot(entries,
 	    sizeof(entries) / sizeof(entries[0]));
 	for (size_t i = 0; i < count; i++) {
@@ -528,7 +525,7 @@ procfs_make_modules(uint64_t inode, struct procfs_node **result)
 		    !append_u64(node, entries[i].references) ||
 		    !append_text(node, "\n")) {
 			vnode_put(&node->vnode);
-			return -PROCFS_EINVAL;
+			return -EINVAL;
 		}
 	}
 	node->vnode.size = node->content_length;
@@ -544,13 +541,13 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 	int error;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
-		return -PROCFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || result == NULL)
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	node = procfs_from_vnode(directory);
 	if (node->entry != PROCFS_ROOT)
-		return -PROCFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name_length == 4 && memcmp(name, "self", 4) == 0) {
 		struct procfs_node *self;
 
@@ -598,7 +595,7 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
             return -1;
         struct procfs_node *entry = procfs_allocate(tone_test ? "hdatest" : "hdacodecs", PROCFS_HDACODECS,
             VNODE_REGULAR, tone_test ? node->hdatest_inode : node->hdacodecs_inode);
-        if (!entry) return -PROCFS_ENOMEM;
+        if (!entry) return -ENOMEM;
         entry->vnode.mode = 0400;
         error = (tone_test ? hda_tone_snapshot : hda_probe_snapshot)(entry->content,
             sizeof(entry->content), &entry->content_length);
@@ -637,11 +634,11 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		struct procfs_node *entry = procfs_allocate("netif", PROCFS_NETIF,
 		    VNODE_REGULAR, node->netif_inode);
 		if (entry == NULL)
-			return -PROCFS_ENOMEM;
+			return -ENOMEM;
 		const char *device = cyclone_net_device_name();
 		if (device != NULL && !append_text(entry, device)) {
 			vnode_put(&entry->vnode);
-			return -PROCFS_EINVAL;
+			return -EINVAL;
 		}
 		entry->vnode.size = entry->content_length;
 		*result = &entry->vnode;
@@ -651,11 +648,11 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		struct procfs_node *entry = procfs_allocate("cmdline",
 		    PROCFS_CMDLINE, VNODE_REGULAR, node->cmdline_inode);
 		if (!entry)
-			return -PROCFS_ENOMEM;
+			return -ENOMEM;
 		if (!append_text(entry, boot_cmdline) ||
 		    !append_text(entry, "\n")) {
 			vnode_put(&entry->vnode);
-			return -PROCFS_EINVAL;
+			return -EINVAL;
 		}
 		entry->vnode.size = entry->content_length;
 		*result = &entry->vnode;
@@ -665,18 +662,18 @@ procfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		struct procfs_node *entry = procfs_allocate("dapi",
 		    PROCFS_DAPI, VNODE_REGULAR, node->dapi_inode);
 		if (entry == NULL)
-			return -PROCFS_ENOMEM;
+			return -ENOMEM;
 		uint32_t version = kernel_driver_api_version();
 		if (!append_u64(entry, version >> 16) || !append_text(entry, ".") ||
 		    !append_u64(entry, version & 0xffffU) || !append_text(entry, "\n")) {
 			vnode_put(&entry->vnode);
-			return -PROCFS_EINVAL;
+			return -EINVAL;
 		}
 		entry->vnode.size = entry->content_length;
 		*result = &entry->vnode;
 		return 0;
 	}
-	return -PROCFS_ENOENT;
+	return -ENOENT;
 }
 
 static int
@@ -688,10 +685,10 @@ procfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 
 	if (vnode == NULL || read_length == NULL ||
 	    (buffer == NULL && length != 0))
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	*read_length = 0;
 	if (vnode->type == VNODE_DIRECTORY)
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	node = procfs_from_vnode(vnode);
 	if (offset >= node->content_length)
 		return 0;
@@ -714,9 +711,9 @@ procfs_readdir(struct vnode *directory, uint64_t index,
 	struct procfs_node *node;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
-		return -PROCFS_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -PROCFS_EINVAL;
+		return -EINVAL;
 	if (index >= sizeof(names) / sizeof(names[0]))
 		return 0;
 	node = procfs_from_vnode(directory);
@@ -753,7 +750,7 @@ procfs_mount(const char *path)
 	int error;
 
 	if (root == NULL)
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	root->self_inode = vfs_allocate_inode();
 	root->uptime_inode = vfs_allocate_inode();
 	root->meminfo_inode = vfs_allocate_inode();
@@ -776,7 +773,7 @@ procfs_mount(const char *path)
 	    root->cmdline_inode == 0 || root->netpci_inode == 0 ||
 	    root->netif_inode == 0 || root->dapi_inode == 0 || root->audiopci_inode == 0 || root->hdacodecs_inode == 0 || root->hdatest_inode == 0) {
 		vnode_put(&root->vnode);
-		return -PROCFS_ENOMEM;
+		return -ENOMEM;
 	}
 	error = vfs_mount(path, &root->vnode);
 	vnode_put(&root->vnode);

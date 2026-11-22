@@ -1,7 +1,7 @@
+#include "kernel/errno.h"
 #include "kernel/terminal.h"
 #include "kernel/fd.h"
 
-#define TERMINAL_EAGAIN 11
 #define KEY_SHIFT_LEFT 0x2aU
 #define KEY_SHIFT_RIGHT 0x36U
 #define KEY_CONTROL 0x1dU
@@ -461,7 +461,7 @@ terminal_read(char *buffer, size_t length, size_t *read_length)
 	if (length == 0)
 		return 0;
 	if (terminal->input_count == 0)
-		return -TERMINAL_EAGAIN;
+		return -EAGAIN;
 	if (terminal->input[terminal->input_head] == EOF_TOKEN) {
 		terminal->input_head = (terminal->input_head + 1) %
 		    TERMINAL_INPUT_CAPACITY;

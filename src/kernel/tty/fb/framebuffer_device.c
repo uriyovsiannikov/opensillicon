@@ -1,13 +1,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel/errno.h"
 #include "kernel/framebuffer_device.h"
 #include "kernel/process.h"
 #include "kernel/tty.h"
 #include "kernel/vmm.h"
 
-#define FRAMEBUFFER_DEVICE_EINVAL 22
-#define FRAMEBUFFER_DEVICE_ENODEV 19
 #define FRAMEBUFFER_COPY_CHUNK 4096U
 
 static const struct limine_framebuffer *active_framebuffer;
@@ -108,10 +107,10 @@ framebuffer_device_present(uint64_t user_address, size_t length)
 	if (!may_present())
 		return -1;
 	if (active_framebuffer == NULL || space == NULL)
-		return -FRAMEBUFFER_DEVICE_ENODEV;
+		return -ENODEV;
 	if (length != active_framebuffer_size || user_address == 0 ||
 	    user_address > UINT64_MAX - length)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	if (!vmm_validate_user_read(space, user_address, length))
 		return -14;
 	destination = active_framebuffer->address;
@@ -140,30 +139,30 @@ framebuffer_device_present_rect(const struct os_framebuffer_rect *rect)
 	if (!may_present())
 		return -1;
 	if (active_framebuffer == NULL || space == NULL)
-		return -FRAMEBUFFER_DEVICE_ENODEV;
+		return -ENODEV;
 	if (rect == NULL || rect->width == 0 || rect->height == 0 ||
 	    rect->x > active_framebuffer->width ||
 	    rect->width > active_framebuffer->width - rect->x ||
 	    rect->y > active_framebuffer->height ||
 	    rect->height > active_framebuffer->height - rect->y)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	if (active_framebuffer->bpp != 32)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	x_offset = (uint64_t)rect->x * sizeof(uint32_t);
 	row_bytes = (uint64_t)rect->width * sizeof(uint32_t);
 	if (x_offset > active_framebuffer->pitch ||
 	    row_bytes > active_framebuffer->pitch - x_offset ||
 	    rect->source == 0 || rect->source > UINT64_MAX - active_framebuffer_size)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	if (rect->source_pitch != 0 && rect->source_pitch < row_bytes)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	if (rect->source_pitch != 0 && rect->height - 1U >
 	    (UINT64_MAX - row_bytes) / rect->source_pitch)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	source_span = rect->source_pitch == 0 ? active_framebuffer_size :
 	    (uint64_t)(rect->height - 1U) * rect->source_pitch + row_bytes;
 	if (rect->source > UINT64_MAX - source_span)
-		return -FRAMEBUFFER_DEVICE_EINVAL;
+		return -EINVAL;
 	destination = active_framebuffer->address;
 	for (uint32_t row = 0; row < rect->height; row++) {
 		uint64_t source_offset = rect->source_pitch == 0 ?

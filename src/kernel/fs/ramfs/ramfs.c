@@ -1,19 +1,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/vfs.h"
-
-#define RAMFS_EEXIST 17
-#define RAMFS_EBUSY 16
-#define RAMFS_ENOTEMPTY 39
-#define RAMFS_EINVAL 22
-#define RAMFS_EISDIR 21
-#define RAMFS_ENAMETOOLONG 36
-#define RAMFS_ENOENT 2
-#define RAMFS_ENOMEM 12
-#define RAMFS_ENOTDIR 20
-#define RAMFS_EOVERFLOW 75
 
 struct ramfs_node {
 	struct vnode vnode;
@@ -65,26 +55,26 @@ ramfs_remove(struct vnode *directory, const char *name, size_t length,
 {
 	struct ramfs_node *parent, *node, *previous = NULL;
 	if (directory->type != VNODE_DIRECTORY)
-		return -RAMFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || length == 0 || length > VFS_NAME_MAX ||
 	    (length == 1 && name[0] == '.') ||
 	    (length == 2 && name[0] == '.' && name[1] == '.'))
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	parent = ramfs_from_vnode(directory);
 	for (node = parent->children; node != NULL; previous = node, node = node->next)
 		if (strlen(node->name) == length && memcmp(node->name, name, length) == 0)
 			break;
 	if (node == NULL)
-		return -RAMFS_ENOENT;
+		return -ENOENT;
 	if ((node->vnode.type == VNODE_DIRECTORY) != remove_directory)
-		return remove_directory ? -RAMFS_ENOTDIR : -RAMFS_EISDIR;
+		return remove_directory ? -ENOTDIR : -EISDIR;
 	if (node->children != NULL)
-		return -RAMFS_ENOTEMPTY;
+		return -ENOTEMPTY;
 	if (node->vnode.type == VNODE_DIRECTORY) {
 		/* Once detached from the tree, an open directory must keep '..'
 		 * alive even if the parent is subsequently removed as well. */
 		if (!vnode_get(directory))
-			return -RAMFS_EINVAL;
+			return -EINVAL;
 		node->parent_held = true;
 	}
 	if (previous == NULL) parent->children = node->next;
@@ -157,17 +147,17 @@ ramfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 	struct ramfs_node *child;
 
 	if (directory->type != VNODE_DIRECTORY)
-		return -RAMFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL)
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	parent = ramfs_from_vnode(directory);
 	if ((name_length == 1 && name[0] == '.') ||
 	    (name_length == 2 && name[0] == '.' && name[1] == '.')) {
 		struct vnode *target = name_length == 1 || parent->parent == NULL ?
 		    directory : &parent->parent->vnode;
 		if (!vnode_get(target))
-			return -RAMFS_EINVAL;
+			return -EINVAL;
 		*result = target;
 		return 0;
 	}
@@ -175,12 +165,12 @@ ramfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		if (strlen(child->name) == name_length &&
 		    memcmp(child->name, name, name_length) == 0) {
 			if (!vnode_get(&child->vnode))
-				return -RAMFS_EINVAL;
+				return -EINVAL;
 			*result = &child->vnode;
 			return 0;
 		}
 	}
-	return -RAMFS_ENOENT;
+	return -ENOENT;
 }
 
 static int
@@ -193,25 +183,25 @@ ramfs_create(struct vnode *directory, const char *name, size_t name_length,
 	struct ramfs_node *cursor;
 
 	if (directory->type != VNODE_DIRECTORY)
-		return -RAMFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL || (type != VNODE_REGULAR && type != VNODE_DIRECTORY &&
 	    type != VNODE_SOCKET))
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	for (size_t i = 0; i < name_length; i++) {
 		if (name[i] == '/')
-			return -RAMFS_EINVAL;
+			return -EINVAL;
 	}
 	parent = ramfs_from_vnode(directory);
-	if (parent->parent_held) return -RAMFS_ENOENT;
+	if (parent->parent_held) return -ENOENT;
 	for (cursor = parent->children; cursor != NULL; cursor = cursor->next) {
 		if (strlen(cursor->name) == name_length &&
 		    memcmp(cursor->name, name, name_length) == 0)
-			return -RAMFS_EEXIST;
+			return -EEXIST;
 	}
 	child = ramfs_allocate(name, name_length, type, mode);
 	if (child == NULL)
-		return -RAMFS_ENOMEM;
+		return -ENOMEM;
 	child->vnode.uid = uid;
 	child->vnode.gid = gid;
 	child->parent = parent;
@@ -233,7 +223,7 @@ ramfs_create(struct vnode *directory, const char *name, size_t name_length,
 			parent->last_child = cursor;
 		}
 		(void)kheap_free(child);
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	}
 	*result = &child->vnode;
 	return 0;
@@ -247,9 +237,9 @@ ramfs_read(struct vnode *node, uint64_t offset, void *buffer, size_t length,
 	size_t amount;
 
 	if (node->type != VNODE_REGULAR)
-		return -RAMFS_EISDIR;
+		return -EISDIR;
 	if (read_length == NULL || (buffer == NULL && length != 0))
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	file = ramfs_from_vnode(node);
 	if (offset >= node->size || length == 0) {
 		*read_length = 0;
@@ -269,7 +259,7 @@ ramfs_resize(struct ramfs_node *file, uint64_t size)
 	size_t new_capacity;
 
 	if (size > SIZE_MAX)
-		return -RAMFS_EOVERFLOW;
+		return -EOVERFLOW;
 	if ((size_t)size > file->capacity) {
 		new_capacity = file->capacity == 0 ? 64 : file->capacity;
 		while (new_capacity < size) {
@@ -281,7 +271,7 @@ ramfs_resize(struct ramfs_node *file, uint64_t size)
 		}
 		data = kheap_alloc(new_capacity);
 		if (data == NULL)
-			return -RAMFS_ENOMEM;
+			return -ENOMEM;
 		memset(data, 0, new_capacity);
 		if (file->vnode.size != 0)
 			memcpy(data, file->data, (size_t)file->vnode.size);
@@ -306,11 +296,11 @@ ramfs_write(struct vnode *node, uint64_t offset, const void *buffer,
 	int error;
 
 	if (node->type != VNODE_REGULAR)
-		return -RAMFS_EISDIR;
+		return -EISDIR;
 	if (write_length == NULL || (buffer == NULL && length != 0))
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	if (length > UINT64_MAX - offset)
-		return -RAMFS_EOVERFLOW;
+		return -EOVERFLOW;
 	if (length == 0) {
 		*write_length = 0;
 		return 0;
@@ -329,7 +319,7 @@ static int
 ramfs_truncate(struct vnode *node, uint64_t size)
 {
 	if (node->type != VNODE_REGULAR)
-		return -RAMFS_EISDIR;
+		return -EISDIR;
 	return ramfs_resize(ramfs_from_vnode(node), size);
 }
 
@@ -340,9 +330,9 @@ ramfs_readdir(struct vnode *directory, uint64_t index,
 	struct ramfs_node *child;
 
 	if (directory->type != VNODE_DIRECTORY)
-		return -RAMFS_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -RAMFS_EINVAL;
+		return -EINVAL;
 	child = ramfs_from_vnode(directory)->children;
 	while (child != NULL && index != 0) {
 		child = child->next;

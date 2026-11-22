@@ -1,28 +1,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/fd.h"
 #include "kernel/heap.h"
 #include "kernel/vfs.h"
-
-#define VFS_EBADF 9
-#define VFS_ENOTTY 25
-#define VFS_EBUSY 16
-#define VFS_EEXIST 17
-#define VFS_EIO 5
-#define VFS_EOVERFLOW 75
-#define VFS_EINVAL 22
-#define VFS_EACCES 13
-#define VFS_EPERM 1
-#define VFS_EISDIR 21
-#define VFS_ENAMETOOLONG 36
-#define VFS_ENOENT 2
-#define VFS_ENOMEM 12
-#define VFS_ENXIO 6
-#define VFS_ENOTDIR 20
-#define VFS_ESPIPE 29
-#define VFS_EROFS 30
-#define VFS_EOPNOTSUPP 95
 
 #define VFS_SEEK_SET 0
 #define VFS_SEEK_CUR 1
@@ -67,7 +49,7 @@ canonicalize_path(const char *path, char output[VFS_PATH_MAX],
 	size_t position = 1;
 
 	if (path == NULL || path[0] != '/')
-		return -VFS_EINVAL;
+		return -EINVAL;
 	output[0] = '/';
 	for (input = 1; path[input] != '\0';) {
 		size_t begin;
@@ -94,9 +76,9 @@ canonicalize_path(const char *path, char output[VFS_PATH_MAX],
 			if (error != 0)
 				return error;
 			if (directory->type != VNODE_DIRECTORY)
-				error = -VFS_ENOTDIR;
+				error = -ENOTDIR;
 			else if (!vfs_access(directory, uid, gid, VFS_ACCESS_EXEC))
-				error = -VFS_EACCES;
+				error = -EACCES;
 			vnode_put(directory);
 			if (error != 0)
 				return error;
@@ -112,7 +94,7 @@ canonicalize_path(const char *path, char output[VFS_PATH_MAX],
 		}
 		if (length > VFS_NAME_MAX || position + (position > 1) + length >=
 		    VFS_PATH_MAX)
-			return -VFS_ENAMETOOLONG;
+			return -ENAMETOOLONG;
 		if (position > 1)
 			output[position++] = '/';
 		for (size_t i = 0; i < length; i++)
@@ -121,7 +103,7 @@ canonicalize_path(const char *path, char output[VFS_PATH_MAX],
 	/* Keep the last slash until the operation can enforce directory type. */
 	if (position > 1 && path[input - 1] == '/') {
 		if (position + 1 >= VFS_PATH_MAX)
-			return -VFS_ENAMETOOLONG;
+			return -ENAMETOOLONG;
 		output[position++] = '/';
 	}
 	output[position] = '\0';
@@ -156,19 +138,19 @@ vfs_resolve_path_as(const char *base_path, const char *path, char *output,
 	int error;
 
 	if (path == NULL || output == NULL || capacity == 0)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	if (path[0] == '\0')
-		return -VFS_ENOENT;
+		return -ENOENT;
 	if (path[0] == '/')
 		error = canonicalize_path(path, canonical, uid, gid);
 	else {
 		if (base_path == NULL || base_path[0] != '/')
-			return -VFS_EINVAL;
+			return -EINVAL;
 		base_length = strlen(base_path);
 		path_length = strlen(path);
 		if (base_length + (base_length > 1U ? 1U : 0U) + path_length >=
 		    sizeof(combined))
-			return -VFS_ENAMETOOLONG;
+			return -ENAMETOOLONG;
 		memcpy(combined, base_path, base_length);
 		if (base_length > 1U)
 			combined[base_length++] = '/';
@@ -179,7 +161,7 @@ vfs_resolve_path_as(const char *base_path, const char *path, char *output,
 		return error;
 	base_length = strlen(canonical) + 1U;
 	if (base_length > capacity)
-		return -VFS_ENAMETOOLONG;
+		return -ENAMETOOLONG;
 	memcpy(output, canonical, base_length);
 	return 0;
 }
@@ -251,7 +233,7 @@ vfs_mount(const char *path, struct vnode *root)
 	int error;
 
 	if (!initialized || root == NULL || root->type != VNODE_DIRECTORY)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	error = canonicalize_path(path, canonical, 0, 0);
 	if (error != 0)
 		return error;
@@ -261,31 +243,31 @@ vfs_mount(const char *path, struct vnode *root)
 		    path_has_prefix(
 			existing->path, canonical, strlen(canonical)) &&
 		    existing->path[strlen(canonical)] == '/')
-			return -VFS_EBUSY;
+			return -EBUSY;
 		if (existing->path_length == strlen(canonical) &&
 		    memcmp(existing->path, canonical, existing->path_length) == 0)
-			return -VFS_EBUSY;
+			return -EBUSY;
 	}
 	if (strcmp(canonical, "/") != 0) {
 		if (find_mount("/") == NULL)
-			return -VFS_EINVAL;
+			return -EINVAL;
 		error = vfs_lookup(canonical, &mountpoint);
 		if (error != 0)
 			return error;
 		if (mountpoint->type != VNODE_DIRECTORY) {
 			vnode_put(mountpoint);
-			return -VFS_ENOTDIR;
+			return -ENOTDIR;
 		}
 	}
 	mount = kheap_alloc(sizeof(*mount));
 	if (mount == NULL) {
 		vnode_put(mountpoint);
-		return -VFS_ENOMEM;
+		return -ENOMEM;
 	}
 	if (!vnode_get(root)) {
 		(void)kheap_free(mount);
 		vnode_put(mountpoint);
-		return -VFS_EINVAL;
+		return -EINVAL;
 	}
 	memcpy(mount->path, canonical, strlen(canonical) + 1);
 	mount->path_length = strlen(canonical);
@@ -317,7 +299,7 @@ vfs_unmount_check(const char *path)
 		return error;
 	(void)strip_final_slash(canonical);
 	if (strcmp(canonical, "/") == 0)
-		return -VFS_EBUSY;
+		return -EBUSY;
 	size_t length = strlen(canonical);
 	struct vfs_mount *target = NULL;
 	for (struct vfs_mount *m = mounts; m; m = m->next) {
@@ -326,12 +308,12 @@ vfs_unmount_check(const char *path)
 		else if (m->path_length > length &&
 		    path_has_prefix(m->path, canonical, length) &&
 		    m->path[length] == '/')
-			return -VFS_EBUSY;
+			return -EBUSY;
 	}
 	if (!target)
-		return -VFS_ENOENT;
+		return -ENOENT;
 	if (!target->root->operations->can_unmount)
-		return -VFS_EOPNOTSUPP;
+		return -EOPNOTSUPP;
 	return target->root->operations->can_unmount(target->root);
 }
 
@@ -350,7 +332,7 @@ vfs_unmount(const char *path)
 	while (*link && strcmp((*link)->path, canonical))
 		link = &(*link)->next;
 	if (!*link)
-		return -VFS_ENOENT;
+		return -ENOENT;
 	struct vfs_mount *mount = *link;
 	*link = mount->next;
 	vnode_put(mount->root);
@@ -366,12 +348,12 @@ vfs_replace_root(struct vnode *root)
 	struct vnode *old;
 
 	if (!initialized || root == NULL || root->type != VNODE_DIRECTORY)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	for (mount = mounts; mount != NULL; mount = mount->next)
 		if (mount->path_length == 1 && mount->path[0] == '/')
 			break;
 	if (mount == NULL || !vnode_get(root))
-		return -VFS_EINVAL;
+		return -EINVAL;
 	old = mount->root;
 	mount->root = root;
 	vnode_put(old);
@@ -390,14 +372,14 @@ vfs_lookup_as(const char *path, uint32_t uid, uint32_t gid,
 	int error;
 
 	if (!initialized || result == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	error = canonicalize_path(path, canonical, uid, gid);
 	if (error != 0)
 		return error;
 	mount = find_mount(canonical);
 	if (mount == NULL)
-		return -VFS_ENOENT;
+		return -ENOENT;
 	/* The mount shortcut must not bypass search rights in its ancestors. */
 	if (mount->path_length > 1) {
 		char parent_path[VFS_PATH_MAX];
@@ -414,15 +396,15 @@ vfs_lookup_as(const char *path, uint32_t uid, uint32_t gid,
 		if (error != 0)
 			return error;
 		if (parent->type != VNODE_DIRECTORY)
-			error = -VFS_ENOTDIR;
+			error = -ENOTDIR;
 		else if (!vfs_access(parent, uid, gid, VFS_ACCESS_EXEC))
-			error = -VFS_EACCES;
+			error = -EACCES;
 		vnode_put(parent);
 		if (error != 0)
 			return error;
 	}
 	if (!vnode_get(mount->root))
-		return -VFS_EINVAL;
+		return -EINVAL;
 	current = mount->root;
 	relative = mount->path_length == 1 ? canonical + 1 :
 	    canonical + mount->path_length;
@@ -441,11 +423,11 @@ vfs_lookup_as(const char *path, uint32_t uid, uint32_t gid,
 		if (current->type != VNODE_DIRECTORY ||
 		    current->operations->lookup == NULL) {
 			vnode_put(current);
-			return -VFS_ENOTDIR;
+			return -ENOTDIR;
 		}
 		if (!vfs_access(current, uid, gid, VFS_ACCESS_EXEC)) {
 			vnode_put(current);
-			return -VFS_EACCES;
+			return -EACCES;
 		}
 		error = current->operations->lookup(current, relative + begin,
 		    length, &next);
@@ -453,13 +435,13 @@ vfs_lookup_as(const char *path, uint32_t uid, uint32_t gid,
 		if (error != 0)
 			return error;
 		if (next == NULL)
-			return -VFS_EIO;
+			return -EIO;
 		current = next;
 	}
 	if (canonical[strlen(canonical) - 1] == '/' &&
 	    current->type != VNODE_DIRECTORY) {
 		vnode_put(current);
-		return -VFS_ENOTDIR;
+		return -ENOTDIR;
 	}
 	*result = current;
 	return 0;
@@ -483,13 +465,13 @@ vfs_lookup_at_as(const char *base_path, const char *path,
 	int error;
 
 	if (path == NULL || result == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	if (path[0] == '/')
 		return vfs_lookup_as(path, uid, gid, result);
 	if (path[0] == '\0')
-		return -VFS_ENOENT;
+		return -ENOENT;
 	if (base_path == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	error = canonicalize_path(base_path, base, uid, gid);
 	if (error != 0)
 		return error;
@@ -497,7 +479,7 @@ vfs_lookup_at_as(const char *base_path, const char *path,
 	path_length = strlen(path);
 	if (base_length + (base_length > 1U ? 1U : 0U) + path_length >=
 	    sizeof(combined))
-		return -VFS_ENAMETOOLONG;
+		return -ENAMETOOLONG;
 	memcpy(combined, base, base_length);
 	if (base_length > 1U)
 		combined[base_length++] = '/';
@@ -520,19 +502,19 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 	int error;
 
 	if (path == NULL || result == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	if (path[0] == '/')
 		return vfs_lookup_as(path, uid, gid, result);
 	if (path[0] == '\0')
-		return -VFS_ENOENT;
+		return -ENOENT;
 	if (strlen(path) >= VFS_PATH_MAX)
-		return -VFS_ENAMETOOLONG;
+		return -ENAMETOOLONG;
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
-		return -VFS_ENOTDIR;
+		return -ENOTDIR;
 	root_mount = find_mount("/");
 	if (root_mount == NULL || !vnode_get(directory))
-		return -VFS_EINVAL;
+		return -EINVAL;
 	current = directory;
 	while (path[position] != '\0') {
 		size_t begin = position, length;
@@ -543,16 +525,16 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 		while (path[position] == '/')
 			position++;
 		if (current->type != VNODE_DIRECTORY) {
-			error = -VFS_ENOTDIR;
+			error = -ENOTDIR;
 			goto fail;
 		}
 		if (!vfs_access(current, uid, gid, VFS_ACCESS_EXEC)) {
-			error = -VFS_EACCES;
+			error = -EACCES;
 			goto fail;
 		}
 		if (length == 1 && path[begin] == '.') {
 			if (!vnode_get(current)) {
-				error = -VFS_EOVERFLOW;
+				error = -EOVERFLOW;
 				goto fail;
 			}
 			next = current;
@@ -574,7 +556,7 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 				if (target == NULL)
 					continue;
 				if (!vnode_get(target)) {
-					error = -VFS_EOVERFLOW;
+					error = -EOVERFLOW;
 					goto fail;
 				}
 				next = target;
@@ -582,7 +564,7 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 			}
 			if (next == NULL) {
 				if (current->operations->lookup == NULL) {
-					error = -VFS_ENOTDIR;
+					error = -ENOTDIR;
 					goto fail;
 				}
 				error = current->operations->lookup(current, path + begin,
@@ -590,7 +572,7 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 				if (error != 0)
 					goto fail;
 				if (next == NULL) {
-					error = -VFS_EIO;
+					error = -EIO;
 					goto fail;
 				}
 			}
@@ -599,7 +581,7 @@ vfs_lookup_from_as(struct vnode *directory, const char *path,
 		current = next;
 	}
 	if (path[position - 1] == '/' && current->type != VNODE_DIRECTORY) {
-		error = -VFS_ENOTDIR;
+		error = -ENOTDIR;
 		goto fail;
 	}
 	*result = current;
@@ -631,15 +613,15 @@ vfs_create_path_as(const char *path, enum vnode_type type, uint32_t mode,
 	if (!initialized || result == NULL ||
 	    (type != VNODE_REGULAR && type != VNODE_DIRECTORY &&
 	    type != VNODE_SOCKET))
-		return -VFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	error = canonicalize_path(path, canonical, uid, gid);
 	if (error != 0)
 		return error;
 	if (strip_final_slash(canonical) && type != VNODE_DIRECTORY)
-		return -VFS_ENOTDIR;
+		return -ENOTDIR;
 	if (strcmp(canonical, "/") == 0)
-		return -VFS_EEXIST;
+		return -EEXIST;
 	slash = strrchr(canonical, '/');
 	name = slash + 1;
 	if (slash == canonical) {
@@ -656,12 +638,12 @@ vfs_create_path_as(const char *path, enum vnode_type type, uint32_t mode,
 	if (parent->type != VNODE_DIRECTORY || parent->operations->create == NULL) {
 		parent_is_directory = parent->type == VNODE_DIRECTORY;
 		vnode_put(parent);
-		return parent_is_directory ? -VFS_EROFS : -VFS_ENOTDIR;
+		return parent_is_directory ? -EROFS : -ENOTDIR;
 	}
 	if (!vfs_access(parent, uid, gid,
 	    VFS_ACCESS_WRITE | VFS_ACCESS_EXEC)) {
 		vnode_put(parent);
-		return -VFS_EACCES;
+		return -EACCES;
 	}
 	if ((parent->mode & 02000U) != 0) {
 		gid = parent->gid;
@@ -712,12 +694,12 @@ vfs_remove_path_as(const char *path, bool directory, uint32_t uid,
 	const char *name;
 	int error;
 	if (!initialized || path == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	if (vfs_path_has_dot_basename(path))
-		return directory ? -VFS_EINVAL : -VFS_EISDIR;
+		return directory ? -EINVAL : -EISDIR;
 	error = canonicalize_path(path, canonical, uid, gid);
 	if (error != 0) return error;
-	if (strcmp(canonical, "/") == 0) return -VFS_EBUSY;
+	if (strcmp(canonical, "/") == 0) return -EBUSY;
 	if (canonical[strlen(canonical) - 1] == '/') {
 		struct vnode *target = NULL;
 		error = vfs_lookup_as(canonical, uid, gid, &target);
@@ -727,7 +709,7 @@ vfs_remove_path_as(const char *path, bool directory, uint32_t uid,
 		(void)strip_final_slash(canonical);
 	}
 	for (mount = mounts; mount != NULL; mount = mount->next)
-		if (strcmp(mount->path, canonical) == 0) return -VFS_EBUSY;
+		if (strcmp(mount->path, canonical) == 0) return -EBUSY;
 	slash = strrchr(canonical, '/');
 	name = slash + 1;
 	if (slash == canonical) {
@@ -739,23 +721,23 @@ vfs_remove_path_as(const char *path, bool directory, uint32_t uid,
 	error = vfs_lookup_as(parent_path, uid, gid, &parent);
 	if (error != 0) return error;
 	if (parent->type != VNODE_DIRECTORY || parent->operations->remove == NULL)
-		error = parent->type == VNODE_DIRECTORY ? -VFS_EROFS : -VFS_ENOTDIR;
+		error = parent->type == VNODE_DIRECTORY ? -EROFS : -ENOTDIR;
 	else if (!vfs_access(parent, uid, gid,
 	    VFS_ACCESS_WRITE | VFS_ACCESS_EXEC))
-		error = -VFS_EACCES;
+		error = -EACCES;
 	else {
 		/* A writable sticky directory still protects other users' entries. */
 		if ((parent->mode & 01000U) != 0 && uid != 0 &&
 		    uid != parent->uid) {
 			struct vnode *target = NULL;
 			if (parent->operations->lookup == NULL)
-				error = -VFS_EIO;
+				error = -EIO;
 			else
 				error = parent->operations->lookup(parent, name,
 				    strlen(name), &target);
 			if (error == 0)
-				error = target == NULL ? -VFS_EIO :
-				    uid == target->uid ? 0 : -VFS_EPERM;
+				error = target == NULL ? -EIO :
+				    uid == target->uid ? 0 : -EPERM;
 			vnode_put(target);
 		}
 		if (error == 0)
@@ -797,14 +779,14 @@ vfs_chmod_node_as(struct vnode *node, uint32_t mode, uint32_t uid,
 {
 	int error;
 	if (node == NULL)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	if (uid != 0 && uid != node->uid) {
-		return -VFS_EACCES;
+		return -EACCES;
 	}
 	if (uid != 0 && (mode & 02000U) != 0 && gid != node->gid)
-		return -VFS_EACCES;
+		return -EACCES;
 	if (node->operations->chmod == NULL)
-		return -VFS_EROFS;
+		return -EROFS;
 	error = node->operations->chmod(node, mode & 07777U);
 	return error;
 }
@@ -829,12 +811,12 @@ vfs_chown_as(const char *path, uint32_t owner, uint32_t group,
 	int error;
 	(void)egid;
 	if (euid != 0)
-		return -VFS_EPERM;
+		return -EPERM;
 	error = vfs_lookup_as(path, euid, 0, &node);
 	if (error != 0)
 		return error;
 	if (node->operations->chown == NULL)
-		error = -VFS_EROFS;
+		error = -EROFS;
 	else
 		error = node->operations->chown(node,
 		    owner == UINT32_MAX ? node->uid : owner,
@@ -850,11 +832,11 @@ file_read(void *context, uint64_t offset, void *buffer, size_t length,
 	struct vfs_file_context *file = context;
 
 	if ((file->flags & VFS_O_ACCMODE) == VFS_O_WRONLY)
-		return -VFS_EBADF;
+		return -EBADF;
 	if (file->node->type == VNODE_DIRECTORY)
-		return -VFS_EISDIR;
+		return -EISDIR;
 	if (file->node->operations->read == NULL)
-		return -VFS_EBADF;
+		return -EBADF;
 	return file->node->operations->read(file->node, offset, buffer, length,
 	    read_length);
 }
@@ -865,7 +847,7 @@ prepare_node_write(struct vnode *node, uint32_t uid)
 	if (uid == 0 || node->type != VNODE_REGULAR || (node->mode & 06000U) == 0)
 		return 0;
 	if (node->operations->chmod == NULL)
-		return -VFS_EROFS;
+		return -EROFS;
 	/* A writable descriptor permits data changes, not retaining the owner's
 	 * set-ID authority on content supplied by another process. */
 	return node->operations->chmod(node, node->mode & ~06000U);
@@ -876,9 +858,9 @@ file_prepare_write(void *context, uint32_t uid)
 {
 	struct vfs_file_context *file = context;
 	if ((file->flags & VFS_O_ACCMODE) == VFS_O_RDONLY)
-		return -VFS_EBADF;
+		return -EBADF;
 	if (file->node->operations->write == NULL)
-		return -VFS_EROFS;
+		return -EROFS;
 	return prepare_node_write(file->node, uid);
 }
 
@@ -889,11 +871,11 @@ file_write(void *context, uint64_t offset, const void *buffer, size_t length,
 	struct vfs_file_context *file = context;
 
 	if ((file->flags & VFS_O_ACCMODE) == VFS_O_RDONLY)
-		return -VFS_EBADF;
+		return -EBADF;
 	if (file->node->type == VNODE_DIRECTORY)
-		return -VFS_EISDIR;
+		return -EISDIR;
 	if (file->node->operations->write == NULL)
-		return -VFS_EROFS;
+		return -EROFS;
 	return file->node->operations->write(file->node, offset, buffer, length,
 	    write_length);
 }
@@ -904,11 +886,11 @@ file_readdir(void *context, uint64_t index, struct vfs_dirent *entry)
 	struct vfs_file_context *file = context;
 
 	if (file->node->type != VNODE_DIRECTORY)
-		return -VFS_ENOTDIR;
+		return -ENOTDIR;
 	if ((file->flags & VFS_O_ACCMODE) != VFS_O_RDONLY)
-		return -VFS_EBADF;
+		return -EBADF;
 	if (file->node->operations->readdir == NULL)
-		return -VFS_EBADF;
+		return -EBADF;
 	return file->node->operations->readdir(file->node, index, entry);
 }
 
@@ -927,7 +909,7 @@ file_seek(void *context, uint64_t current, int64_t offset, int whence,
 	}
 	if (file->node->type != VNODE_REGULAR &&
 	    !(file->node->type == VNODE_DEVICE && file->node->operations->seekable))
-		return -VFS_ESPIPE;
+		return -ESPIPE;
 	switch (whence) {
 	case VFS_SEEK_SET:
 		base = 0;
@@ -939,20 +921,20 @@ file_seek(void *context, uint64_t current, int64_t offset, int whence,
 		base = file->node->size;
 		break;
 	default:
-		return -VFS_EINVAL;
+		return -EINVAL;
 	}
 	if (offset < 0) {
 		uint64_t magnitude = (uint64_t)(-(offset + 1)) + 1U;
 		if (magnitude > base)
-			return -VFS_EINVAL;
+			return -EINVAL;
 		target = base - magnitude;
 	} else {
 		if ((uint64_t)offset > UINT64_MAX - base)
-			return -VFS_EOVERFLOW;
+			return -EOVERFLOW;
 		target = base + (uint64_t)offset;
 	}
 	if (target > INT64_MAX)
-		return -VFS_EOVERFLOW;
+		return -EOVERFLOW;
 	*result = target;
 	return 0;
 }
@@ -965,7 +947,7 @@ file_stat(void *context, struct fd_metadata *metadata)
 
 	if (node->type != VNODE_REGULAR && node->type != VNODE_DIRECTORY &&
 	    node->type != VNODE_DEVICE)
-		return -VFS_EINVAL;
+		return -EINVAL;
 	*metadata = (struct fd_metadata){
 		.size = node->size,
 		.inode = node->inode,
@@ -981,7 +963,7 @@ static int
 file_chmod(void *context, uint32_t mode)
 {
 	struct vfs_file_context *file = context;
-	return file->node->operations->chmod == NULL ? -VFS_EROFS :
+	return file->node->operations->chmod == NULL ? -EROFS :
 	    file->node->operations->chmod(file->node, mode & 07777U);
 }
 
@@ -990,7 +972,7 @@ file_chown(void *context, uint32_t uid, uint32_t gid)
 {
 	struct vfs_file_context *file = context;
 	struct vnode *node = file->node;
-	return node->operations->chown == NULL ? -VFS_EROFS :
+	return node->operations->chown == NULL ? -EROFS :
 	    node->operations->chown(node, uid == UINT32_MAX ? node->uid : uid,
 	    gid == UINT32_MAX ? node->gid : gid);
 }
@@ -1010,11 +992,11 @@ file_get_path(void *context, char *path, size_t capacity)
 	size_t length;
 
 	if (file->node->type != VNODE_DIRECTORY)
-		return -VFS_ENOTDIR;
-	if (!file->path[0]) return -VFS_ENOENT;
+		return -ENOTDIR;
+	if (!file->path[0]) return -ENOENT;
 	length = strlen(file->path) + 1U;
 	if (length > capacity)
-		return -VFS_ENAMETOOLONG;
+		return -ENAMETOOLONG;
 	memcpy(path, file->path, length);
 	return 0;
 }
@@ -1033,7 +1015,7 @@ file_ioctl(void *context, uint64_t request, void *argument)
 {
 	struct vfs_file_context *file = context;
 	if (file->node->operations->ioctl == NULL)
-		return -VFS_ENOTTY;
+		return -ENOTTY;
 	return file->node->operations->ioctl(file->node, request, argument);
 }
 
@@ -1043,7 +1025,7 @@ file_sync(void *context)
 	struct vfs_file_context *file = context;
 	return file->node->operations->sync
 	    ? file->node->operations->sync(file->node)
-	    : -VFS_EOPNOTSUPP;
+	    : -EOPNOTSUPP;
 }
 
 static const struct fd_operations vfs_file_operations = {.sync = file_sync,
@@ -1068,9 +1050,9 @@ create_from_as(struct vnode *directory, const char *path, uint32_t mode,
 {
  char parent_path[VFS_PATH_MAX];
  size_t length = strlen(path);
- if (!length) return -VFS_ENOENT;
- if (length >= sizeof(parent_path)) return -VFS_ENAMETOOLONG;
- if (path[length-1] == '/') return -VFS_ENOTDIR;
+ if (!length) return -ENOENT;
+ if (length >= sizeof(parent_path)) return -ENAMETOOLONG;
+ if (path[length-1] == '/') return -ENOTDIR;
  memcpy(parent_path,path,length+1);
  char *name = strrchr(parent_path,'/');
  struct vnode *parent;
@@ -1083,10 +1065,10 @@ create_from_as(struct vnode *directory, const char *path, uint32_t mode,
   error = vfs_lookup_from_as(directory,".",uid,gid,&parent);
  }
  if (error) return error;
- if (!strcmp(name,".") || !strcmp(name,"..")) error = -VFS_EEXIST;
- else if (parent->type != VNODE_DIRECTORY) error = -VFS_ENOTDIR;
- else if (!parent->operations->create) error = -VFS_EROFS;
- else if (!vfs_access(parent,uid,gid,VFS_ACCESS_WRITE|VFS_ACCESS_EXEC)) error = -VFS_EACCES;
+ if (!strcmp(name,".") || !strcmp(name,"..")) error = -EEXIST;
+ else if (parent->type != VNODE_DIRECTORY) error = -ENOTDIR;
+ else if (!parent->operations->create) error = -EROFS;
+ else if (!vfs_access(parent,uid,gid,VFS_ACCESS_WRITE|VFS_ACCESS_EXEC)) error = -EACCES;
  else {
   uint32_t owner_gid = parent->mode & 02000U ? parent->gid : gid;
   if (uid && owner_gid != gid) mode &= ~02000U;
@@ -1117,13 +1099,13 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	    (VFS_O_CREAT | VFS_O_DIRECTORY)) ||
 	    ((flags & VFS_O_TRUNC) != 0 &&
 	    (flags & VFS_O_ACCMODE) == VFS_O_RDONLY))
-		return -VFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	if (directory == NULL) error = canonicalize_path(path, canonical, uid, gid);
 	else {
 		canonical[0] = 0; /* No stable pathname for a directory capability. */
-		error = !path || !*path ? -VFS_ENOENT :
-		    strlen(path) >= VFS_PATH_MAX ? -VFS_ENAMETOOLONG : 0;
+		error = !path || !*path ? -ENOENT :
+		    strlen(path) >= VFS_PATH_MAX ? -ENAMETOOLONG : 0;
 	}
 	if (error != 0)
 		return error;
@@ -1131,14 +1113,14 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	 * effect. Once attached, the context owns the lookup's vnode reference. */
 	context = kheap_alloc(sizeof(*context));
 	if (context == NULL)
-		return -VFS_ENOMEM;
+		return -ENOMEM;
 	context->node = NULL;
 	context->flags = flags;
 	memcpy(context->path, canonical, strlen(canonical) + 1U);
 	file = fd_object_create(&vfs_file_operations, context);
 	if (file == NULL) {
 		(void)kheap_free(context);
-		return -VFS_ENOMEM;
+		return -ENOMEM;
 	}
 	file->status_flags = flags & (VFS_O_ACCMODE | VFS_O_NONBLOCK | VFS_O_APPEND);
 	error = directory ? vfs_lookup_from_as(directory,path,uid,gid,&node) :
@@ -1146,10 +1128,10 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	context->node = node;
 	if (error == 0 && (flags & (VFS_O_CREAT | VFS_O_EXCL)) ==
 	    (VFS_O_CREAT | VFS_O_EXCL)) {
-		error = -VFS_EEXIST;
+		error = -EEXIST;
 		goto fail;
 	}
-	if (error == -VFS_ENOENT && (flags & VFS_O_CREAT) != 0) {
+	if (error == -ENOENT && (flags & VFS_O_CREAT) != 0) {
 		error = directory ? create_from_as(directory,path,mode,uid,gid,&node) :
 		    vfs_create_path_as(path, VNODE_REGULAR, mode, uid, gid, &node);
 		context->node = node;
@@ -1158,16 +1140,16 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 	if (error != 0)
 		goto fail;
 	if (node->type == VNODE_SOCKET) {
-		error = -VFS_ENXIO;
+		error = -ENXIO;
 		goto fail;
 	}
 	if (node->type == VNODE_DIRECTORY &&
 	    (flags & VFS_O_ACCMODE) != VFS_O_RDONLY) {
-		error = -VFS_EISDIR;
+		error = -EISDIR;
 		goto fail;
 	}
 	if ((flags & VFS_O_DIRECTORY) != 0 && node->type != VNODE_DIRECTORY) {
-		error = -VFS_ENOTDIR;
+		error = -ENOTDIR;
 		goto fail;
 	}
 	{
@@ -1181,18 +1163,18 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
 		/* The parent-directory check authorizes the descriptor of a new
 		 * file even when the creation mode itself grants no further access. */
 		if (!created && !vfs_access(node, uid, gid, requested)) {
-			error = -VFS_EACCES;
+			error = -EACCES;
 			goto fail;
 		}
 	}
 	if ((flags & VFS_O_ACCMODE) != VFS_O_RDONLY &&
 	    node->operations->write == NULL && node->operations->open_device == NULL) {
-		error = -VFS_EROFS;
+		error = -EROFS;
 		goto fail;
 	}
 	if ((flags & VFS_O_TRUNC) != 0) {
 		if (node->type == VNODE_DIRECTORY || node->operations->truncate == NULL) {
-			error = node->type == VNODE_DIRECTORY ? -VFS_EISDIR : -VFS_EROFS;
+			error = node->type == VNODE_DIRECTORY ? -EISDIR : -EROFS;
 			goto fail;
 		}
 		error = prepare_node_write(node, uid);
@@ -1205,7 +1187,7 @@ open_from_as(struct vnode *directory, const char *path, uint32_t flags,
         struct fd_object *device = NULL;
         error = node->operations->open_device(node, flags & ~VFS_O_CLOEXEC, &device);
         if (error != 0) goto fail;
-        if (device == NULL) { error = -VFS_ENOMEM; goto fail; }
+        if (device == NULL) { error = -ENOMEM; goto fail; }
         device->status_flags = flags & (VFS_O_ACCMODE | VFS_O_NONBLOCK | VFS_O_APPEND);
         fd_object_put(file);
         *result = device;

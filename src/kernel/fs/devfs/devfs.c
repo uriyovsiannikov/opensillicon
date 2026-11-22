@@ -13,12 +13,6 @@
 #include "kernel/tty.h"
 #include "kernel/hda_audio.h"
 
-#define DEVFS_EINVAL 22
-#define DEVFS_ENOENT 2
-#define DEVFS_ENOTDIR 20
-#define DEVFS_ENOMEM 12
-#define DEVFS_EIO 5
-
 enum devfs_device {
 	DEVFS_DIRECTORY,
 	DEVFS_CONSOLE,
@@ -236,22 +230,22 @@ devfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 	struct devfs_node *child;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
-		return -DEVFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL)
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	parent = devfs_from_vnode(directory);
 	for (child = parent->children; child != NULL; child = child->next) {
 		if (strlen(child->name) == name_length &&
 		    memcmp(child->name, name, name_length) == 0) {
 			if (!vnode_get(&child->vnode))
-				return -DEVFS_EINVAL;
+				return -EINVAL;
 			*result = &child->vnode;
 			return 0;
 		}
 	}
-	return -DEVFS_ENOENT;
+	return -ENOENT;
 }
 
 static int
@@ -263,7 +257,7 @@ devfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 	(void)offset;
 	if (vnode == NULL || read_length == NULL ||
 	    (buffer == NULL && length != 0))
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	*read_length = 0;
 	node = devfs_from_vnode(vnode);
 	switch (node->device) {
@@ -291,9 +285,9 @@ devfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 		return devfs_disk_io(node, offset, buffer, length, read_length, false);
 	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	}
-	return -DEVFS_EINVAL;
+	return -EINVAL;
 }
 
 static int
@@ -305,14 +299,14 @@ devfs_write(struct vnode *vnode, uint64_t offset, const void *buffer,
 	(void)offset;
 	if (vnode == NULL || write_length == NULL ||
 	    (buffer == NULL && length != 0))
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	*write_length = 0;
 	node = devfs_from_vnode(vnode);
 	switch (node->device) {
 	case DEVFS_CONSOLE:
 	case DEVFS_TTY:
 		if (!tty_write(buffer, length) || !serial_write(buffer, length))
-			return -DEVFS_EIO;
+			return -EIO;
 		*write_length = length;
 		return 0;
 	case DEVFS_NULL:
@@ -321,14 +315,14 @@ devfs_write(struct vnode *vnode, uint64_t offset, const void *buffer,
 		return 0;
 	case DEVFS_RANDOM:
 	case DEVFS_URANDOM:
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	case DEVFS_DISK:
 		return devfs_disk_io(node, offset, (void *)buffer, length, write_length, true);
 	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	}
-	return -DEVFS_EINVAL;
+	return -EINVAL;
 }
 
 static int
@@ -338,9 +332,9 @@ devfs_readdir(struct vnode *directory, uint64_t index,
 	struct devfs_node *child;
 
 	if (directory == NULL || directory->type != VNODE_DIRECTORY)
-		return -DEVFS_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -DEVFS_EINVAL;
+		return -EINVAL;
 	child = devfs_from_vnode(directory)->children;
 	while (child != NULL && index != 0) {
 		child = child->next;
@@ -463,7 +457,7 @@ devfs_mount(const char *path)
 	int error;
 
 	if (root == NULL)
-		return -DEVFS_ENOMEM;
+		return -ENOMEM;
 	error = vfs_mount(path, root);
 	if (error == 0)
 		mounted_root = devfs_from_vnode(root);

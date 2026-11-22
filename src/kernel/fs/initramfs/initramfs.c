@@ -1,20 +1,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/vfs.h"
 
 #define INITRD_HEADER_SIZE 110U
 #define INITRD_MAX_ENTRIES 4096U
 #define INITRD_MAX_NODES 8192U
-#define INITRD_EINVAL 22
-#define INITRD_EIO 5
-#define INITRD_EISDIR 21
-#define INITRD_ENAMETOOLONG 36
-#define INITRD_ENOENT 2
-#define INITRD_ENOMEM 12
-#define INITRD_ENOTDIR 20
-#define INITRD_EROFS 30
 
 #define INITRD_TYPE_MASK 0170000U
 #define INITRD_TYPE_REGULAR 0100000U
@@ -67,7 +60,7 @@ parse_hex32(const uint8_t *bytes, uint32_t *value)
 		else if (c >= 'A' && c <= 'F')
 			digit = c - 'A' + 10;
 		else
-			return -INITRD_EINVAL;
+			return -EINVAL;
 		result = (result << 4) | digit;
 	}
 	*value = result;
@@ -151,12 +144,12 @@ insert_entry(struct initramfs_node *root, const char *path, size_t path_length,
 	}
 	if (path_length != 0 && path[path_length - 1] == '/') {
 		if (type != VNODE_DIRECTORY)
-			return -INITRD_EINVAL;
+			return -EINVAL;
 		path_length--;
 	}
 
 	if (path_length == 0 || path_length >= VFS_PATH_MAX || path[0] == '/')
-		return -INITRD_EINVAL;
+		return -EINVAL;
 	while (position < path_length) {
 		size_t begin = position;
 		size_t length;
@@ -170,25 +163,25 @@ insert_entry(struct initramfs_node *root, const char *path, size_t path_length,
 		if (length == 0 || length > VFS_NAME_MAX ||
 		    (length == 1 && path[begin] == '.') ||
 		    (length == 2 && path[begin] == '.' && path[begin + 1] == '.'))
-			return -INITRD_EINVAL;
+			return -EINVAL;
 		if (!last) {
 			if (++position == path_length || path[position] == '/')
-				return -INITRD_EINVAL;
+				return -EINVAL;
 			child = find_child(directory, path + begin, length);
 			if (child == NULL) {
 				if (*node_count == INITRD_MAX_NODES)
-					return -INITRD_EINVAL;
+					return -EINVAL;
 				child = allocate_node(path + begin, length,
 				    VNODE_DIRECTORY, 0755, uid, gid, false);
 				if (child == NULL)
-					return -INITRD_ENOMEM;
+					return -ENOMEM;
 				(*node_count)++;
 				child->parent = directory;
 				child->next = directory->children;
 				directory->children = child;
 			}
 			if (child->vnode.type != VNODE_DIRECTORY)
-				return -INITRD_ENOTDIR;
+				return -ENOTDIR;
 			directory = child;
 			continue;
 		}
@@ -196,7 +189,7 @@ insert_entry(struct initramfs_node *root, const char *path, size_t path_length,
 		if (child != NULL) {
 			if (type != VNODE_DIRECTORY || child->explicit_entry ||
 			    child->vnode.type != VNODE_DIRECTORY)
-				return -INITRD_EINVAL;
+				return -EINVAL;
 			child->explicit_entry = true;
 			child->vnode.mode = mode & 07777U;
 			child->vnode.uid = uid;
@@ -204,10 +197,10 @@ insert_entry(struct initramfs_node *root, const char *path, size_t path_length,
 			return 0;
 		}
 		if (*node_count == INITRD_MAX_NODES)
-			return -INITRD_EINVAL;
+			return -EINVAL;
 		child = allocate_node(path + begin, length, type, mode, uid, gid, true);
 		if (child == NULL)
-			return -INITRD_ENOMEM;
+			return -ENOMEM;
 		(*node_count)++;
 		child->data = data;
 		child->vnode.size = size;
@@ -216,7 +209,7 @@ insert_entry(struct initramfs_node *root, const char *path, size_t path_length,
 		directory->children = child;
 		return 0;
 	}
-	return -INITRD_EINVAL;
+	return -EINVAL;
 }
 
 int
@@ -230,11 +223,11 @@ initramfs_mount(const void *archive, size_t archive_size, struct vnode **root_ou
 	bool trailer_found = false;
 
 	if (bytes == NULL || archive_size < INITRD_HEADER_SIZE || root_out == NULL)
-		return -INITRD_EINVAL;
+		return -EINVAL;
 	*root_out = NULL;
 	root = allocate_node("", 0, VNODE_DIRECTORY, 0755, 0, 0, true);
 	if (root == NULL)
-		return -INITRD_ENOMEM;
+		return -ENOMEM;
 	while (offset <= archive_size &&
 	    archive_size - offset >= INITRD_HEADER_SIZE) {
 		uint32_t fields[13];
@@ -326,7 +319,7 @@ initramfs_mount(const void *archive, size_t archive_size, struct vnode **root_ou
 
 invalid:
 	vnode_put(&root->vnode);
-	return -INITRD_EIO;
+	return -EIO;
 }
 
 static int
@@ -336,17 +329,17 @@ initramfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 	struct initramfs_node *child;
 
 	if (directory->type != VNODE_DIRECTORY)
-		return -INITRD_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL)
-		return -INITRD_EINVAL;
+		return -EINVAL;
 	if ((name_length == 1 && name[0] == '.') ||
 	    (name_length == 2 && name[0] == '.' && name[1] == '.')) {
 		struct initramfs_node *node = initramfs_from_vnode(directory);
 		struct vnode *target = name_length == 1 || node->parent == NULL ?
 		    directory : &node->parent->vnode;
 		if (!vnode_get(target))
-			return -INITRD_EINVAL;
+			return -EINVAL;
 		*result = target;
 		return 0;
 	}
@@ -355,12 +348,12 @@ initramfs_lookup(struct vnode *directory, const char *name, size_t name_length,
 		if (strlen(child->name) == name_length &&
 		    memcmp(child->name, name, name_length) == 0) {
 			if (!vnode_get(&child->vnode))
-				return -INITRD_EINVAL;
+				return -EINVAL;
 			*result = &child->vnode;
 			return 0;
 		}
 	}
-	return -INITRD_ENOENT;
+	return -ENOENT;
 }
 
 static int
@@ -371,9 +364,9 @@ initramfs_read(struct vnode *node, uint64_t offset, void *buffer,
 	size_t amount;
 
 	if (node->type != VNODE_REGULAR)
-		return -INITRD_EISDIR;
+		return -EISDIR;
 	if (read_length == NULL || (buffer == NULL && length != 0))
-		return -INITRD_EINVAL;
+		return -EINVAL;
 	file = initramfs_from_vnode(node);
 	if (offset >= node->size || length == 0) {
 		*read_length = 0;
@@ -393,9 +386,9 @@ initramfs_readdir(struct vnode *directory, uint64_t index,
 	struct initramfs_node *child;
 
 	if (directory->type != VNODE_DIRECTORY)
-		return -INITRD_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -INITRD_EINVAL;
+		return -EINVAL;
 	child = initramfs_from_vnode(directory)->children;
 	while (child != NULL && index != 0) {
 		child = child->next;

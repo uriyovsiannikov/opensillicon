@@ -1,23 +1,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/silliconfs.h"
 
-#define SFS_EIO 5
-#define SFS_EBADF 9
-#define SFS_EEXIST 17
-#define SFS_EINVAL 22
-#define SFS_EISDIR 21
-#define SFS_ENOENT 2
-#define SFS_ENOMEM 12
-#define SFS_ENOSPC 28
-#define SFS_ENOTDIR 20
-#define SFS_ENOTEMPTY 39
-#define SFS_EISDIR 21
-#define SFS_EBUSY 16
-#define SFS_EOVERFLOW 75
-#define SFS_EOPNOTSUPP 95
 #define SFS_DIRECT SILLICONFS_DIRECT_BLOCKS
 #define SFS_INDIRECT_COUNT SILLICONFS_INDIRECT_BLOCKS
 /* Double-indirect blocks start after the direct and single-indirect ranges. */
@@ -117,7 +104,7 @@ sfs_can_unmount(struct vnode *root)
 	struct sfs_node *node = root->private_data;
 	return root->references == 1 && node->filesystem->references == 1
 	    ? 0
-	    : -SFS_EBUSY;
+	    : -EBUSY;
 }
 static int
 sfs_sync(struct vnode *vnode)
@@ -125,7 +112,7 @@ sfs_sync(struct vnode *vnode)
 	struct sfs_node *node = vnode->private_data;
 	return node->filesystem->device.flush
 	    ? node->filesystem->device.flush(node->filesystem->device.context)
-	    : -SFS_EOPNOTSUPP;
+	    : -EOPNOTSUPP;
 }
 
 static const struct vnode_operations sfs_operations = {
@@ -147,7 +134,6 @@ get_le16(const uint8_t *bytes)
 {
 	return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
 }
-
 
 static uint32_t
 get_le32(const uint8_t *bytes)
@@ -208,7 +194,7 @@ read_block(struct silliconfs *filesystem, uint32_t block, void *buffer)
 	int error;
 
 	if (block >= filesystem->super.total_blocks)
-		return -SFS_EIO;
+		return -EIO;
 	if (filesystem->validation_cache &&
 	    block >= filesystem->super.block_bitmap_start &&
 	    block < filesystem->super.data_start) {
@@ -219,7 +205,7 @@ read_block(struct silliconfs *filesystem, uint32_t block, void *buffer)
 			error = filesystem->device.read_block(filesystem->device.context,
 			    block, cache->slots[slot].data);
 			if (error != 0)
-				return error < 0 ? error : -SFS_EIO;
+				return error < 0 ? error : -EIO;
 			cache->slots[slot].block = block;
 		}
 		memcpy(buffer, cache->slots[slot].data, SILLICONFS_BLOCK_SIZE);
@@ -227,7 +213,7 @@ read_block(struct silliconfs *filesystem, uint32_t block, void *buffer)
 	}
 	error = filesystem->device.read_block(filesystem->device.context, block,
 	    buffer);
-	return error == 0 ? 0 : (error < 0 ? error : -SFS_EIO);
+	return error == 0 ? 0 : (error < 0 ? error : -EIO);
 }
 
 static int
@@ -238,10 +224,10 @@ write_block(struct silliconfs *filesystem, uint32_t block,
 
 	if (block >= filesystem->super.total_blocks ||
 	    filesystem->device.write_block == NULL)
-		return -SFS_EIO;
+		return -EIO;
 	error = filesystem->device.write_block(filesystem->device.context, block,
 	    buffer);
-	return error == 0 ? 0 : (error < 0 ? error : -SFS_EIO);
+	return error == 0 ? 0 : (error < 0 ? error : -EIO);
 }
 
 static uint32_t
@@ -286,12 +272,12 @@ load_superblock(struct silliconfs *filesystem)
 	    get_le32(bytes + 36) != SFS_ROOT_INODE || get_le32(bytes + 68) != 0 ||
 	    !zero_bytes(bytes + 76, SILLICONFS_BLOCK_SIZE - 76) ||
 	    get_le32(bytes + 72) != crc32_block(bytes, sizeof(block)))
-		return -SFS_EIO;
+		return -EIO;
 	block_count = get_le32(bytes + 28);
 	inode_count = get_le32(bytes + 32);
 	if (block_count != filesystem->device.block_count || block_count == 0 ||
 	    inode_count == 0)
-		return -SFS_EIO;
+		return -EIO;
 	filesystem->super = (struct sfs_superblock){
 		.total_blocks = block_count,
 		.inode_count = inode_count,
@@ -314,13 +300,13 @@ load_superblock(struct silliconfs *filesystem)
 	    filesystem->super.inode_bitmap_start +
 	    filesystem->super.inode_bitmap_blocks ||
 	    filesystem->super.inode_table_blocks != blocks_for(inode_count, 32))
-		return -SFS_EIO;
+		return -EIO;
 	expected = (uint64_t)filesystem->super.inode_table_start +
 	    filesystem->super.inode_table_blocks;
 	end = expected + 1;
 	if (expected > UINT32_MAX || end > block_count ||
 	    filesystem->super.data_start != expected)
-		return -SFS_EIO;
+		return -EIO;
 	return 0;
 }
 
@@ -336,7 +322,7 @@ bitmap_get(struct silliconfs *filesystem, bool inode_map, uint32_t bit,
 	int error;
 
 	if (allocated == NULL || block_number >= filesystem->super.total_blocks)
-		return -SFS_EIO;
+		return -EIO;
 	error = read_block(filesystem, block_number, block);
 	if (error != 0)
 		return error;
@@ -370,7 +356,7 @@ block_allocated(struct silliconfs *filesystem, uint32_t block, bool *allocated)
 {
 	if (block < filesystem->super.data_start ||
 	    block >= filesystem->super.total_blocks)
-		return -SFS_EIO;
+		return -EIO;
 	return bitmap_get(filesystem, false, block, allocated);
 }
 
@@ -387,10 +373,10 @@ read_inode(struct silliconfs *filesystem, uint32_t number,
 	int error;
 
 	if (number == 0 || number > filesystem->super.inode_count || inode == NULL)
-		return -SFS_EIO;
+		return -EIO;
 	error = bitmap_get(filesystem, true, number - 1, &allocated);
 	if (error != 0 || !allocated)
-		return error != 0 ? error : -SFS_EIO;
+		return error != 0 ? error : -EIO;
 	record_offset = (uint64_t)(number - 1) * 128;
 	block_number = filesystem->super.inode_table_start +
 	    (uint32_t)(record_offset / SILLICONFS_BLOCK_SIZE);
@@ -417,7 +403,7 @@ read_inode(struct silliconfs *filesystem, uint32_t number,
 	    (inode->mode & ~(SFS_MODE_TYPE | 07777U)) != 0 ||
 	    ((inode->mode & SFS_MODE_TYPE) == SFS_MODE_DIRECTORY &&
 	    (inode->size == 0 || inode->size % SILLICONFS_BLOCK_SIZE != 0)))
-		return -SFS_EIO;
+		return -EIO;
 	return 0;
 }
 
@@ -434,7 +420,7 @@ write_inode(struct silliconfs *filesystem, uint32_t number,
 	int error;
 
 	if (number == 0 || number > filesystem->super.inode_count)
-		return -SFS_EINVAL;
+		return -EINVAL;
 	error = read_block(filesystem, block_number, block);
 	if (error != 0)
 		return error;
@@ -461,10 +447,10 @@ mark_referenced_block(struct silliconfs *filesystem, uint8_t *seen,
 	int error = block_allocated(filesystem, block, &allocated);
 
 	if (error != 0 || !allocated)
-		return error != 0 ? error : -SFS_EIO;
+		return error != 0 ? error : -EIO;
 	mask = (uint8_t)(1U << (block % 8));
 	if ((seen[block / 8] & mask) != 0)
-		return -SFS_EIO;
+		return -EIO;
 	seen[block / 8] |= mask;
 	return 0;
 }
@@ -553,11 +539,11 @@ check_read_block(struct silliconfs *filesystem, uint32_t block,
 	bool allocated;
 	if (!cache) {
 		int error = block_allocated(filesystem, block, &allocated);
-		return error != 0 ? error : allocated ? 0 : -SFS_EIO;
+		return error != 0 ? error : allocated ? 0 : -EIO;
 	}
 	if (block < filesystem->super.data_start ||
 	    block >= filesystem->super.total_blocks)
-		return -SFS_EIO;
+		return -EIO;
 	uint32_t bitmap_block = filesystem->super.block_bitmap_start +
 	    block / 32768U;
 	if (cache->bitmap_block != bitmap_block) {
@@ -568,7 +554,7 @@ check_read_block(struct silliconfs *filesystem, uint32_t block,
 	}
 	uint32_t bit = block % 32768U;
 	allocated = (cache->bitmap[bit / 8U] & (1U << (bit % 8U))) != 0;
-	return allocated ? 0 : -SFS_EIO;
+	return allocated ? 0 : -EIO;
 }
 
 static int
@@ -580,7 +566,7 @@ read_logical_block_cached(struct silliconfs *filesystem,
 	int error;
 
 	if ((uint64_t)logical >= SILLICONFS_MAX_FILE_BLOCKS)
-		return -SFS_EIO;
+		return -EIO;
 	if (logical < SFS_DIRECT) {
 		number = inode->direct[logical];
 	} else if (logical < SFS_DOUBLE_START) {
@@ -727,7 +713,7 @@ allocate_block(struct silliconfs *filesystem, uint32_t *result)
 		}
 		first += count;
 	}
-	return -SFS_ENOSPC;
+	return -ENOSPC;
 }
 
 static int
@@ -737,7 +723,7 @@ free_block(struct silliconfs *filesystem, uint32_t block)
 	int error = block_allocated(filesystem, block, &allocated);
 
 	if (error != 0 || !allocated)
-		return error != 0 ? error : -SFS_EIO;
+		return error != 0 ? error : -EIO;
 	return bitmap_set(filesystem, false, block, false);
 }
 
@@ -768,7 +754,7 @@ allocate_inode(struct silliconfs *filesystem, uint32_t *result)
 		*result = number;
 		return 0;
 	}
-	return -SFS_ENOSPC;
+	return -ENOSPC;
 }
 
 static int
@@ -789,7 +775,7 @@ validate_allocated_block(struct silliconfs *filesystem, uint32_t block)
 	int error = block_allocated(filesystem, block, &allocated);
 
 	if (error != 0 || !allocated)
-		return error != 0 ? error : -SFS_EIO;
+		return error != 0 ? error : -EIO;
 	return 0;
 }
 
@@ -886,7 +872,7 @@ map_block(struct silliconfs *filesystem, uint32_t inode_number,
 	int error;
 
 	if ((uint64_t)logical >= SILLICONFS_MAX_FILE_BLOCKS || physical == NULL)
-		return -SFS_EOVERFLOW;
+		return -EOVERFLOW;
 	if (logical < SFS_DIRECT) {
 		block = inode->direct[logical];
 		if (block == 0 && create) {
@@ -974,9 +960,9 @@ read_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 	cache.level_valid = false;
 
 	if ((inode->mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR)
-		return -SFS_EISDIR;
+		return -EISDIR;
 	if (read_length == NULL || (buffer == NULL && length != 0))
-		return -SFS_EINVAL;
+		return -EINVAL;
 	if (offset >= inode->size || length == 0) {
 		*read_length = 0;
 		return 0;
@@ -1014,16 +1000,16 @@ write_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 	uint64_t end;
 
 	if ((inode->mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR)
-		return -SFS_EISDIR;
+		return -EISDIR;
 	if (write_length == NULL || (buffer == NULL && length != 0))
-		return -SFS_EINVAL;
+		return -EINVAL;
 	if (length == 0) {
 		*write_length = 0;
 		return 0;
 	}
 	if (offset > SILLICONFS_MAX_FILE_SIZE ||
 	    length > SILLICONFS_MAX_FILE_SIZE - offset)
-		return -SFS_EOVERFLOW;
+		return -EOVERFLOW;
 	end = offset + length;
 	while (total < length) {
 		uint64_t position = offset + total;
@@ -1050,7 +1036,7 @@ write_inode_data(struct silliconfs *filesystem, uint32_t inode_number,
 	if (end > inode->size) {
 		inode->size = end;
 		if (write_inode(filesystem, inode_number, inode) != 0)
-			return -SFS_EIO;
+			return -EIO;
 	}
 	*write_length = total;
 	return 0;
@@ -1102,16 +1088,16 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 	int error = 0;
 
 	if (inode->size > SIZE_MAX)
-		return -SFS_EIO;
+		return -EIO;
 	slot_count = name_table_size(max_entries);
 	if (slot_count == 0)
-		return -SFS_EIO;
+		return -EIO;
 	contents = kheap_alloc((size_t)inode->size);
 	slots = kheap_alloc((size_t)slot_count * sizeof(*slots));
 	if (contents == NULL || slots == NULL) {
 		(void)kheap_free(contents);
 		(void)kheap_free(slots);
-		return -SFS_ENOMEM;
+		return -ENOMEM;
 	}
 	memset(slots, 0, (size_t)slot_count * sizeof(*slots));
 	for (uint32_t logical = 0; logical < inode->size / SILLICONFS_BLOCK_SIZE;
@@ -1120,7 +1106,7 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 		error = read_logical_block(filesystem, inode, logical,
 		    contents + (size_t)logical * SILLICONFS_BLOCK_SIZE, &physical);
 		if (error != 0 || physical == 0) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 	}
@@ -1137,7 +1123,7 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 		struct sfs_inode target_inode;
 
 		if (block_end - position < SFS_DIR_HEADER) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 		target = get_le32(record);
@@ -1149,7 +1135,7 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 			    record_length > block_end - position ||
 			    !zero_bytes(record + SFS_DIR_HEADER,
 			    record_length - SFS_DIR_HEADER)) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			position += record_length;
@@ -1163,38 +1149,38 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 		    record_length - SFS_DIR_HEADER - name_length) ||
 		    (type != VNODE_REGULAR && type != VNODE_DIRECTORY &&
 		    type != VNODE_SOCKET)) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 		for (unsigned int i = 0; i < name_length; i++) {
 			if (record[SFS_DIR_HEADER + i] == 0 ||
 			    record[SFS_DIR_HEADER + i] == '/') {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 		}
 		if (read_inode(filesystem, target, &target_inode) != 0 ||
 		    (target_inode.mode & SFS_MODE_TYPE) !=
 		    sfs_type_mode((enum vnode_type)type)) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 		if (name_is(record + SFS_DIR_HEADER, name_length, ".")) {
 			if (dot_found || target != number || type != VNODE_DIRECTORY) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			dot_found = true;
 		} else if (name_is(record + SFS_DIR_HEADER, name_length, "..")) {
 			if (dotdot_found || type != VNODE_DIRECTORY) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			dotdot_found = true;
 			dotdot[number] = target;
 		} else {
 			if (references[target] != 0 || parents[target] != 0) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			references[target] = 1;
@@ -1209,7 +1195,7 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 			if (slots[slot].hash == hash && previous_length == name_length &&
 			    memcmp(previous + SFS_DIR_HEADER,
 			    record + SFS_DIR_HEADER, name_length) == 0) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			slot = (slot + 1) & (slot_count - 1);
@@ -1220,7 +1206,7 @@ validate_directory(struct silliconfs *filesystem, uint32_t number,
 	}
 	if (!dot_found || !dotdot_found || (number == SFS_ROOT_INODE &&
 	    dotdot[number] != SFS_ROOT_INODE))
-		error = -SFS_EIO;
+		error = -EIO;
 done:
 	(void)kheap_free(slots);
 	(void)kheap_free(contents);
@@ -1250,7 +1236,7 @@ validate_filesystem(struct silliconfs *filesystem)
 		(void)kheap_free(parents);
 		(void)kheap_free(dotdot);
 		(void)kheap_free(seen_blocks);
-		return -SFS_ENOMEM;
+		return -ENOMEM;
 	}
 	memset(references, 0, (size_t)inode_count + 1);
 	memset(parents, 0, ((size_t)inode_count + 1) * sizeof(*parents));
@@ -1268,7 +1254,7 @@ validate_filesystem(struct silliconfs *filesystem)
 
 			if ((number >= filesystem->super.total_blocks ||
 			    number < filesystem->super.data_start) && !set) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 		}
@@ -1284,7 +1270,7 @@ validate_filesystem(struct silliconfs *filesystem)
 			bool set = (bitmap[bit / 8] & (1U << (bit % 8))) != 0;
 
 			if (number >= inode_count && !set) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 		}
@@ -1306,7 +1292,7 @@ validate_filesystem(struct silliconfs *filesystem)
 			goto done;
 		if (!allocated) {
 			if (!zero_bytes(raw + within, 128)) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			continue;
@@ -1322,7 +1308,7 @@ validate_filesystem(struct silliconfs *filesystem)
 		struct sfs_inode root;
 		error = read_inode(filesystem, SFS_ROOT_INODE, &root);
 		if (error != 0 || (root.mode & SFS_MODE_TYPE) != SFS_MODE_DIRECTORY) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 	}
@@ -1360,17 +1346,17 @@ validate_filesystem(struct silliconfs *filesystem)
 		if (number == SFS_ROOT_INODE) {
 			if (references[number] != 0 || parents[number] != 0 ||
 			    dotdot[number] != SFS_ROOT_INODE) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 		} else if (references[number] != 1 || parents[number] == 0) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 		if (number != SFS_ROOT_INODE &&
 		    (inode.mode & SFS_MODE_TYPE) == SFS_MODE_DIRECTORY &&
 		    (parents[number] == 0 || dotdot[number] != parents[number])) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 	}
@@ -1388,14 +1374,14 @@ validate_filesystem(struct silliconfs *filesystem)
 		cursor = number;
 		while (cursor != SFS_ROOT_INODE && references[cursor] != 2) {
 			if (references[cursor] == 3 || parents[cursor] == 0) {
-				error = -SFS_EIO;
+				error = -EIO;
 				goto done;
 			}
 			references[cursor] = 3;
 			cursor = parents[cursor];
 		}
 		if (cursor != SFS_ROOT_INODE && references[cursor] != 2) {
-			error = -SFS_EIO;
+			error = -EIO;
 			goto done;
 		}
 		cursor = number;
@@ -1451,7 +1437,6 @@ sfs_chown(struct vnode *vnode, uint32_t uid, uint32_t gid)
 	return error;
 }
 
-
 static void
 sync_vnode(struct sfs_node *node, const struct sfs_inode *inode)
 {
@@ -1477,17 +1462,17 @@ make_node(struct silliconfs *filesystem, uint32_t number,
 	node = filesystem->inode_vnodes[number];
 	if (node != NULL) {
 		if (!vnode_get(&node->vnode))
-			return -SFS_EOVERFLOW;
+			return -EOVERFLOW;
 		sync_vnode(node, &inode);
 		*result = &node->vnode;
 		return 0;
 	}
 	node = kheap_alloc(sizeof(*node));
 	if (node == NULL)
-		return -SFS_ENOMEM;
+		return -ENOMEM;
 	if (filesystem->references == UINT32_MAX) {
 		(void)kheap_free(node);
-		return -SFS_EOVERFLOW;
+		return -EOVERFLOW;
 	}
 	filesystem->references++;
 	filesystem->inode_vnodes[number] = node;
@@ -1543,7 +1528,7 @@ find_directory_entry(struct silliconfs *filesystem,
 		error = read_logical_block(filesystem, directory, logical, block,
 		    &physical);
 		if (error != 0 || physical == 0)
-			return -SFS_EIO;
+			return -EIO;
 		for (uint32_t offset = 0; offset < SILLICONFS_BLOCK_SIZE;) {
 			const uint8_t *record = block + offset;
 			uint16_t record_length = get_le16(record + 4);
@@ -1555,7 +1540,7 @@ find_directory_entry(struct silliconfs *filesystem,
 			    (record_name_length == 0 && get_le32(record) != 0) ||
 			    (record_name_length != 0 && record_length < ((SFS_DIR_HEADER + record_name_length + 3U) &
 			    ~3U)))
-				return -SFS_EIO;
+				return -EIO;
 			if (record_name_length != 0 && record_name_length == name_length &&
 			    memcmp(record + SFS_DIR_HEADER, name, name_length) == 0) {
 				*number = get_le32(record);
@@ -1566,7 +1551,7 @@ find_directory_entry(struct silliconfs *filesystem,
 		}
 		position += SILLICONFS_BLOCK_SIZE;
 	}
-	return -SFS_ENOENT;
+	return -ENOENT;
 }
 
 static int
@@ -1582,18 +1567,18 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 	uint8_t child_type = 0;
 	uint32_t entry_physical = 0, entry_offset = 0;
 	int error;
-	if (directory_node->type != VNODE_DIRECTORY) return -SFS_ENOTDIR;
+	if (directory_node->type != VNODE_DIRECTORY) return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    name_is((const uint8_t *)name, (uint8_t)name_length, ".") ||
 	    name_is((const uint8_t *)name, (uint8_t)name_length, ".."))
-		return -SFS_EINVAL;
+		return -EINVAL;
 	error = read_inode(fs, parent_node->inode_number, &parent);
 	if (error != 0) return error;
 	while (position < parent.size) {
 		uint32_t physical;
 		error = read_logical_block(fs, &parent,
 		    (uint32_t)(position / SILLICONFS_BLOCK_SIZE), block, &physical);
-		if (error != 0 || physical == 0) return -SFS_EIO;
+		if (error != 0 || physical == 0) return -EIO;
 		for (uint32_t offset = 0; offset < SILLICONFS_BLOCK_SIZE;) {
 			uint8_t *record = block + offset;
 			uint16_t length = get_le16(record + 4);
@@ -1604,7 +1589,7 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 			    (n == 0 && get_le32(record) != 0) ||
 			    (n != 0 && length <
 			    ((SFS_DIR_HEADER + n + 3U) & ~3U)))
-				return -SFS_EIO;
+				return -EIO;
 			if (n == name_length && get_le32(record) != 0 &&
 			    memcmp(record + SFS_DIR_HEADER, name, name_length) == 0) {
 				child_number = get_le32(record);
@@ -1618,9 +1603,9 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 		if (child_number != 0) break;
 		position += SILLICONFS_BLOCK_SIZE;
 	}
-	if (child_number == 0) return -SFS_ENOENT;
+	if (child_number == 0) return -ENOENT;
 	if ((child_type == VNODE_DIRECTORY) != remove_directory)
-		return remove_directory ? -SFS_ENOTDIR : -SFS_EISDIR;
+		return remove_directory ? -ENOTDIR : -EISDIR;
 	error = read_inode(fs, child_number, &child);
 	if (error != 0) return error;
 	if (remove_directory) {
@@ -1631,17 +1616,17 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 			uint32_t physical;
 			error = read_logical_block(fs, &child,
 			    (uint32_t)(pos / SILLICONFS_BLOCK_SIZE), scan, &physical);
-			if (error != 0 || physical == 0) return -SFS_EIO;
+			if (error != 0 || physical == 0) return -EIO;
 			for (uint32_t off = 0; off < SILLICONFS_BLOCK_SIZE;) {
 				uint16_t len = get_le16(scan + off + 4);
 				if (len < SFS_DIR_HEADER || len > SILLICONFS_BLOCK_SIZE-off)
-					return -SFS_EIO;
+					return -EIO;
 				if (get_le32(scan + off) != 0) entries++;
 				off += len;
 			}
 			pos += SILLICONFS_BLOCK_SIZE;
 		}
-		if (entries > 2) return -SFS_ENOTEMPTY;
+		if (entries > 2) return -ENOTEMPTY;
 	}
 	/* A zero inode marks a reusable directory record while preserving layout. */
 	error = read_block(fs, entry_physical, block);
@@ -1650,7 +1635,7 @@ sfs_remove(struct vnode *directory_node, const char *name, size_t name_length,
 	struct sfs_node *held_child = remove_directory ?
 	    fs->inode_vnodes[child_number] : NULL;
 	if (held_child != NULL && !vnode_get(directory_node))
-		return -SFS_EOVERFLOW;
+		return -EOVERFLOW;
 	{
 		uint8_t *record = block + entry_offset;
 		uint16_t length = get_le16(record + 4);
@@ -1684,14 +1669,14 @@ sfs_lookup(struct vnode *directory_node, const char *name, size_t name_length,
 	int error;
 
 	if (directory_node->type != VNODE_DIRECTORY)
-		return -SFS_ENOTDIR;
+		return -ENOTDIR;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL)
-		return -SFS_EINVAL;
+		return -EINVAL;
 	if (node->unlinked_parent != NULL && name_length == 2 &&
 	    name[0] == '.' && name[1] == '.') {
 		if (!vnode_get(node->unlinked_parent))
-			return -SFS_EOVERFLOW;
+			return -EOVERFLOW;
 		*result = node->unlinked_parent;
 		return 0;
 	}
@@ -1738,14 +1723,14 @@ append_directory_entry(struct silliconfs *filesystem, uint32_t parent_number,
 		uint32_t physical;
 		error = read_logical_block(filesystem, parent, logical, block, &physical);
 		if (error != 0 || physical == 0)
-			return -SFS_EIO;
+			return -EIO;
 		for (uint32_t offset = 0; offset < SILLICONFS_BLOCK_SIZE;) {
 			uint8_t *record = block + offset;
 			uint16_t old_length = get_le16(record + 4);
 			uint16_t minimal = align4_u16(SFS_DIR_HEADER + record[6]);
 
 			if (old_length < minimal || old_length > SILLICONFS_BLOCK_SIZE - offset)
-				return -SFS_EIO;
+				return -EIO;
 			if (old_length - minimal >= needed) {
 				uint16_t new_length = old_length - minimal;
 
@@ -1820,19 +1805,19 @@ sfs_create(struct vnode *directory_node, const char *name, size_t name_length,
 	int error;
 
 	if (directory_node->type != VNODE_DIRECTORY)
-		return -SFS_ENOTDIR;
+		return -ENOTDIR;
 	if (filesystem->inode_unlinked[parent_node->inode_number])
-		return -SFS_ENOENT;
+		return -ENOENT;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL || (type != VNODE_REGULAR && type != VNODE_DIRECTORY &&
 	    type != VNODE_SOCKET) ||
 	    name_is((const uint8_t *)name, (uint8_t)name_length, ".") ||
 	    name_is((const uint8_t *)name, (uint8_t)name_length, ".."))
-		return -SFS_EINVAL;
+		return -EINVAL;
 	memset(&child, 0, sizeof(child));
 	for (size_t i = 0; i < name_length; i++) {
 		if (name[i] == '/' || name[i] == '\0')
-			return -SFS_EINVAL;
+			return -EINVAL;
 	}
 	error = read_inode(filesystem, parent_node->inode_number, &parent);
 	if (error != 0)
@@ -1840,8 +1825,8 @@ sfs_create(struct vnode *directory_node, const char *name, size_t name_length,
 	error = find_directory_entry(filesystem, &parent, name, name_length,
 	    &found_number, &found_type);
 	if (error == 0)
-		return -SFS_EEXIST;
-	if (error != -SFS_ENOENT)
+		return -EEXIST;
+	if (error != -ENOENT)
 		return error;
 	error = allocate_inode(filesystem, &child_number);
 	if (error != 0)
@@ -1929,9 +1914,9 @@ sfs_truncate(struct vnode *vnode, uint64_t size)
 	if (error != 0)
 		return error;
 	if ((inode.mode & SFS_MODE_TYPE) != SFS_MODE_REGULAR)
-		return -SFS_EISDIR;
+		return -EISDIR;
 	if (size > SILLICONFS_MAX_FILE_SIZE)
-		return -SFS_EOVERFLOW;
+		return -EOVERFLOW;
 	if (size < inode.size) {
 		uint32_t keep_blocks = (uint32_t)(size / SILLICONFS_BLOCK_SIZE +
 		    (size % SILLICONFS_BLOCK_SIZE != 0));
@@ -2072,9 +2057,9 @@ sfs_readdir(struct vnode *vnode, uint64_t index, struct vfs_dirent *entry)
 	int error;
 
 	if (vnode->type != VNODE_DIRECTORY)
-		return -SFS_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -SFS_EINVAL;
+		return -EINVAL;
 	error = read_inode(node->filesystem, node->inode_number, &directory);
 	if (error != 0)
 		return error;
@@ -2084,7 +2069,7 @@ sfs_readdir(struct vnode *vnode, uint64_t index, struct vfs_dirent *entry)
 		error = read_logical_block(node->filesystem, &directory, logical, block,
 		    &physical);
 		if (error != 0 || physical == 0)
-			return -SFS_EIO;
+			return -EIO;
 		for (uint32_t offset = 0; offset < SILLICONFS_BLOCK_SIZE;) {
 			const uint8_t *record = block + offset;
 			uint16_t length = get_le16(record + 4);
@@ -2096,7 +2081,7 @@ sfs_readdir(struct vnode *vnode, uint64_t index, struct vfs_dirent *entry)
 			    (name_length == 0 && get_le32(record) != 0) ||
 			    (name_length != 0 && length <
 			    ((SFS_DIR_HEADER + name_length + 3U) & ~3U)))
-				return -SFS_EIO;
+				return -EIO;
 			if (get_le32(record) != 0 && current++ == index) {
 				struct sfs_inode target;
 				uint32_t number = get_le32(record);
@@ -2127,11 +2112,11 @@ silliconfs_mount(const struct silliconfs_device *device, struct vnode **root)
 
 	if (device == NULL || root == NULL || device->block_count == 0 ||
 	    device->read_block == NULL || device->write_block == NULL)
-		return -SFS_EINVAL;
+		return -EINVAL;
 	*root = NULL;
 	filesystem = kheap_alloc(sizeof(*filesystem));
 	if (filesystem == NULL)
-		return -SFS_ENOMEM;
+		return -ENOMEM;
 	memset(filesystem, 0, sizeof(*filesystem));
 	filesystem->device = *device;
 	filesystem->super.total_blocks = device->block_count;
@@ -2144,7 +2129,7 @@ silliconfs_mount(const struct silliconfs_device *device, struct vnode **root)
 		filesystem->inode_unlinked = kheap_alloc(unlinked_size);
 		if (filesystem->inode_vnodes == NULL ||
 		    filesystem->inode_unlinked == NULL)
-			error = -SFS_ENOMEM;
+			error = -ENOMEM;
 		else {
 			memset(filesystem->inode_vnodes, 0, refs_size);
 			memset(filesystem->inode_unlinked, 0, unlinked_size);
@@ -2153,7 +2138,7 @@ silliconfs_mount(const struct silliconfs_device *device, struct vnode **root)
 	if (error == 0) {
 		struct sfs_validation_cache *cache = kheap_alloc(sizeof(*cache));
 		if (cache == NULL) {
-			error = -SFS_ENOMEM;
+			error = -ENOMEM;
 		} else {
 			for (unsigned int i = 0; i < 3; i++)
 				cache->slots[i].block = 0;

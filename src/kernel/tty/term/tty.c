@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "arch/x86_64/ps2_keyboard.h"
+#include "kernel/errno.h"
 #include "kernel/framebuffer.h"
 #include "kernel/process.h"
 #include "kernel/terminal.h"
@@ -8,8 +9,6 @@
 #include "kernel/tty.h"
 #include "kernel/usb_host.h"
 
-#define TTY_EAGAIN 11
-#define TTY_ENODEV 19
 #define TTY_RAW_READ_TIMEOUT_TICKS 50U
 
 static bool renderer_available;
@@ -121,17 +120,17 @@ tty_read(void *buffer, size_t length, size_t *read_length)
 		error = terminal_read(buffer, length, read_length);
 		if (error == 0)
 			return 0;
-		if (error != -TTY_EAGAIN)
+		if (error != -EAGAIN)
 			return error;
 		if (!tty_keyboard_available())
-			return -TTY_ENODEV;
+			return -ENODEV;
 		if (console_keyboard_poll(&event)) {
 			terminal_key_event(event);
 		} else {
 			__asm__ volatile ("sti; hlt; cli" : : : "memory");
 			if (terminal_raw_mode() && timer_ticks() - wait_start >=
 			    TTY_RAW_READ_TIMEOUT_TICKS) {
-				return -TTY_EAGAIN;
+				return -EAGAIN;
 			}
 		}
 	}

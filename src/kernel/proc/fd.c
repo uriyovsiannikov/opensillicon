@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#include "kernel/errno.h"
 #include "kernel/fd.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
@@ -7,15 +8,6 @@
 #include "kernel/terminal.h"
 #include "kernel/tty.h"
 #include "kernel/vfs.h"
-
-#define FD_ERROR_EBADF 9
-#define FD_ERROR_EINVAL 22
-#define FD_ERROR_ESPIPE 29
-#define FD_ERROR_ENOTDIR 20
-#define FD_ERROR_EOVERFLOW 75
-#define FD_ERROR_EIO 5
-#define FD_ERROR_EMFILE 24
-#define FD_ERROR_EOPNOTSUPP 95
 
 static struct fd_object *get_object(struct fd_table *table,
 	uint64_t descriptor);
@@ -47,12 +39,12 @@ console_write(void *context, uint64_t offset, const void *buffer,
 	(void)context;
 	(void)offset;
 	if (buffer == NULL && length != 0)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if (write_length == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if ((console_framebuffer_enabled && !tty_write(buffer, length)) ||
 	    !serial_write(buffer, length))
-		return -FD_ERROR_EIO;
+		return -EIO;
 	*write_length = length;
 	return 0;
 }
@@ -203,11 +195,11 @@ fd_find_free_descriptor(struct fd_table *table)
 	unsigned int i;
 
 	if (table == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	for (i = 0; i < FD_TABLE_CAPACITY; i++)
 		if (table->entries[i] == NULL)
 			return (int)i;
-	return -FD_ERROR_EMFILE;
+	return -EMFILE;
 }
 
 int
@@ -215,7 +207,7 @@ fd_install(struct fd_table *table, struct fd_object *object)
 {
 	int descriptor;
 	if (object == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	descriptor = fd_find_free_descriptor(table);
 	if (descriptor < 0)
 		return descriptor;
@@ -235,7 +227,7 @@ fd_install_pair(struct fd_table *table, struct fd_object *first,
 
 	if (table == NULL || first == NULL || second == NULL || first == second ||
 	    first_descriptor == NULL || second_descriptor == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	for (i = 0; i < FD_TABLE_CAPACITY; i++) {
 		if (table->entries[i] != NULL)
 			continue;
@@ -247,7 +239,7 @@ fd_install_pair(struct fd_table *table, struct fd_object *first,
 		}
 	}
 	if (second_slot < 0)
-		return -FD_ERROR_EMFILE;
+		return -EMFILE;
 	table->entries[first_slot] = first;
 	table->entries[second_slot] = second;
 	table->descriptor_flags[first_slot] = 0;
@@ -269,7 +261,7 @@ fd_get_descriptor_flags(struct fd_table *table, uint64_t descriptor,
 {
 	if (table == NULL || flags == NULL || descriptor >= FD_TABLE_CAPACITY ||
 	    table->entries[descriptor] == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	*flags = table->descriptor_flags[descriptor];
 	return 0;
 }
@@ -280,9 +272,9 @@ fd_set_descriptor_flags(struct fd_table *table, uint64_t descriptor,
 {
 	if (table == NULL || descriptor >= FD_TABLE_CAPACITY ||
 	    table->entries[descriptor] == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if ((flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	table->descriptor_flags[descriptor] = flags;
 	return 0;
 }
@@ -349,7 +341,7 @@ fd_close(struct fd_table *table, uint64_t descriptor)
 
 	if (table == NULL || descriptor >= FD_TABLE_CAPACITY ||
 	    table->entries[descriptor] == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	object = table->entries[descriptor];
 	table->entries[descriptor] = NULL;
 	table->descriptor_flags[descriptor] = 0;
@@ -366,14 +358,14 @@ fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
 
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    table->entries[source] == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (minimum >= FD_TABLE_CAPACITY || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	for (descriptor = minimum; descriptor < FD_TABLE_CAPACITY; descriptor++)
 		if (table->entries[descriptor] == NULL)
 			break;
 	if (descriptor == FD_TABLE_CAPACITY)
-		return -FD_ERROR_EMFILE;
+		return -EMFILE;
 	object = table->entries[source];
 	fd_object_get(object);
 	table->entries[descriptor] = object;
@@ -389,11 +381,11 @@ fd_dup_to(struct fd_table *table, uint64_t source, uint64_t destination,
 	struct fd_object *old_destination;
 
 	if (source == destination || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    destination >= FD_TABLE_CAPACITY ||
 	    table->entries[source] == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	source_object = table->entries[source];
 	fd_object_get(source_object);
 	old_destination = table->entries[destination];
@@ -420,18 +412,18 @@ fd_object_read(struct fd_object *object, void *buffer, size_t length,
 	int error;
 
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->read == NULL)
 		return -9;
 	if (read_length == NULL || (buffer == NULL && length != 0))
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	offset = object->offset;
 	error = object->operations->read(object->context, offset, buffer, length,
 	    &amount);
 	if (error != 0)
 		return error;
 	if (amount > length || offset > UINT64_MAX - amount)
-		return -FD_ERROR_EIO;
+		return -EIO;
 	object->offset = offset + amount;
 	*read_length = amount;
 	return 0;
@@ -461,11 +453,11 @@ fd_object_write_as(struct fd_object *object, const void *buffer, size_t length,
 	int error;
 
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->write == NULL)
 		return -9;
 	if (write_length == NULL || (buffer == NULL && length != 0))
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if (length != 0 && object->operations->prepare_write != NULL) {
 		error = object->operations->prepare_write(object->context, uid);
 		if (error != 0)
@@ -486,7 +478,7 @@ fd_object_write_as(struct fd_object *object, const void *buffer, size_t length,
 	if (error != 0)
 		return error;
 	if (amount > length || offset > UINT64_MAX - amount)
-		return -FD_ERROR_EIO;
+		return -EIO;
 	object->offset = offset + amount;
 	*write_length = amount;
 	return 0;
@@ -516,16 +508,16 @@ fd_readdir(struct fd_table *table, uint64_t descriptor,
 	int result;
 
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->readdir == NULL)
-		return -FD_ERROR_ENOTDIR;
+		return -ENOTDIR;
 	if (entry == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	result = object->operations->readdir(object->context, object->offset,
 	    entry);
 	if (result > 0) {
 		if (object->offset == UINT64_MAX)
-			return -FD_ERROR_EOVERFLOW;
+			return -EOVERFLOW;
 		object->offset++;
 	}
 	return result;
@@ -539,11 +531,11 @@ fd_object_seek(struct fd_object *object, int64_t offset, int whence,
 	int error;
 
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (result == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if (object->operations->seek == NULL)
-		return -FD_ERROR_ESPIPE;
+		return -ESPIPE;
 	error = object->operations->seek(object->context, object->offset,
 	    offset, whence, &new_offset);
 	if (error != 0)
@@ -565,11 +557,11 @@ int
 fd_object_stat(struct fd_object *object, struct fd_metadata *metadata)
 {
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (metadata == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	if (object->operations->stat == NULL)
-		return -FD_ERROR_EOPNOTSUPP;
+		return -EOPNOTSUPP;
 	return object->operations->stat(object->context, metadata);
 }
 
@@ -577,9 +569,9 @@ int
 fd_object_chmod(struct fd_object *object, uint32_t mode)
 {
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->chmod == NULL)
-		return -FD_ERROR_EOPNOTSUPP;
+		return -EOPNOTSUPP;
 	return object->operations->chmod(object->context, mode);
 }
 
@@ -587,9 +579,9 @@ int
 fd_object_chown(struct fd_object *object, uint32_t uid, uint32_t gid)
 {
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->chown == NULL)
-		return -FD_ERROR_EOPNOTSUPP;
+		return -EOPNOTSUPP;
 	return object->operations->chown(object->context, uid, gid);
 }
 
@@ -598,12 +590,12 @@ fd_object_lookup_at_as(struct fd_object *object, const char *path,
 	uint32_t uid, uint32_t gid, struct vnode **result)
 {
 	if (result == NULL)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	*result = NULL;
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->lookup_at == NULL)
-		return -FD_ERROR_ENOTDIR;
+		return -ENOTDIR;
 	return object->operations->lookup_at(object->context, path, uid, gid, result);
 }
 
@@ -611,11 +603,11 @@ int
 fd_object_get_path(struct fd_object *object, char *path, size_t capacity)
 {
 	if (object == NULL)
-		return -FD_ERROR_EBADF;
+		return -EBADF;
 	if (object->operations->get_path == NULL)
-		return -FD_ERROR_ENOTDIR;
+		return -ENOTDIR;
 	if (path == NULL || capacity == 0)
-		return -FD_ERROR_EINVAL;
+		return -EINVAL;
 	return object->operations->get_path(object->context, path, capacity);
 }
 
