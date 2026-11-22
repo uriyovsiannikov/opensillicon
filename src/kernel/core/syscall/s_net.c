@@ -41,60 +41,6 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				frame->rax = (uint64_t)result;
 		}
 		break;
-	case SYSCALL_UDP_BIND:
-		{
-			struct os_ipv4_endpoint endpoint;
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (frame->rdx != sizeof(endpoint)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			if (!vmm_copy_from_user(vmm_active_address_space(), &endpoint,
-			    frame->rsi, sizeof(endpoint))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			result = udp_socket_bind(object, &endpoint);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
-	case SYSCALL_UDP_CONNECT:
-		{
-			struct os_ipv4_endpoint endpoint;
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!udp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (frame->rdx != sizeof(endpoint) ||
-			    !vmm_copy_from_user(vmm_active_address_space(), &endpoint,
-			    frame->rsi, sizeof(endpoint))) {
-				syscall_error(frame, frame->rdx != sizeof(endpoint) ?
-				    EINVAL : EFAULT);
-				break;
-			}
-			result = udp_socket_connect(object, &endpoint);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	case SYSCALL_UDP_SEND:
 		{
 			uint8_t payload[UDP_SOCKET_PAYLOAD_LIMIT];
@@ -223,31 +169,49 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				frame->rax = (uint64_t)result;
 		}
 		break;
-	case SYSCALL_TCP_BIND:
-	case SYSCALL_TCP_CONNECT:
+	case SYSCALL_BIND:
+	case SYSCALL_CONNECT:
 		{
-			struct os_ipv4_endpoint endpoint;
+			union {
+				struct os_ipv4_endpoint inet;
+				struct unix_socket_address local;
+			} address;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
+			bool local = unix_socket_is_object(object);
+			bool tcp = tcp_socket_is_object(object);
 			int result;
 			if (object == NULL) {
 				syscall_error(frame, EBADF);
 				break;
 			}
-			if (!tcp_socket_is_object(object)) {
+			if (!local && !tcp && !udp_socket_is_object(object)) {
 				syscall_error(frame, ENOTSOCK);
 				break;
 			}
-			if (frame->rdx != sizeof(endpoint) ||
-			    !vmm_copy_from_user(vmm_active_address_space(), &endpoint,
-			    frame->rsi, sizeof(endpoint))) {
-				syscall_error(frame, frame->rdx != sizeof(endpoint) ?
-				    EINVAL : EFAULT);
+			if (local ? (frame->rdx < sizeof(address.local.family) + 1 ||
+			    frame->rdx > sizeof(address.local)) :
+			    frame->rdx != sizeof(address.inet)) {
+				syscall_error(frame, EINVAL);
 				break;
 			}
-			result = number == SYSCALL_TCP_BIND ?
-			    tcp_socket_bind(object, &endpoint) :
-			    tcp_socket_connect(object, &endpoint);
+			if (!vmm_copy_from_user(vmm_active_address_space(), &address,
+			    frame->rsi, (size_t)frame->rdx)) {
+				syscall_error(frame, EFAULT);
+				break;
+			}
+			if (local)
+				result = number == SYSCALL_BIND ?
+				    unix_socket_bind(object, &address.local, (size_t)frame->rdx) :
+				    unix_socket_connect(object, &address.local, (size_t)frame->rdx);
+			else if (tcp)
+				result = number == SYSCALL_BIND ?
+				    tcp_socket_bind(object, &address.inet) :
+				    tcp_socket_connect(object, &address.inet);
+			else
+				result = number == SYSCALL_BIND ?
+				    udp_socket_bind(object, &address.inet) :
+				    udp_socket_connect(object, &address.inet);
 			if (result == -EINPROGRESS && !fd_object_nonblocking(object))
 				return process_block_on_channel(frame,
 				    fd_readiness_wait_channel());

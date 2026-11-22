@@ -736,6 +736,23 @@ static int dns_check(void)
 }
 static int network_check(void)
 {
+ const long address_calls[]={SYSCALL_BIND,SYSCALL_CONNECT};
+ int sockets[]={socket(AF_UNIX,SOCK_STREAM,0),socket(AF_INET,SOCK_STREAM,0),
+     socket(AF_INET,SOCK_DGRAM,0)};
+ int channel[2]; CHECK(pipe(channel)==0);
+ for(size_t call=0;call<sizeof address_calls/sizeof address_calls[0];call++) {
+  CHECK(__os_raw(address_calls[call],12345,0,0,0,0,0)==-EBADF);
+  CHECK(__os_raw(address_calls[call],channel[0],0,0,0,0,0)==-ENOTSOCK);
+  for(size_t i=0;i<sizeof sockets/sizeof sockets[0];i++) {
+   CHECK(sockets[i]>=0);
+   size_t size=i==0 ? sizeof(struct sockaddr_un) : sizeof(struct os_ipv4_endpoint);
+   CHECK(__os_raw(address_calls[call],sockets[i],1,size,0,0,0)==-EFAULT);
+   CHECK(__os_raw(address_calls[call],sockets[i],1,0,0,0,0)==-EINVAL);
+   CHECK(__os_raw(address_calls[call],sockets[i],1,-1,0,0,0)==-EINVAL);
+  }
+ }
+ for(size_t i=0;i<sizeof sockets/sizeof sockets[0];i++) CHECK(close(sockets[i])==0);
+ CHECK(close(channel[0])==0 && close(channel[1])==0);
  struct sockaddr_un address={.sun_family=AF_UNIX,.sun_path="/musl-socket"};
  int server=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
  CHECK(server>=0 && (fcntl(server,F_GETFD)&FD_CLOEXEC));
@@ -1036,7 +1053,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,53,58,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,34,44,46,53,58,63,82,84,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);

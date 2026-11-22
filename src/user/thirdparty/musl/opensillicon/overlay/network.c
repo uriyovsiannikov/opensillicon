@@ -117,10 +117,9 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
  long op, r;
  switch(n) {
  case SYS_bind: case SYS_connect:
-  if(unix_socket) return call(n==SYS_bind ? SYSCALL_UNIX_BIND : SYSCALL_UNIX_CONNECT,a,b,c,0,0,0);
+  if(unix_socket) return call(n==SYS_bind ? SYSCALL_BIND : SYSCALL_CONNECT,a,b,c,0,0,0);
   r=from_address(b,c,&ep); if(r<0)return r;
-  op=n==SYS_bind ? (tcp ? SYSCALL_TCP_BIND : SYSCALL_UDP_BIND) :
-      (tcp ? SYSCALL_TCP_CONNECT : SYSCALL_UDP_CONNECT);
+  op=n==SYS_bind ? SYSCALL_BIND : SYSCALL_CONNECT;
   return call(op,a,(long)&ep,sizeof ep,0,0,0);
  case SYS_listen:
   if(!unix_socket && !tcp) return -EOPNOTSUPP;

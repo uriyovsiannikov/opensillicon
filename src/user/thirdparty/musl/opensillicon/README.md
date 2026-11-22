@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v10.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v11.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -239,3 +239,9 @@ the kernel and is not a syscall wire format.
 ABI v10 removes SLEEP_TICKS (slot 8). All applications use nanosleep with
 seconds/nanoseconds; the old tick-count syscall, userspace wrapper, public
 timer-frequency constant and duplicate scheduler wait entry are removed.
+
+ABI v11 replaces the separate TCP, UDP and Unix-domain bind/connect syscalls
+with BIND and CONNECT. The kernel selects the protocol from the descriptor;
+address validation and copying share one path. Slots 34, 44, 46, 63, 82 and 84
+are retired and return ENOSYS. Rebuild static applications against ABI v11;
+there are no aliases for the old calls.

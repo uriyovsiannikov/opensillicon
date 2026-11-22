@@ -21,36 +21,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 				frame->rax = (uint64_t)result;
 		}
 		break;
-	case SYSCALL_UNIX_BIND:
-	case SYSCALL_UNIX_CONNECT:
-		{
-			struct unix_socket_address address;
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (frame->rdx < sizeof(address.family) + 1 ||
-			    frame->rdx > sizeof(address)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			if (!vmm_copy_from_user(vmm_active_address_space(), &address,
-			    frame->rsi, (size_t)frame->rdx)) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			result = number == SYSCALL_UNIX_BIND ?
-			    unix_socket_bind(object, &address, (size_t)frame->rdx) :
-			    unix_socket_connect(object, &address, (size_t)frame->rdx);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	case SYSCALL_UNIX_LISTEN:
 		{
 			struct fd_object *object = fd_object_for_descriptor(
