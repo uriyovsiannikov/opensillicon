@@ -1,75 +1,70 @@
-#include "../include/os.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 static int
-parse_number(const char *text, uint64_t *value)
+parse_number(const char *text, int maximum, int *number)
 {
-	uint64_t result = 0;
-	if (*text == '\0')
+	char *end;
+
+	if (*text < '0' || *text > '9')
 		return 0;
-	while (*text != '\0') {
-		uint64_t digit;
-		if (*text < '0' || *text > '9')
-			return 0;
-		digit = (uint64_t)(*text++ - '0');
-		if (result > (UINT64_MAX - digit) / 10)
-			return 0;
-		result = result * 10 + digit;
-	}
-	*value = result;
+	errno = 0;
+	intmax_t value = strtoimax(text, &end, 10);
+	if (errno != 0 || *end != '\0' || value > maximum)
+		return 0;
+	*number = (int)value;
 	return 1;
 }
 
 static int
-parse_signal(const char *text, uint64_t *signo)
+parse_signal(const char *text, int *number)
 {
-	if (u_streq(text, "INT") || u_streq(text, "SIGINT"))
-		*signo = U_SIGINT;
-	else if (u_streq(text, "TERM") || u_streq(text, "SIGTERM"))
-		*signo = U_SIGTERM;
-	else if (u_streq(text, "KILL") || u_streq(text, "SIGKILL"))
-		*signo = U_SIGKILL;
-	else if (!parse_number(text, signo))
-		return 0;
-	return *signo == U_SIGINT || *signo == U_SIGTERM ||
-	    *signo == U_SIGKILL;
+	if (strncmp(text, "SIG", 3) == 0)
+		text += 3;
+	if (strcmp(text, "INT") == 0)
+		*number = SIGINT;
+	else if (strcmp(text, "TERM") == 0)
+		*number = SIGTERM;
+	else if (strcmp(text, "KILL") == 0)
+		*number = SIGKILL;
+	else
+		return parse_number(text, NSIG - 1, number);
+	return 1;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t signo = U_SIGTERM;
-	uint64_t first_pid = 1;
-	uint64_t i;
-	int failed = 0;
-	if (argc > 1 && u_streq(argv[1], "-s")) {
-		if (argc < 4 || !parse_signal(argv[2], &signo)) {
-			u_puts("usage: kill [-s INT|TERM|KILL|number] pid ...\n");
-			return 1;
-		}
-		first_pid = 3;
-	} else if (argc < 2) {
-		u_puts("usage: kill [-s INT|TERM|KILL|number] pid ...\n");
-		return 1;
+	int signo = SIGTERM, failed = 0, option;
+
+	opterr = 0;
+	while ((option = getopt(argc, argv, "s:")) != -1) {
+		if (option != 's' || !parse_signal(optarg, &signo))
+			goto usage;
 	}
-	for (i = first_pid; i < argc; i++) {
-		uint64_t pid;
-		long result;
-		if (!parse_number(argv[i], &pid) || pid == 0) {
-			u_puts("kill: invalid pid: ");
-			u_puts(argv[i]);
-			u_puts("\n");
+	if (optind == argc)
+		goto usage;
+	for (int i = optind; i < argc; i++) {
+		int pid;
+
+		if (!parse_number(argv[i], INT_MAX, &pid) || pid == 0) {
+			fprintf(stderr, "kill: invalid pid: %s\n", argv[i]);
 			failed = 1;
 			continue;
 		}
-		result = u_kill(pid, signo);
-		if (result < 0) {
-			u_puts("kill: cannot signal pid ");
-			u_puts(argv[i]);
-			u_puts(" (error ");
-			u_put_u64((uint64_t)-result);
-			u_puts(")\n");
+		if (kill((pid_t)pid, signo) < 0) {
+			fprintf(stderr, "kill: %s: %s\n", argv[i], strerror(errno));
 			failed = 1;
 		}
 	}
 	return failed;
+usage:
+	fputs("usage: kill [-s INT|TERM|KILL|number] pid ...\n", stderr);
+	return 2;
 }
