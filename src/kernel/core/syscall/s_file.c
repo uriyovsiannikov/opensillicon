@@ -9,7 +9,6 @@
 #define NATIVE_S_IFDIR 0040000U
 #define NATIVE_S_IFCHR 0020000U
 #define NATIVE_S_IFSOCK 0140000U
-#define NATIVE_AT_FDCWD (-100)
 #define NATIVE_AT_SYMLINK_NOFOLLOW 0x100U
 
 /* musl 1.2.6 x86_64 arch/x86_64/kstat.h, also layout-compatible with its
@@ -483,22 +482,20 @@ syscall_file_bsp(struct interrupt_frame *frame)
 		}
 		break;
 	case SYSCALL_OPENAT:
-	case SYSCALL_OPEN:
 		{
 			char path[VFS_PATH_MAX];
 			char canonical[VFS_PATH_MAX];
 			struct fd_object *file;
 			struct os_credentials credentials;
-			bool at = frame->rax == SYSCALL_OPENAT;
-			uint64_t flags = at ? frame->rdx : frame->rsi;
-			uint64_t mode = at ? frame->r10 : frame->rdx;
-			int result = copy_user_string(at ? frame->rsi : frame->rdi, path, sizeof(path));
+			uint64_t flags = frame->rdx;
+			uint64_t mode = frame->r10;
+			int result = copy_user_string(frame->rsi, path, sizeof(path));
 
 			if (result != 0) {
 				syscall_error(frame, (uint64_t)(-result));
 				break;
 			}
-			if (at && (int64_t)frame->rdi != NATIVE_AT_FDCWD && path[0] != '/')
+			if ((int64_t)frame->rdi != OS_AT_FDCWD && path[0] != '/')
 				result = 0;
 			else result = process_resolve_path(path, canonical, sizeof(canonical));
 			if (result != 0) {
@@ -521,7 +518,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			if (at && (int64_t)frame->rdi != NATIVE_AT_FDCWD && path[0] != '/') {
+			if ((int64_t)frame->rdi != OS_AT_FDCWD && path[0] != '/') {
 				struct vnode *directory = NULL;
 				result = fd_object_lookup_at_as(fd_object_for_descriptor(table,frame->rdi),
 				    ".",credentials.effective_uid,credentials.effective_gid,&directory);
@@ -608,7 +605,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, (uint64_t)(-result));
 				break;
 			}
-			if (path[0] != '/' && directory_fd != NATIVE_AT_FDCWD) {
+			if (path[0] != '/' && directory_fd != OS_AT_FDCWD) {
 				directory = fd_object_for_descriptor(current_fd_table(),
 				    frame->rdi);
 				if (directory == NULL) {

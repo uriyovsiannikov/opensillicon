@@ -41,7 +41,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_CHDIR] = { .bsp = syscall_file_bsp },
 	[SYSCALL_GETCWD] = { .bsp = syscall_file_bsp },
 	[SYSCALL_OPENAT] = { .bsp = syscall_file_bsp },
-	[SYSCALL_OPEN] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTATAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_STAT] = { .bsp = syscall_file_bsp },

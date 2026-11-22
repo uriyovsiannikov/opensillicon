@@ -1,8 +1,8 @@
 #ifndef ABI_SYSCALL_H
 #define ABI_SYSCALL_H
 
-/* ABI v5: retired calls 4–7, 23, 53, 58 and 109 are not reused. Rebuild all userspace. */
-#define SYSCALL_ABI_VERSION 5U
+/* ABI v6: retired calls 4–7, 10, 23, 53, 58 and 109 are not reused. Rebuild all userspace. */
+#define SYSCALL_ABI_VERSION 6U
 
 #ifdef __ASSEMBLER__
 #define OS_SYSCALL(name, number) .equ name, number ;
@@ -16,6 +16,7 @@ enum os_syscall_number {
 };
 #endif
 
+#define OS_AT_FDCWD (-100)
 #define OS_WAIT_NOHANG 1U
 #define OS_SOCKET_KIND_UNIX 1U
 #define OS_SOCKET_KIND_TCP 2U

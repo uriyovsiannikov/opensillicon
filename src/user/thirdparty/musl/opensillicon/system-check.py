@@ -53,16 +53,19 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('host localhost', 'localhost has address 127.0.0.1'),
                 ('pkg', 'usage: pkg repo URL'),
                 ('doas /bin/pkg', 'usage: pkg repo URL'),
+                ('touch /tmp/native-openat-check', None),
+                ('stat /tmp/native-openat-check', '  Mode: 644'),
+                ('rm /tmp/native-openat-check', None),
             ]:
                 offset = len(log.read_text(errors='replace'))
                 for char in line + '\n':
-                    key = {' ': 'spc', '\n': 'ret', '/': 'slash'}.get(char, char)
+                    key = {' ': 'spc', '\n': 'ret', '/': 'slash', '-': 'minus'}.get(char, char)
                     command('human-monitor-command', {'command-line': 'sendkey ' + key + ' 1'})
                     time.sleep(.03)
-                end = wait_for(expected, offset)
+                end = wait_for(expected, offset) if expected is not None else offset
                 wait_for('/% ', end)
             command('screendump', {'filename': str(out / 'console.png'), 'format': 'png'})
-        print('MUSL_SYSTEM_PASS: init, console, svctl, host, pkg and doas')
+        print('MUSL_SYSTEM_PASS: init, console, svctl, host, pkg, doas and native openat')
     finally:
         q.terminate()
         try:
