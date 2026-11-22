@@ -11,6 +11,7 @@
 #include <sys/sysctl.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <fcntl.h>
@@ -1096,6 +1097,13 @@ static int sysctl_check(void)
  CHECK(sysctl(mib,2,NULL,NULL,NULL,1)==-1 && errno==EINVAL);
  CHECK(sysctlbyname("hw.missing",NULL,&length,NULL,0)==-1 && errno==ENOENT);
  CHECK(sysctlbyname(NULL,NULL,&length,NULL,0)==-1 && errno==EFAULT);
+ int max_files; length=sizeof max_files;
+ CHECK(sysctlbyname("kern.maxfilesperproc",&max_files,&length,NULL,0)==0 && max_files>3);
+ struct rlimit limit;
+ CHECK(getrlimit(RLIMIT_NOFILE,&limit)==0 && limit.rlim_cur==(rlim_t)max_files && limit.rlim_max==limit.rlim_cur);
+ CHECK(sysconf(_SC_OPEN_MAX)==max_files && getdtablesize()==max_files);
+ CHECK(getrlimit(RLIMIT_NOFILE,NULL)==-1 && errno==EFAULT);
+ CHECK(getrlimit(RLIMIT_DATA,&limit)==-1 && errno==ENOTSUP);
  int cpus=0; length=sizeof cpus;
  CHECK(sysctlbyname("hw.ncpu",&cpus,&length,NULL,0)==0 && cpus>=1);
  uint64_t memory=0,free_pages=0; length=sizeof memory;

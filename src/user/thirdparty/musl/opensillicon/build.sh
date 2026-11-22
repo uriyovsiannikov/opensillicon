@@ -10,6 +10,7 @@ flock 9
 # Preserve timestamps so repeated builds remain incremental.
 tar -C "$source" --exclude=./opensillicon -cf - . | tar -C "$build/source" -xf -
 cp -p "$port/include/sys/sysctl.h" "$build/source/include/sys/sysctl.h"
+cp -p "$port/overlay/getrlimit.c" "$build/source/src/misc/getrlimit.c"
 cp -p "$port/overlay/uname.c" "$build/source/src/misc/uname.c"
 cp -p "$port/overlay/resolvconf.c" "$build/source/src/network/resolvconf.c"
 cp -p "$port/overlay/syscall_arch.h" "$build/source/arch/x86_64/syscall_arch.h"
@@ -34,7 +35,12 @@ if [ ! -f config.mak ] || [ "$port/build.sh" -nt config.mak ]; then
  AR="${AR:-ar}" RANLIB="${RANLIB:-ranlib}" CC="${CC:-gcc}" CFLAGS="-O2 -mno-red-zone -fno-stack-protector -I$root/src/include" \
   ../source/configure --target=x86_64 --disable-shared --prefix="$build/sysroot" > configure.log
 fi
-make -j"${JOBS:-4}" > build.log 2>&1 || { tail -60 build.log; exit 1; }
+# Upstream musl does not track headers outside its source tree. The native
+# adapters must be recompiled when their shared kernel ABI changes.
+cat > opensillicon-abi.mk <<EOF
+obj/src/misc/opensillicon.o obj/src/misc/network.o obj/src/misc/sysctl.o obj/src/misc/uname.o obj/src/misc/getrlimit.o obj/src/network/resolvconf.o: $(printf '%s ' "$root"/src/include/abi/*.h)
+EOF
+make -f Makefile -f opensillicon-abi.mk -j"${JOBS:-4}" > build.log 2>&1 || { tail -60 build.log; exit 1; }
 make install > install.log 2>&1
 cp -R "$port/include/." "$build/sysroot/include/"
 

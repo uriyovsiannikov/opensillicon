@@ -19,6 +19,7 @@ enum os_sysctl_kind {
 	X(KERN_OSRELEASE, CTL_KERN, 2, "kern.osrelease", OS_SYSCTL_STRING) \
 	X(KERN_VERSION, CTL_KERN, 4, "kern.version", OS_SYSCTL_STRING) \
 	X(KERN_HOSTNAME, CTL_KERN, 10, "kern.hostname", OS_SYSCTL_STRING) \
+	X(KERN_MAXFILESPERPROC, CTL_KERN, 28, "kern.maxfilesperproc", OS_SYSCTL_INT32) \
 	X(VM_FREEPAGES, CTL_VM, 1, "vm.freepages", OS_SYSCTL_UINT64) \
 	X(HW_MACHINE, CTL_HW, 1, "hw.machine", OS_SYSCTL_STRING) \
 	X(HW_NCPU, CTL_HW, 3, "hw.ncpu", OS_SYSCTL_INT32) \
