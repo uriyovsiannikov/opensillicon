@@ -6,8 +6,6 @@
 #include "kernel/process.h"
 #include "kernel/syscall.h"
 
-#define MONOTONIC_TICK_HZ 100U
-
 int copy_user_string(uint64_t address, char *destination, size_t capacity);
 void syscall_error(struct interrupt_frame *frame, uint64_t error);
 

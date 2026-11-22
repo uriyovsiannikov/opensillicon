@@ -4,6 +4,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Scheduler tick source and conversions share one frequency. */
+#define TIMER_TICK_HZ 100U
+#define TIMER_TICK_NS (1000000000ULL / TIMER_TICK_HZ)
+_Static_assert(1000000000ULL % TIMER_TICK_HZ == 0, "timer ticks must divide a second");
+
 typedef void (*kernel_timer_callback)(void *argument);
 
 bool timer_init(uint64_t tsc_frequency_hz);

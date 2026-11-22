@@ -8,7 +8,6 @@
 #include "kernel/timer.h"
 #include "kernel/spinlock.h"
 
-#define TIMER_HZ 100U
 #define TIMER_VECTOR 32U
 #define PIC_MASTER_DATA 0x21U
 #define PIC_SLAVE_DATA 0xa1U
@@ -132,7 +131,7 @@ timer_init(uint64_t tsc_hz)
 	    "Nd" ((uint16_t)PIC_MASTER_DATA));
 	__asm__ volatile ("outb %0, %1" : : "a" ((uint8_t)0xff),
 	    "Nd" ((uint16_t)PIC_SLAVE_DATA));
-	if (!lapic_timer_calibrate(TIMER_HZ, &initial_count) ||
+	if (!lapic_timer_calibrate(TIMER_TICK_HZ, &initial_count) ||
 	    !interrupt_register_handler(TIMER_VECTOR, timer_interrupt))
 		goto out;
 	ap_initial_count = initial_count;

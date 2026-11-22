@@ -155,15 +155,15 @@ syscall_select(struct interrupt_frame *frame)
 			deadline = UINT64_MAX;
 		} else {
 			if ((uint64_t)timeout.seconds >
-			    (UINT64_MAX - MONOTONIC_TICK_HZ) / MONOTONIC_TICK_HZ) {
+			    (UINT64_MAX - TIMER_TICK_HZ) / TIMER_TICK_HZ) {
 				process_select_deadline_clear();
 				syscall_error(frame, EINVAL);
 				return frame;
 			}
 			wait_ticks = (uint64_t)timeout.seconds *
-			    MONOTONIC_TICK_HZ;
+			    TIMER_TICK_HZ;
 			wait_ticks += ((uint64_t)timeout.microseconds *
-			    MONOTONIC_TICK_HZ + 999999U) / 1000000U;
+			    TIMER_TICK_HZ + 999999U) / 1000000U;
 			now = timer_ticks();
 			if (wait_ticks > UINT64_MAX - now) {
 				process_select_deadline_clear();
@@ -244,7 +244,7 @@ syscall_poll(struct interrupt_frame *frame)
  }
  if (deadline == 0) {
   deadline = timeout < 0 ? UINT64_MAX : timer_ticks() +
-      ((uint64_t)timeout * MONOTONIC_TICK_HZ + 999) / 1000;
+      ((uint64_t)timeout * TIMER_TICK_HZ + 999) / 1000;
   process_select_deadline_set(deadline);
  }
  if (ready_count || (deadline != UINT64_MAX && timer_ticks() >= deadline)) {

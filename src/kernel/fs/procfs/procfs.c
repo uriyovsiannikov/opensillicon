@@ -18,7 +18,6 @@
 #include "arch/x86_64/pci.h"
 
 #define PROCFS_CONTENT_MAX 16384U
-#define PROCFS_TICK_HZ 100U
 
 enum procfs_entry {
 	PROCFS_ROOT,
@@ -393,8 +392,8 @@ procfs_make_uptime(uint64_t inode, struct procfs_node **result)
 	if (node == NULL)
 		return -ENOMEM;
 	ticks = timer_ticks();
-	fractional = ticks % PROCFS_TICK_HZ;
-	if (!append_u64(node, ticks / PROCFS_TICK_HZ) ||
+	fractional = (ticks % TIMER_TICK_HZ) * 100U / TIMER_TICK_HZ;
+	if (!append_u64(node, ticks / TIMER_TICK_HZ) ||
 	    !append_text(node, ".") ||
 	    !append_text(node, (const char[]){
 		(char)('0' + fractional / 10U),

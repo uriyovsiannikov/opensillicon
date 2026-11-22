@@ -5,7 +5,6 @@
 #include "kernel/vmm.h"
 
 #define CLOCK_MONOTONIC_ID 1U
-#define MONOTONIC_TICK_NS (1000000000ULL / MONOTONIC_TICK_HZ)
 
 struct native_timespec {
 	int64_t tv_sec;
@@ -41,15 +40,15 @@ syscall_time_local(struct interrupt_frame **result_frame)
 				return true;
 			}
 			if ((uint64_t)request.tv_sec >
-			    (UINT64_MAX - 1U) / MONOTONIC_TICK_HZ) {
+			    (UINT64_MAX - 1U) / TIMER_TICK_HZ) {
 				syscall_error(frame, EINVAL);
 				return true;
 			}
-			ticks = (uint64_t)request.tv_sec * MONOTONIC_TICK_HZ;
+			ticks = (uint64_t)request.tv_sec * TIMER_TICK_HZ;
 			if (request.tv_nsec != 0) {
 				uint64_t fractional_ticks =
-				    ((uint64_t)request.tv_nsec + MONOTONIC_TICK_NS - 1U) /
-				    MONOTONIC_TICK_NS;
+				    ((uint64_t)request.tv_nsec + TIMER_TICK_NS - 1U) /
+				    TIMER_TICK_NS;
 				if (ticks > UINT64_MAX - fractional_ticks - 1U) {
 					syscall_error(frame, EINVAL);
 					return true;
@@ -87,7 +86,7 @@ syscall_time_local(struct interrupt_frame **result_frame)
 				return true;
 			}
 			ticks = timer_ticks();
-			value.tv_sec = (int64_t)(ticks / MONOTONIC_TICK_HZ);
+			value.tv_sec = (int64_t)(ticks / TIMER_TICK_HZ);
 			if (frame->rdi == 0) {
 				uint64_t epoch;
 				if (!timer_realtime_epoch(&epoch) ||
@@ -97,8 +96,8 @@ syscall_time_local(struct interrupt_frame **result_frame)
 				}
 				value.tv_sec += (int64_t)epoch;
 			}
-			value.tv_nsec = (int64_t)(ticks % MONOTONIC_TICK_HZ) *
-			    (1000000000U / MONOTONIC_TICK_HZ);
+			value.tv_nsec = (int64_t)(ticks % TIMER_TICK_HZ) *
+			    TIMER_TICK_NS;
 			if (!vmm_copy_to_user(space, frame->rsi, &value,
 			    sizeof(value))) {
 				syscall_error(frame, EFAULT);

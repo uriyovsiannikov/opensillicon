@@ -256,8 +256,8 @@ process_set_interrupted_result(struct process *process)
 		struct { int64_t tv_sec; int64_t tv_nsec; } remaining;
 		uint64_t elapsed = timer_ticks() - process->nanosleep_start_tick;
 		uint64_t elapsed_ticks = elapsed > 0 ? elapsed - 1 : 0;
-		uint64_t elapsed_seconds = elapsed_ticks / 100U;
-		uint64_t elapsed_nanoseconds = (elapsed_ticks % 100U) * 10000000U;
+		uint64_t elapsed_seconds = elapsed_ticks / TIMER_TICK_HZ;
+		uint64_t elapsed_nanoseconds = (elapsed_ticks % TIMER_TICK_HZ) * TIMER_TICK_NS;
 		remaining.tv_sec = process->nanosleep_seconds;
 		remaining.tv_nsec = process->nanosleep_nanoseconds;
 		if (remaining.tv_nsec < (int64_t)elapsed_nanoseconds) {
