@@ -1,19 +1,23 @@
-#include "../include/os.h"
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t i;
 	int failed = 0;
-	if (argc < 2) {
-		u_puts("usage: mkdir directory ...\n");
-		return 1;
+
+	opterr = 0;
+	if (getopt(argc, argv, "") != -1 || optind == argc) {
+		fputs("usage: mkdir directory ...\n", stderr);
+		return 2;
 	}
-	for (i = 1; i < argc; i++) {
-		if (u_mkdir(argv[i], 0777) < 0) {
-			u_puts("mkdir: cannot create: ");
-			u_puts(argv[i]);
-			u_puts("\n");
+	for (int i = optind; i < argc; i++) {
+		if (mkdir(argv[i], 0777) < 0) {
+			fprintf(stderr, "mkdir: cannot create: %s: %s\n", argv[i],
+			    strerror(errno));
 			failed = 1;
 		}
 	}
