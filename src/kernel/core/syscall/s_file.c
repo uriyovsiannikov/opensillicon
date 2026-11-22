@@ -484,25 +484,30 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 		}
 		break;
+	case SYSCALL_OPENAT:
 	case SYSCALL_OPEN:
 		{
 			char path[VFS_PATH_MAX];
 			char canonical[VFS_PATH_MAX];
 			struct fd_object *file;
 			struct os_credentials credentials;
-			int result = copy_user_string(frame->rdi, path, sizeof(path));
+			bool at = frame->rax == SYSCALL_OPENAT;
+			uint64_t flags = at ? frame->rdx : frame->rsi;
+			uint64_t mode = at ? frame->r10 : frame->rdx;
+			int result = copy_user_string(at ? frame->rsi : frame->rdi, path, sizeof(path));
 
 			if (result != 0) {
 				syscall_error(frame, (uint64_t)(-result));
 				break;
 			}
-			result = process_resolve_path(path, canonical,
-			    sizeof(canonical));
+			if (at && (int64_t)frame->rdi != NATIVE_AT_FDCWD && path[0] != '/')
+				result = 0;
+			else result = process_resolve_path(path, canonical, sizeof(canonical));
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			if (frame->rsi > UINT32_MAX || frame->rdx > UINT32_MAX) {
+			if (flags > UINT32_MAX || mode > UINT32_MAX) {
 				syscall_error(frame, ERRNO_EINVAL);
 				break;
 			}
@@ -518,10 +523,19 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			result = vfs_open_as(canonical, (uint32_t)frame->rsi,
-			    (uint32_t)frame->rdx & ~process_get_umask(),
-			    credentials.effective_uid,
-			    credentials.effective_gid, &file);
+			if (at && (int64_t)frame->rdi != NATIVE_AT_FDCWD && path[0] != '/') {
+				struct vnode *directory = NULL;
+				result = fd_object_lookup_at_as(fd_object_for_descriptor(table,frame->rdi),
+				    ".",credentials.effective_uid,credentials.effective_gid,&directory);
+				if (!result) {
+					result = vfs_open_from_as(directory,path,(uint32_t)flags,
+					    (uint32_t)mode & ~process_get_umask(),credentials.effective_uid,
+					    credentials.effective_gid,&file);
+					vnode_put(directory);
+				}
+			} else result = vfs_open_as(canonical,(uint32_t)flags,
+			    (uint32_t)mode & ~process_get_umask(),credentials.effective_uid,
+			    credentials.effective_gid,&file);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
@@ -532,6 +546,8 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
+			if (flags & VFS_O_CLOEXEC)
+				(void)fd_set_descriptor_flags(table, result, FD_DESCRIPTOR_CLOEXEC);
 			frame->rax = (uint64_t)result;
 		}
 		break;

@@ -13,7 +13,7 @@ x11_prefix = os_root / 'src/build/x11/prefix'
 gcc_include = run_command('gcc', '-print-file-name=include', check: true).stdout().strip()
 add_project_arguments(
     '-DOPEN_SILLICON', '-nostdinc', '-I' + gcc_include,
-    '-I' + os_root / 'src/user/libos/include', '-I' + x11_prefix / 'include',
+    '-I' + os_root / 'src/build/musl/sysroot/include', '-I' + x11_prefix / 'include',
     '-I' + os_root / 'src/tools/pkg/repo/_src/twm/deps/libX11/include',
     '-I' + os_root / 'src/build/x11/libX11/include',
     '-I' + os_root / 'src/tools/pkg/repo/_src/twm/deps/libxtrans',
@@ -23,8 +23,8 @@ add_project_arguments(
 add_project_link_arguments(
     '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none',
     '-Wl,-z,noexecstack', '-Wl,-T,' + os_root / 'src/user/c_linker.ld',
-    os_root / 'src/build/libos/crt0.o',
-    os_root / 'src/build/libos/liblibos.a',
+    os_root / 'src/build/musl/sysroot/lib/crt1.o',
+    os_root / 'src/build/musl/sysroot/lib/libc.a',
     x11_prefix / 'lib/libi18n.a',
     language: 'c',
 )

@@ -1,6 +1,6 @@
 # htop on OpenSillicon
 
-This directory adapts upstream htop 3.5.3 to libos and the static ncurses
+This directory adapts upstream htop 3.5.3 to libc and the static ncurses
 library shared with Nano. Upstream sources and GPLv2+ license are included
 in the parent directory.
 

@@ -48,7 +48,7 @@ THE SOFTWARE.
 #include <stdio.h>
 typedef FILE *FontFilePtr;
 
-/* OpenSillicon libos currently supports ordinary files, not gzip streams. */
+/* OpenSillicon libc currently supports ordinary files, not gzip streams. */
 #define FontFileGetc(f) getc(f)
 #define FontFileOpen(filename) fopen(filename, "rb")
 #define FontFileClose(f) fclose(f)

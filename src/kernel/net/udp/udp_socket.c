@@ -81,6 +81,7 @@ cyclone_udp_receive(void *context, const uint8_t source[4],
 		memcpy(entry->payload, payload, length);
 	state->queue_count++;
 	state_guard_leave(flags);
+	fd_readiness_wake();
 }
 
 /* Protect short socket-state transitions; never hold this across a wait or
@@ -114,8 +115,22 @@ state_guard_leave(uint64_t flags)
 #endif
 }
 
+static uint32_t
+udp_poll_op(void *context, uint32_t events)
+{
+ struct udp_socket_state *state = context;
+ uint64_t flags = state_guard_enter();
+ uint32_t ready = 0;
+ if (state->queue_count != 0) ready |= FD_POLL_READ;
+ if (system_ready && !system_stopping) ready |= FD_POLL_WRITE;
+ else ready |= FD_POLL_ERROR;
+ state_guard_leave(flags);
+ return ready & events;
+}
+
 static void socket_close(void *context);
 static const struct fd_operations socket_operations = {
+	.poll = udp_poll_op,
 	.close = socket_close
 };
 
@@ -502,6 +517,39 @@ udp_socket_sendto(struct fd_object *object,
 	result = ensure_bound(state);
 	if (result != 0)
 		return result;
+	/* Deliver packets addressed to this interface locally. This also allows
+	 * ordinary processes to provide local UDP services without NIC hairpinning. */
+	if (address_is_local(destination->address)) {
+		uint8_t source_address[4], netmask[4], gateway[4];
+		if (!cyclone_net_ipv4_config(source_address, netmask, gateway))
+			return -ENETDOWN;
+		flags = state_guard_enter();
+		if (!address_is_zero(state->local.address))
+			memcpy(source_address, state->local.address, 4);
+		for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++) {
+			struct udp_socket_state *peer = &sockets[i];
+			if (!peer->allocated || !peer->bound || peer->local.port != destination->port ||
+			    (!address_is_zero(peer->local.address) &&
+			    memcmp(peer->local.address, destination->address, 4))) continue;
+			if (peer->connected && (peer->remote.port != state->local.port ||
+			    memcmp(peer->remote.address, source_address, 4))) continue;
+			if (peer->queue_count == UDP_SOCKET_QUEUE_LIMIT) {
+				peer->dropped_datagrams++;
+				break;
+			}
+			struct udp_queue_entry *entry = &peer->queue[
+			    (peer->queue_head + peer->queue_count) % UDP_SOCKET_QUEUE_LIMIT];
+			memcpy(entry->source.address, source_address, 4);
+			entry->source.port = state->local.port;
+			entry->length = length;
+			if (length) memcpy(entry->payload, payload, length);
+			peer->queue_count++;
+			break;
+		}
+		state_guard_leave(flags);
+		fd_readiness_wake();
+		return (int)length;
+	}
 	flags = state_guard_enter();
 	if (state->send_busy) {
 		state_guard_leave(flags);

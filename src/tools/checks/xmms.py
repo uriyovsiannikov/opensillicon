@@ -19,9 +19,9 @@ files += [(str(f),'/usr/share/fonts/'+str(f.relative_to(fonts))) for f in sorted
 (p/'blobs.S').write_text('.section .rodata\n'+''.join(f'.global blob{i}_start,blob{i}_end\nblob{i}_start: .incbin "{f}"\nblob{i}_end:\n' for i,(f,_) in enumerate(files)))
 (p/'blobs.h').write_text(''.join(f'extern const unsigned char blob{i}_start[],blob{i}_end[];\n' for i in range(len(files)))+'static const struct {const char *name; const unsigned char *start,*end;} payload[]={\n'+''.join(f'{{"{name}",blob{i}_start,blob{i}_end}},\n' for i,(_,name) in enumerate(files))+'};\n')
 headers=subprocess.check_output(['gcc','-print-file-name=include'],text=True).strip()
-run('gcc','-O2','-ffreestanding','-fno-builtin','-fno-pie','-fno-stack-protector','-mno-red-zone','-nostdinc','-Isrc/user/libos/include','-Isrc/include','-I'+str(p),'-isystem',headers,'-c','src/tools/checks/xmms.c','-o',p/'init.o')
+run('gcc','-O2','-ffreestanding','-fno-builtin','-fno-pie','-fno-stack-protector','-mno-red-zone','-nostdinc','-Isrc/build/musl/sysroot/include','-Isrc/include','-I'+str(p),'-isystem',headers,'-c','src/tools/checks/xmms.c','-o',p/'init.o')
 run('gcc','-fno-pie','-c',p/'blobs.S','-o',p/'blobs.o')
-run('gcc','-nostdlib','-static','-no-pie','-Wl,-z,noexecstack','-T','src/user/c_linker.ld','src/build/libos/crt0.o',p/'init.o',p/'blobs.o','src/build/xmms/compat.o','-Wl,--start-group','src/build/xmms/player/libxmms/.libs/libxmms.a','src/build/xmms/prefix/lib/libglib.a','src/build/libos/liblibos.a','-lgcc','-Wl,--end-group','-o',p/'init.elf')
+run('gcc','-nostdlib','-static','-no-pie','-Wl,-z,noexecstack','-T','src/user/c_linker.ld','src/build/musl/sysroot/lib/crt1.o',p/'init.o',p/'blobs.o','src/build/xmms/compat.o','-Wl,--start-group','src/build/xmms/player/libxmms/.libs/libxmms.a','src/build/xmms/prefix/lib/libglib.a','src/build/musl/sysroot/lib/libc.a','-lgcc','-Wl,--end-group','-o',p/'init.elf')
 (p/'screen.ppm').unlink(missing_ok=True)
 p=Path('src/build/xmms/check'); iso=p/'iso'
 (iso/'EFI/BOOT').mkdir(parents=True,exist_ok=True);(iso/'boot').mkdir(exist_ok=True)

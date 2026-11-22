@@ -19,6 +19,7 @@ bool tty_console_input_set(bool acquire, uint64_t owner_pid, uint64_t parent_pid
 bool tty_console_input_owned(uint64_t owner_pid);
 bool tty_console_graphics_owned(uint64_t owner_pid);
 void tty_console_framebuffer_owner_exit(uint64_t owner_pid);
+int tty_flush_input(void);
 int tty_set_raw_mode(bool enabled);
 bool tty_raw_mode(void);
 _Noreturn void tty_console_loop(void);

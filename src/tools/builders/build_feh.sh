@@ -8,7 +8,7 @@ cc=${CC:-gcc}
 build_triplet=$(sh "$root/src/tools/pkg/repo/_src/twm/deps/libX11/config.guess")
 gcc_include=$($cc -print-file-name=include)
 cflags="-std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone"
-cppflags="-DOPEN_SILLICON -nostdinc -isystem $gcc_include -I$root/src/user/libos/include -I$root/src/user/libos/include/sys -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
+cppflags="-DOPEN_SILLICON -nostdinc -isystem $gcc_include -I$root/src/build/musl/sysroot/include -I$root/src/build/musl/sysroot/include/sys -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 
@@ -88,5 +88,5 @@ cd "$root/src/build/x11/feh"
 build_component "PKG feh" make ${feh_force:-} -C src -j2 curl=0 xinerama=0 exif=0 magic=0 mkstemps=0 verscmp=0 \
     PREFIX=/usr CC="$cc" \
     CFLAGS="$cflags $cppflags -I$prefix/include/freetype2 -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -include $root/src/build/x11/feh/opensillicon_config.h" \
-    LDFLAGS="-nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-T,$root/src/user/c_linker.ld $root/src/build/libos/crt0.o -L$prefix/lib -L$root/src/build/libz" \
-    LDLIBS="-Wl,--start-group $root/src/build/libos/liblibos.a $prefix/lib/libi18n.a -lImlib2 -lfreetype -lpng -ljpeg $root/src/build/libz/libz.a -lXext -lX11 -lxcb -lXau -Wl,--end-group -lgcc"
+    LDFLAGS="-nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-T,$root/src/user/c_linker.ld $root/src/build/musl/sysroot/lib/crt1.o -L$prefix/lib -L$root/src/build/libz" \
+    LDLIBS="-Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a -lImlib2 -lfreetype -lpng -ljpeg $root/src/build/libz/libz.a -lXext -lX11 -lxcb -lXau -Wl,--end-group -lgcc"

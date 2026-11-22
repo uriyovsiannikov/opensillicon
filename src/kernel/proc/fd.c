@@ -204,7 +204,7 @@ fd_find_free_descriptor(struct fd_table *table)
 
 	if (table == NULL)
 		return -FD_ERROR_EINVAL;
-	for (i = 3; i < FD_TABLE_CAPACITY; i++)
+	for (i = 0; i < FD_TABLE_CAPACITY; i++)
 		if (table->entries[i] == NULL)
 			return (int)i;
 	return -FD_ERROR_EMFILE;
@@ -236,7 +236,7 @@ fd_install_pair(struct fd_table *table, struct fd_object *first,
 	if (table == NULL || first == NULL || second == NULL || first == second ||
 	    first_descriptor == NULL || second_descriptor == NULL)
 		return -FD_ERROR_EINVAL;
-	for (i = 3; i < FD_TABLE_CAPACITY; i++) {
+	for (i = 0; i < FD_TABLE_CAPACITY; i++) {
 		if (table->entries[i] != NULL)
 			continue;
 		if (first_slot < 0)
@@ -358,7 +358,8 @@ fd_close(struct fd_table *table, uint64_t descriptor)
 }
 
 int
-fd_dup(struct fd_table *table, uint64_t source)
+fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
+	uint32_t flags)
 {
 	struct fd_object *object;
 	unsigned int descriptor;
@@ -366,7 +367,9 @@ fd_dup(struct fd_table *table, uint64_t source)
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    table->entries[source] == NULL)
 		return -FD_ERROR_EBADF;
-	for (descriptor = 0; descriptor < FD_TABLE_CAPACITY; descriptor++)
+	if (minimum >= FD_TABLE_CAPACITY || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
+		return -FD_ERROR_EINVAL;
+	for (descriptor = minimum; descriptor < FD_TABLE_CAPACITY; descriptor++)
 		if (table->entries[descriptor] == NULL)
 			break;
 	if (descriptor == FD_TABLE_CAPACITY)
@@ -374,8 +377,14 @@ fd_dup(struct fd_table *table, uint64_t source)
 	object = table->entries[source];
 	fd_object_get(object);
 	table->entries[descriptor] = object;
-	table->descriptor_flags[descriptor] = 0;
+	table->descriptor_flags[descriptor] = flags;
 	return (int)descriptor;
+}
+
+int
+fd_dup(struct fd_table *table, uint64_t source)
+{
+	return fd_dup_from(table, source, 0, 0);
 }
 
 int
@@ -466,6 +475,15 @@ fd_object_write_as(struct fd_object *object, const void *buffer, size_t length,
 		error = object->operations->prepare_write(object->context, uid);
 		if (error != 0)
 			return error;
+	}
+	/* Regular-file writes execute serially on the BSP. Select EOF and perform
+	 * this write in the same syscall, including writes through duplicated FDs. */
+	if (length && (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
+	    FD_STATUS_APPEND) && object->operations->stat != NULL) {
+		struct fd_metadata metadata;
+		error = object->operations->stat(object->context, &metadata);
+		if (error) return error;
+		if (metadata.type == VNODE_REGULAR) object->offset = metadata.size;
 	}
 	offset = object->offset;
 	error = object->operations->write(object->context, offset, buffer, length,

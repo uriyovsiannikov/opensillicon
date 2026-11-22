@@ -255,6 +255,9 @@ pipe_poll(void *context, uint32_t events)
 		if ((events & FD_POLL_ERROR) != 0 && pipe->readers == 0)
 			ready |= FD_POLL_ERROR;
 	}
+	if (endpoint->end == PIPE_END_READ && pipe->writers == 0 &&
+	    (events & FD_POLL_HANGUP) != 0)
+		ready |= FD_POLL_HANGUP;
 	spinlock_unlock_irqrestore(&pipe->lock, flags);
 	return ready;
 }

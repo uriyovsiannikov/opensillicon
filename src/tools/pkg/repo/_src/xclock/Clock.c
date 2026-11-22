@@ -793,7 +793,7 @@ ClassInitialize(void)
 #endif
 }
 
-/* libos supplies strftime but does not expose asctime. */
+/* libc supplies strftime but does not expose asctime. */
 static char *
 clock_asctime(const struct tm *tm)
 {

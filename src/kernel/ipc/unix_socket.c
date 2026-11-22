@@ -214,8 +214,8 @@ socket_poll(void *context, uint32_t events)
 		if ((events & FD_POLL_READ) != 0 &&
 		    (state->count != 0 || state->peer == NULL || state->peer->closed))
 			ready |= FD_POLL_READ;
-		if ((events & FD_POLL_ERROR) != 0)
-			ready |= FD_POLL_ERROR;
+		if ((events & FD_POLL_HANGUP) != 0)
+			ready |= FD_POLL_HANGUP;
 	} else if (!state->connected) {
 		/* Unconnected streams are neither readable nor writable. */
 	} else {

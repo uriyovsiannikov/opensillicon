@@ -5,7 +5,7 @@ cc=${CC:-gcc}
 source="$root/src/tools/pkg/repo/_src/htop/upstream"
 out="$root/src/build/htop"
 curses="$root/src/build/nano/ncurses"
-libos="$root/src/build/libos"
+libc="$root/src/build/musl/sysroot/lib"
 
 mkdir -p "$out"
 cd "$source"
@@ -23,11 +23,11 @@ for file in htop.c $files opensillicon/port.c; do
     "$cc" -std=gnu11 -O2 -DNDEBUG -ffreestanding -fno-builtin -fno-stack-protector \
         -fno-pie -m64 -mno-red-zone -U__linux__ -nostdinc \
         -Iopensillicon -I. -Iunsupported -I"$root/src/include" \
-        -I"$root/src/user/libos/include" -I"$curses/include" \
+        -I"$root/src/build/musl/sysroot/include" -I"$curses/include" \
         -isystem "$("$cc" -print-file-name=include)" -c "$file" -o "$object"
     set -- "$@" "$object"
 done
 "$cc" -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-    -Wl,-T,"$root/src/user/c_linker.ld" "$libos/crt0.o" "$@" \
-    -Wl,--start-group "$curses/lib/libncurses.a" "$libos/liblibos.a" \
+    -Wl,-T,"$root/src/user/c_linker.ld" "$libc/crt1.o" "$@" \
+    -Wl,--start-group "$curses/lib/libncurses.a" "$libc/libc.a" \
     -Wl,--end-group -lgcc -o "$out/htop"

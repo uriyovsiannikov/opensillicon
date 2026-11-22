@@ -5,6 +5,7 @@
 #include "kernel/process.h"
 #include "kernel/tcp_socket.h"
 #include "kernel/udp_socket.h"
+#include "kernel/unix_socket.h"
 #include "kernel/timer.h"
 #include "kernel/vmm.h"
 
@@ -14,6 +15,22 @@ syscall_net_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
+	case SYSCALL_SOCKET_KIND:
+		{
+			struct fd_object *object = fd_object_for_descriptor(
+			    current_fd_table(), frame->rdi);
+			if (object == NULL)
+				syscall_error(frame, EBADF);
+			else if (unix_socket_is_object(object))
+				frame->rax = OS_SOCKET_KIND_UNIX;
+			else if (tcp_socket_is_object(object))
+				frame->rax = OS_SOCKET_KIND_TCP;
+			else if (udp_socket_is_object(object))
+				frame->rax = OS_SOCKET_KIND_UDP;
+			else
+				syscall_error(frame, ENOTSOCK);
+		}
+		break;
 	case SYSCALL_UDP_SOCKET:
 		{
 			int result = udp_socket_create_fd(current_fd_table(),
@@ -148,7 +165,6 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			struct udp_socket_datagram datagram;
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
-			uint64_t start;
 			int result;
 			if (object == NULL) {
 				syscall_error(frame, EBADF);
@@ -171,25 +187,12 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, EFAULT);
 				break;
 			}
-			start = timer_ticks();
-			for (;;) {
-				result = udp_socket_peek(object, &datagram);
-				if (result == 0)
-					break;
-				if (result != -EAGAIN) {
-					syscall_error(frame, errno_from_kernel(result));
-					return frame;
-				}
-				result = udp_socket_poll();
-				if (result < 0) {
-					syscall_error(frame, errno_from_kernel(result));
-					return frame;
-				}
-				if (timer_ticks() - start >= UDP_SOCKET_POLL_TIMEOUT_TICKS) {
-					syscall_error(frame, ETIMEDOUT);
-					return frame;
-				}
-				timer_wait_for_interrupt();
+			result = udp_socket_peek(object, &datagram);
+			if (result == -EAGAIN && !fd_object_nonblocking(object))
+				return process_block_on_channel(frame, fd_readiness_wait_channel());
+			if (result != 0) {
+				syscall_error(frame, errno_from_kernel(result));
+				return frame;
 			}
 			if (datagram.length > frame->rdx) {
 				syscall_error(frame, EMSGSIZE);

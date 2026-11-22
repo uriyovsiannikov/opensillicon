@@ -10,8 +10,8 @@ main(int argc, char **argv)
 		fputs("usage: mount -t silliconfs /dev/ada0p2 /mnt\n", stderr);
 		return 2;
 	}
-	struct silliconfs_args args = {argv[3]};
-	if (mount(argv[2], argv[4], 0, &args) != 0) {
+
+	if (mount(argv[3], argv[4], argv[2], 0, NULL) != 0) {
 		fprintf(stderr, "mount: failed (errno %d)\n", errno);
 		return 1;
 	}

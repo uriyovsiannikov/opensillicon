@@ -202,7 +202,7 @@ if ! test "x$DEBUGGING" = xyes; then
 fi
 
 DIX_LIB='$(top_builddir)/dix/libdix.la'
-OS_LIB='$(top_builddir)/os/libos.la'
+OS_LIB='$(top_builddir)/os/libc.la'
 MI_LIB='$(top_builddir)/mi/libmi.la'
 MI_EXT_LIB='$(top_builddir)/mi/libmiext.la'
 MI_INC='-I$(top_srcdir)/mi'
@@ -232,7 +232,7 @@ AC_CHECK_FUNCS([clock_gettime], [have_clock_gettime=yes],
 AC_MSG_CHECKING([for a useful monotonic clock ...])
 
 if test "x$XOPENSILLICON" = "xyes"; then
-	# libos provides CLOCK_MONOTONIC, but configure cannot execute target code.
+	# libc provides CLOCK_MONOTONIC, but configure cannot execute target code.
 	MONOTONIC_CLOCK=yes
 	LIBS=""
 elif ! test "x$have_clock_gettime" = xno; then

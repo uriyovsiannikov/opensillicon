@@ -1,4 +1,4 @@
-noinst_LTLIBRARIES = libos.la
+noinst_LTLIBRARIES = libc.la
 
 AM_CFLAGS = $(DIX_CFLAGS)
 AM_CPPFLAGS = -I$(top_srcdir)/os/xtrans
@@ -6,7 +6,7 @@ AM_CPPFLAGS = -I$(top_srcdir)/os/xtrans
 STRLCAT_SOURCES = strlcat.c strlcpy.c
 XORG_SOURCES = log.c
 
-libos_la_SOURCES = 	\
+libc_la_SOURCES = 	\
 	WaitFor.c	\
 	access.c	\
 	auth.c		\
@@ -22,7 +22,7 @@ libos_la_SOURCES = 	\
 	$(XORG_SOURCES)
 
 if NEED_STRLCAT
-libos_la_SOURCES += $(STRLCAT_SOURCES)
+libc_la_SOURCES += $(STRLCAT_SOURCES)
 endif
 
 VENDORED_XTRANS_FILES = \

@@ -173,6 +173,8 @@ tcp_socket_poll_op(void *context, uint32_t events)
 		    tcp_state == TCP_STATE_CLOSE_WAIT) &&
 		    (flags & SOCKET_EVENT_TX_READY) != 0)
 			ready |= FD_POLL_WRITE;
+		if ((flags & SOCKET_EVENT_CLOSED) != 0)
+			ready |= FD_POLL_HANGUP;
 		if (state->connect_error != 0)
 			ready |= FD_POLL_WRITE | FD_POLL_ERROR;
 		if ((flags & SOCKET_EVENT_CLOSED) != 0 &&

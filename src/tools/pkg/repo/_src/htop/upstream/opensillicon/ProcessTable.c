@@ -36,7 +36,7 @@ void ProcessTable_delete(Object* cast) {
    free(this);
 }
 
-extern long __libos_call(long, long, long, long, long, long, long);
+extern long __libc_call(long, long, long, long, long, long, long);
 
 void ProcessTable_goThroughEntries(ProcessTable* super) {
    static const ProcessState states[] = {
@@ -46,7 +46,7 @@ void ProcessTable_goThroughEntries(ProcessTable* super) {
       [OS_PROCESS_ZOMBIE] = ZOMBIE,
    };
    struct os_process_info entries[OS_PROCESS_INFO_MAX];
-   long count = __libos_call(SYSCALL_PROCESS_INFO, (long)entries,
+   long count = __libc_call(SYSCALL_PROCESS_INFO, (long)entries,
                              OS_PROCESS_INFO_MAX, 0, 0, 0, 0);
    if (count < 0) {
       /* Keep the previous rows if a refresh fails. */

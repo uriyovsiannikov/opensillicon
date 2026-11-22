@@ -1821,6 +1821,8 @@ sfs_create(struct vnode *directory_node, const char *name, size_t name_length,
 
 	if (directory_node->type != VNODE_DIRECTORY)
 		return -SFS_ENOTDIR;
+	if (filesystem->inode_unlinked[parent_node->inode_number])
+		return -SFS_ENOENT;
 	if (name == NULL || name_length == 0 || name_length > VFS_NAME_MAX ||
 	    result == NULL || (type != VNODE_REGULAR && type != VNODE_DIRECTORY &&
 	    type != VNODE_SOCKET) ||

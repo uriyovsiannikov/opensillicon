@@ -9,6 +9,8 @@
 #define FD_POLL_READ 0x01U
 #define FD_POLL_WRITE 0x02U
 #define FD_POLL_ERROR 0x04U
+#define FD_POLL_HANGUP 0x08U
+#define FD_STATUS_APPEND 0x00000400U
 #define FD_STATUS_NONBLOCK 0x00000800U
 #define FD_DESCRIPTOR_CLOEXEC 0x00000001U
 
@@ -96,6 +98,8 @@ bool fd_object_nonblocking(const struct fd_object *object);
 void fd_readiness_wake(void);
 void *fd_readiness_wait_channel(void);
 int fd_close(struct fd_table *table, uint64_t descriptor);
+int fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
+	uint32_t flags);
 int fd_dup(struct fd_table *table, uint64_t source);
 int fd_dup2(struct fd_table *table, uint64_t source, uint64_t destination);
 int fd_read(struct fd_table *table, uint64_t descriptor, void *buffer,

@@ -17,7 +17,7 @@ temporary="$stamp.tmp.$$"
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 {
     find "$source/include" "$source/library" "$source/3rdparty" \
-        "$root/src/user/libos/include" -type f -print0 |
+        "$root/src/build/musl/sysroot/include" -type f -print0 |
         sort -z | xargs -0 sha256sum
     sha256sum "$0" "$port/opensillicon_mbedtls_config.h" "$port/tls_platform.c"
     "$cc" --version
@@ -27,7 +27,7 @@ if [ -f "$build/libmbedtls.a" ] && [ -f "$stamp" ] &&
     exit 0
 fi
 
-flags="-std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -nostdinc -isystem $("$cc" -print-file-name=include) -I$root/src/user/libos/include -I$source/include -I$source/library -I$source/3rdparty/everest/include -I$port -DMBEDTLS_CONFIG_FILE=\"opensillicon_mbedtls_config.h\""
+flags="-std=c11 -D_POSIX_C_SOURCE=200809L -O2 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -nostdinc -isystem $("$cc" -print-file-name=include) -I$root/src/build/musl/sysroot/include -I$source/include -I$source/library -I$source/3rdparty/everest/include -I$port -DMBEDTLS_CONFIG_FILE=\"opensillicon_mbedtls_config.h\""
 if [ "$target" = host ]; then
     flags="-std=c11 -O2 -D_POSIX_C_SOURCE=200809L -I$source/include -I$source/library -I$source/3rdparty/everest/include -I$port -DMBEDTLS_CONFIG_FILE=\"opensillicon_mbedtls_config.h\""
 fi

@@ -16,9 +16,9 @@ trap 'rm -f "$temporary"' EXIT HUP INT TERM
 {
     find "$s" "$root/src/user/thirdparty/mbedtls" \
         "$root/src/tools/pkg/repo/_src/twm/deps/freetype" \
-        "$root/src/user/libos/include" -type f ! -name '*.md' ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum
+        "$root/src/build/musl/sysroot/include" -type f ! -name '*.md' ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum
     sha256sum "$0" "$root/src/tools/builders/build_mbedtls.sh" \
-        "$root/src/build/libos/liblibos.a" "$root/src/build/libos/crt0.o" \
+        "$root/src/build/musl/sysroot/lib/libc.a" "$root/src/build/musl/sysroot/lib/crt1.o" \
         "$root/src/build/libz/libz.a" "$x/lib/libxcb.a" "$x/lib/libXau.a" \
         "$x/lib/libpng.a" "$x/lib/libjpeg.a"
     "$cc" --version
@@ -39,7 +39,7 @@ source = Path(sys.argv[1])
 source.rename(source.with_name("source.previous." + str(time.time_ns())))
 RESTART
 fi
-f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/user/libos/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxcb/include -I$p/include -I$x/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
+f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/build/musl/sysroot/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxcb/include -I$p/include -I$x/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
 export PKG_CONFIG_LIBDIR="$p/lib/pkgconfig:$x/lib/pkgconfig:$x/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 # Describe the actual native XCB build, which has no XDMCP or host pthread libs.
@@ -114,7 +114,7 @@ build_component "LIB TLS" sh "$root/src/tools/builders/build_mbedtls.sh"
 tls=$root/src/build/mbedtls
 tls_source=$root/src/user/thirdparty/mbedtls
 tls_port=$root/src/user/thirdparty/mbedtls/opensillicon
-# Link feature probes against libos, so host glibc cannot advertise functions
+# Link feature probes against libc, so host glibc cannot advertise functions
 # that the native runtime does not implement.
 cat > "$b/native-cc" <<WRAPPER
 #!/bin/sh
@@ -124,8 +124,8 @@ for argument do
     esac
 done
 exec "$cc" "\$@" -nostdlib -static -no-pie -Wl,--build-id=none \\
-    -Wl,-T,$root/src/user/c_linker.ld "$root/src/build/libos/crt0.o" \\
-    "$root/src/build/libos/liblibos.a" -lgcc
+    -Wl,-T,$root/src/user/c_linker.ld "$root/src/build/musl/sysroot/lib/crt1.o" \\
+    "$root/src/build/musl/sysroot/lib/libc.a" -lgcc
 WRAPPER
 chmod +x "$b/native-cc"
 build_component "LIB curl configure" cmake -S "$s/deps/curl" -B "$b/curl" \
@@ -166,15 +166,15 @@ build_component "LIB browser FreeType configure" cmake \
     -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
 build_component "LIB browser FreeType" cmake --build "$b/freetype" -j8
 build_component "LIB browser FreeType install" cmake --install "$b/freetype"
-build_component "LIB native runtime" make -C "$root" -j8 src/build/libos/liblibos.a
+build_component "LIB native runtime" make -C "$root" -j8 src/build/musl/sysroot/lib/libc.a
 # Supply native implementations for libraries requested by upstream makefiles.
-ar rcs "$p/lib/libm.a" "$root/src/build/libos/math/math.o"
-ar rcs "$p/lib/libiconv.a" "$root/src/build/libos/text/iconv.o"
+ar rcs "$p/lib/libm.a"
+ar rcs "$p/lib/libiconv.a"
 "$cc" $f -c "$s/opensillicon/runtime.c" -o "$b/runtime.o"
 if [ ! -f "$b/source/netsurf/Makefile" ]; then cp -a "$s/netsurf" "$b/source/"; fi
 cp "$s/opensillicon/Makefile.config" "$b/source/netsurf/Makefile.config"
 # Hold native libraries in a group: their dependency graph contains cycles.
-link="-flto -Os -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--gc-sections -Wl,-T,$s/opensillicon/linker.ld -Wl,--wrap=main $root/src/build/libos/crt0.o $b/runtime.o -L$p/lib -L$x/lib -L$root/src/build/libz -L$tls -Wl,--whole-archive $p/lib/libnsfb.a -Wl,--no-whole-archive -Wl,--start-group $root/src/build/libos/liblibos.a -lcss -ldom -lhubbub -lparserutils -lwapcaplet -lnsutils -lnspsl -lutf8proc -lnsbmp -lnsgif -lsvgtiny -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lexpat -lxcb-shm -lxcb-image -lxcb-icccm -lxcb-keysyms -lxcb-util -lxcb -lXau -lfreetype -lpng -ljpeg -lz -liconv -lgcc -Wl,--end-group"
+link="-flto -Os -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--gc-sections -Wl,-T,$s/opensillicon/linker.ld -Wl,--wrap=main $root/src/build/musl/sysroot/lib/crt1.o $b/runtime.o -L$p/lib -L$x/lib -L$root/src/build/libz -L$tls -Wl,--whole-archive $p/lib/libnsfb.a -Wl,--no-whole-archive -Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a -lcss -ldom -lhubbub -lparserutils -lwapcaplet -lnsutils -lnspsl -lutf8proc -lnsbmp -lnsgif -lsvgtiny -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lexpat -lxcb-shm -lxcb-image -lxcb-icccm -lxcb-keysyms -lxcb-util -lxcb -lXau -lfreetype -lpng -ljpeg -lz -liconv -lgcc -Wl,--end-group"
 CFLAGS="$f" \
     build_component "PKG NetSurf XCB" make -j8 -C "$b/source/netsurf" \
     TARGET=framebuffer HOST=OpenSillicon CC="$cc" CXX="${CXX:-g++}" CCACHE= \

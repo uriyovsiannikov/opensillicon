@@ -101,15 +101,9 @@ struct interrupt_frame *process_timer_preempt(
 struct interrupt_frame *process_reschedule_ipi(struct interrupt_frame *frame);
 struct interrupt_frame *process_fork(struct interrupt_frame *frame,
 	uint64_t *error);
-struct interrupt_frame *process_exec(struct interrupt_frame *frame,
-	uint64_t *error);
-struct interrupt_frame *process_exec_path(struct interrupt_frame *frame,
-	const char *path, uint64_t *error);
 struct interrupt_frame *process_exec_path_env(struct interrupt_frame *frame,
     const char *path, size_t argc, const char *const argv[],
     size_t envc, const char *const envp[], uint64_t *error);
-struct interrupt_frame *process_exec_path_argv(struct interrupt_frame *frame,
-	const char *path, size_t argc, const char *const argv[], uint64_t *error);
 struct interrupt_frame *process_sigreturn(struct interrupt_frame *frame,
 	uint64_t *error);
 struct interrupt_frame *process_prepare_user_return(

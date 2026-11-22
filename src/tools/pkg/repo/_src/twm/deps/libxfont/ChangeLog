@@ -279,7 +279,7 @@ commit 3b33588117c2ca3099b999939985ffe098d479b3
 Author: Alan Coopersmith <alan.coopersmith@oracle.com>
 Date:   Wed Nov 5 17:41:24 2014 -0800
 
-    Use 'imdent' to realign cpp indentation levels in fslibos.h
+    Use 'imdent' to realign cpp indentation levels in fslibc.h
     
     Parts were indented, others weren't, now is more consistent.
     'git diff -w' shows no non-whitespace changes in this commit

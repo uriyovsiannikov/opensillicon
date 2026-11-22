@@ -5,6 +5,34 @@
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
 
+/* Copy a terminated argv/envp vector once, without retaining user pointers. */
+static uint64_t
+copy_exec_vector(uint64_t vector, char *storage, size_t capacity,
+	const char **items, size_t limit, size_t *count)
+{
+	size_t used = 0;
+
+	*count = 0;
+	while (vector != 0) {
+		uint64_t address;
+		if (vector > UINT64_MAX - *count * sizeof(address) ||
+		    !vmm_copy_from_user(vmm_active_address_space(), &address,
+		    vector + *count * sizeof(address), sizeof(address)))
+			return ERRNO_EFAULT;
+		if (address == 0)
+			return 0;
+		if (*count == limit || used == capacity)
+			return ERRNO_E2BIG;
+		int rc = copy_user_string(address, storage + used, capacity - used);
+		if (rc != 0)
+			return rc == -(int)ERRNO_ENAMETOOLONG ? ERRNO_E2BIG : (uint64_t)-rc;
+		items[(*count)++] = storage + used;
+		while (storage[used++] != '\0')
+			;
+	}
+	return 0;
+}
+
 bool
 syscall_proc_local(struct interrupt_frame **result_frame)
 {
@@ -209,100 +237,42 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 	case SYSCALL_FORK:
 		frame = process_fork(frame, &error);
 		break;
-	case SYSCALL_EXEC:
-		frame = process_exec(frame, &error);
-		break;
-	case SYSCALL_EXEC_PATH:
-		{
-			char path[VFS_PATH_MAX];
-			int result = copy_user_string(frame->rdi, path, sizeof(path));
-
-			if (result != 0) {
-				syscall_error(frame, (uint64_t)(-result));
-				break;
-			}
-			frame = process_exec_path(frame, path, &error);
-		}
-		break;
 	case SYSCALL_EXECVE:
-	case SYSCALL_EXEC_PATH_ARGV:
 		{
 			char path[VFS_PATH_MAX];
 			char argument_storage[2048];
 			const char *arguments[16];
-			uint64_t argc = frame->rsi;
-			uint64_t vector = frame->rdx;
-			size_t used = 0;
-			size_t index;
-			int result = copy_user_string(frame->rdi, path, sizeof(path));
+			const char *environment[PROCESS_EXEC_ENV_MAX];
+			size_t argc, envc;
+			int rc = copy_user_string(frame->rdi, path, sizeof(path));
 
-			if (result != 0) {
-				syscall_error(frame, (uint64_t)(-result));
+			if (rc != 0) {
+				error = (uint64_t)-rc;
 				break;
 			}
-			if (argc == 0 || argc > 16) {
-				syscall_error(frame, ERRNO_E2BIG);
+			if (frame->rsi == 0) {
+				error = ERRNO_EFAULT;
 				break;
 			}
-			if (vector > UINT64_MAX - (argc + 1) * sizeof(uint64_t)) {
-				syscall_error(frame, ERRNO_EFAULT);
+			error = copy_exec_vector(frame->rsi, argument_storage,
+			    sizeof(argument_storage), arguments, 16, &argc);
+			if (error != 0)
+				break;
+			if (argc == 0) {
+				error = ERRNO_E2BIG;
 				break;
 			}
-			for (index = 0; index < argc; index++) {
-				uint64_t address;
-				size_t remaining = sizeof(argument_storage) - used;
-				size_t length = 0;
-				result = vmm_copy_from_user(vmm_active_address_space(),
-				    &address, vector + index * sizeof(address), sizeof(address)) ?
-				    0 : -ERRNO_EFAULT;
-				if (result == 0 && remaining != 0)
-					result = copy_user_string(address,
-					    argument_storage + used, remaining);
-				else if (result == 0)
-					result = -ERRNO_E2BIG;
-				if (result != 0) {
-					syscall_error(frame, result == -(int)ERRNO_ENAMETOOLONG ?
-					    ERRNO_E2BIG : (uint64_t)(-result));
-					break;
-				}
-				arguments[index] = argument_storage + used;
-				while (argument_storage[used + length] != '\0')
-					length++;
-				used += length + 1;
-			}
-			if (index != argc)
+			char *storage = kheap_alloc(PROCESS_EXEC_ENV_BYTES_MAX);
+			if (storage == NULL) {
+				error = ERRNO_ENOMEM;
 				break;
-			{
-				uint64_t terminator;
-				if (!vmm_copy_from_user(vmm_active_address_space(),
-				    &terminator, vector + argc * sizeof(terminator),
-				    sizeof(terminator)) || terminator != 0) {
-					syscall_error(frame, ERRNO_EFAULT);
-					break;
-				}
 			}
-            if(number==SYSCALL_EXECVE) {
-                const char *env[PROCESS_EXEC_ENV_MAX];
-                char *storage=kheap_alloc(PROCESS_EXEC_ENV_BYTES_MAX);
-                size_t envc=0,used_env=0;
-                int env_error=0;
-                if(!storage){syscall_error(frame,ERRNO_ENOMEM);break;}
-                while(frame->r10) {
-                    uint64_t address;
-                    if(frame->r10>UINT64_MAX-envc*sizeof(address) ||
-                        !vmm_copy_from_user(vmm_active_address_space(),&address,
-                            frame->r10+envc*sizeof(address),sizeof(address))) {env_error=ERRNO_EFAULT;break;}
-                    if(!address)break;
-                    if(envc==PROCESS_EXEC_ENV_MAX || used_env==PROCESS_EXEC_ENV_BYTES_MAX) {env_error=ERRNO_E2BIG;break;}
-                    int rc=copy_user_string(address,storage+used_env,PROCESS_EXEC_ENV_BYTES_MAX-used_env);
-                    if(rc) {env_error=rc==-(int)ERRNO_ENAMETOOLONG ? (int)ERRNO_E2BIG : -rc;break;}
-                    env[envc++]=storage+used_env;
-                    while(storage[used_env++]);
-                }
-                if(env_error)syscall_error(frame,(uint64_t)env_error);
-                else frame=process_exec_path_env(frame,path,(size_t)argc,arguments,envc,env,&error);
-                (void)kheap_free(storage);
-            } else frame=process_exec_path_argv(frame,path,(size_t)argc,arguments,&error);
+			error = copy_exec_vector(frame->rdx, storage,
+			    PROCESS_EXEC_ENV_BYTES_MAX, environment, PROCESS_EXEC_ENV_MAX, &envc);
+			if (error == 0)
+				frame = process_exec_path_env(frame, path, argc, arguments,
+				    envc, environment, &error);
+			(void)kheap_free(storage);
 		}
 		break;
 	case SYSCALL_WAITPID:

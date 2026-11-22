@@ -6,7 +6,7 @@ port="$root/src/tools/pkg/repo/_src/nano/upstream"
 out="$root/src/build/nano"
 mkdir -p "$out/app"
 cflags='-O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
-cppflags="-nostdinc -I$root/src/user/libos/include -isystem $($cc -print-file-name=include)"
+cppflags="-nostdinc -I$root/src/build/musl/sysroot/include -isystem $($cc -print-file-name=include)"
 cp "$port/config.h" "$out/app/config.h"
 printf '#define REVISION "9.3 (OpenSillicon)"\n' > "$out/app/revision.h"
 for source in "$port"/src/*.c; do
@@ -18,6 +18,6 @@ for source in "$port"/src/*.c; do
 done
 "$cc" $cflags $cppflags -c "$port/main.c" -o "$out/app/port_main.o"
 "$cc" -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-	-Wl,-T,"$root/src/user/c_linker.ld" "$root/src/build/libos/crt0.o" "$out"/app/*.o \
-	-Wl,--start-group "$out/ncurses/lib/libncurses.a" "$root/src/build/libos/liblibos.a" \
+	-Wl,-T,"$root/src/user/c_linker.ld" "$root/src/build/musl/sysroot/lib/crt1.o" "$out"/app/*.o \
+	-Wl,--start-group "$out/ncurses/lib/libncurses.a" "$root/src/build/musl/sysroot/lib/libc.a" \
 	-Wl,--end-group -lgcc -o "$out/nano"

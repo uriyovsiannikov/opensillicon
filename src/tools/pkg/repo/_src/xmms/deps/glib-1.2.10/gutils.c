@@ -535,7 +535,7 @@ g_get_any_init (void)
 	
 	if (!pw)
 	  {
-	    /* No passwd enumeration cursor in libos. */
+	    /* No passwd enumeration cursor in libc. */
 	    pw = getpwuid (getuid ());
 	    
 	  }

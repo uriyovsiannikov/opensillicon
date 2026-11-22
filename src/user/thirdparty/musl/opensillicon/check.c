@@ -1,0 +1,743 @@
+#include "abi/signal.h"
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/syscall.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <curses.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <netdb.h>
+#define hidden __attribute__((visibility("hidden")))
+#include "../src/network/lookup.h"
+#undef hidden
+#include "abi/syscall.h"
+extern long __os_raw(long,long,long,long,long,long,long);
+static _Thread_local int tls = 123;
+static int constructed;
+__attribute__((constructor)) static void construct(void) { constructed=42; }
+#define CHECK(condition) do { if (!(condition)) { fprintf(stderr,"MUSL_FAIL line %d: %s errno=%d\n",__LINE__,#condition,errno); return __LINE__%254+1; } } while (0)
+static int files_check(void)
+{
+ char cwd[256];
+ CHECK(getcwd(cwd,sizeof cwd) && !strcmp(cwd,"/"));
+ CHECK(mkdir("/musl-files",0700)==0);
+ CHECK(chdir("/musl-files")==0);
+ char *allocated_cwd=getcwd(NULL,0);
+ CHECK(allocated_cwd && !strcmp(allocated_cwd,"/musl-files"));
+ free(allocated_cwd);
+ int fd=open("data",O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC,0600);
+ CHECK(fd>=0);
+ CHECK(fcntl(fd,F_GETFD)&FD_CLOEXEC);
+ CHECK((fcntl(fd,F_GETFL)&O_ACCMODE)==O_RDWR);
+ CHECK(fcntl(fd,F_SETFD,0)==0 && fcntl(fd,F_GETFD)==0);
+ CHECK(fcntl(fd,F_SETFL,O_NONBLOCK)==0);
+ CHECK(fcntl(fd,F_GETFL)&O_NONBLOCK);
+ CHECK(write(fd,"abc",3)==3);
+ struct stat st;
+ CHECK(fstat(fd,&st)==0 && S_ISREG(st.st_mode) && st.st_size==3);
+ int copy=dup(fd);
+ CHECK(copy>=0 && lseek(copy,0,SEEK_SET)==0);
+ char buf[4]={0};
+ CHECK(read(fd,buf,3)==3 && !strcmp(buf,"abc"));
+ CHECK(close(copy)==0 && close(fd)==0);
+ errno=0;
+ CHECK(open("data",O_CREAT|O_EXCL|O_WRONLY,0600)==-1 && errno==EEXIST);
+ CHECK(stat("data",&st)==0 && st.st_size==3);
+ char canonical[256];
+ CHECK(realpath("./data",canonical)==canonical && !strcmp(canonical,"/musl-files/data"));
+ CHECK(readlink("data",canonical,sizeof canonical)==-1 && errno==EINVAL);
+ CHECK(realpath("missing",canonical)==NULL && errno==ENOENT);
+ CHECK(realpath("data/child",canonical)==NULL && errno==ENOTDIR);
+ CHECK(lstat("data",&st)==0 && S_ISREG(st.st_mode));
+ CHECK(chmod("data",0640)==0);
+ CHECK(stat("data",&st)==0 && (st.st_mode&0777)==0640);
+ CHECK(access("data",R_OK)==0);
+ FILE *f=fopen("data","w+");
+ CHECK(f);
+ char payload[10000];
+ for(size_t i=0;i<sizeof payload;i++) payload[i]=(char)(i%127);
+ CHECK(fwrite(payload,1,sizeof payload,f)==sizeof payload && fflush(f)==0);
+ CHECK(ftell(f)==sizeof payload && fseek(f,0,SEEK_SET)==0);
+ char result[10000];
+ CHECK(fread(result,1,sizeof result,f)==sizeof result);
+ CHECK(!memcmp(result,payload,sizeof result) && fclose(f)==0);
+ DIR *dir=opendir(".");
+ CHECK(dir);
+ CHECK(fcntl(dirfd(dir),F_GETFD)&FD_CLOEXEC);
+ CHECK(fstatat(dirfd(dir),"data",&st,0)==0 && st.st_size==sizeof payload);
+ int found=0;
+ struct dirent *entry;
+ errno=0;
+ while((entry=readdir(dir))) if(!strcmp(entry->d_name,"data")) found++;
+ CHECK(found==1 && errno==0);
+ rewinddir(dir);
+ found=0;
+ while((entry=readdir(dir))) if(!strcmp(entry->d_name,"data")) found++;
+ CHECK(found==1 && closedir(dir)==0);
+ /* Unsupported flags must fail before creating or truncating a file. */
+ errno=0;
+ CHECK(open("unsupported",O_CREAT|O_WRONLY|O_SYNC,0600)==-1 && errno==EOPNOTSUPP);
+ CHECK(stat("unsupported",&st)==-1 && errno==ENOENT);
+ CHECK(unlink("data")==0 && chdir("/")==0 && rmdir("/musl-files")==0);
+ return 0;
+}
+static int openat_check(void)
+{
+ CHECK(mkdir("/musl-at",0700)==0 && mkdir("/musl-at/child",0700)==0);
+ int dir=open("/musl-at",O_RDONLY|O_DIRECTORY|O_CLOEXEC);
+ CHECK(dir>=0 && (fcntl(dir,F_GETFD)&FD_CLOEXEC));
+ int nested=openat(dir,"child",O_RDONLY|O_DIRECTORY);
+ CHECK(nested>=0);
+ CHECK(chdir("/tmp")==0);
+ int fd=openat(nested,"file",O_RDWR|O_CREAT|O_EXCL|O_APPEND|O_CLOEXEC,0600);
+ CHECK(fd>=0 && (fcntl(fd,F_GETFL)&O_APPEND) && (fcntl(fd,F_GETFD)&FD_CLOEXEC));
+ CHECK(write(fd,"A",1)==1 && lseek(fd,0,SEEK_SET)==0 && write(fd,"B",1)==1);
+ CHECK(lseek(fd,0,SEEK_CUR)==2);
+ int other=openat(dir,"child/file",O_WRONLY|O_APPEND);
+ CHECK(other>=0 && write(other,"C",1)==1 && close(other)==0);
+ CHECK(lseek(fd,0,SEEK_SET)==0 && write(fd,"D",1)==1);
+ CHECK(fcntl(fd,F_SETFL,0)==0 && !(fcntl(fd,F_GETFL)&O_APPEND));
+ CHECK(lseek(fd,0,SEEK_SET)==0 && write(fd,"X",1)==1);
+ char text[8]={0};
+ CHECK(lseek(fd,0,SEEK_SET)==0 && read(fd,text,sizeof text)==4 && !strcmp(text,"XBCD"));
+ CHECK(openat(-1,"file",O_RDONLY)==-1 && errno==EBADF);
+ CHECK(openat(fd,"file",O_RDONLY)==-1 && errno==ENOTDIR);
+ CHECK(openat(dir,"",O_RDONLY)==-1 && errno==ENOENT);
+ other=openat(-1,"/musl-at/child/file",O_RDONLY);
+ CHECK(other>=0 && close(other)==0);
+ FILE *stream=fopen("/musl-at/child/file","a");
+ CHECK(stream && fputs("E",stream)>=0 && fclose(stream)==0);
+ CHECK(lseek(fd,0,SEEK_SET)==0 && read(fd,text,sizeof text)==5 && !memcmp(text,"XBCDE",5));
+ CHECK(close(fd)==0 && unlink("/musl-at/child/file")==0);
+ CHECK(close(nested)==0 && rmdir("/musl-at/child")==0);
+ CHECK(rmdir("/musl-at")==0 && mkdir("/musl-at",0700)==0);
+ CHECK(openat(dir,"replacement",O_CREAT|O_RDWR,0600)==-1 && errno==ENOENT);
+ CHECK(close(dir)==0 && rmdir("/musl-at")==0 && chdir("/")==0);
+ return 0;
+}
+static int directory_capability_check(void)
+{
+ CHECK(mkdir("/musl-cap",0755)==0 && mkdir("/musl-cap/child",0755)==0);
+ CHECK(chmod("/musl-cap/child",0777)==0);
+ int dir=open("/musl-cap/child",O_RDONLY|O_DIRECTORY);
+ CHECK(dir>=0 && chmod("/musl-cap",0000)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  if(setgid(1000) || setuid(1000)) _exit(98);
+  int denied=open("/musl-cap/child/new",O_WRONLY|O_CREAT,0600);
+  if(denied!=-1 || errno!=EACCES) _exit(99);
+  int file=openat(dir,"new",O_WRONLY|O_CREAT|O_EXCL,0600);
+  if(file<0 || write(file,"cap",3)!=3 || close(file)) _exit(100);
+  _exit(0);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ struct stat st;
+ CHECK(fstatat(dir,"new",&st,0)==0 && st.st_uid==1000 && st.st_size==3);
+ CHECK(chmod("/musl-cap",0755)==0 && close(dir)==0);
+ CHECK(unlink("/musl-cap/child/new")==0 && rmdir("/musl-cap/child")==0 && rmdir("/musl-cap")==0);
+ return 0;
+}
+static int concurrent_append_check(void)
+{
+ int file=open("/musl-append",O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC,0600);
+ CHECK(file>=0);
+ pid_t children[2];
+ for(unsigned id=0;id<2;id++) {
+  children[id]=fork(); CHECK(children[id]>=0);
+  if(!children[id]) {
+   close(file);
+   int writer=open("/musl-append",O_WRONLY|O_APPEND);
+   if(writer<0) _exit(101);
+   for(unsigned sequence=0;sequence<100;sequence++) {
+    uint32_t record[2]={id,sequence};
+    if(write(writer,record,sizeof record)!=sizeof record) _exit(102);
+   }
+   close(writer); _exit(0);
+  }
+ }
+ for(unsigned id=0;id<2;id++) {
+  int status;
+  CHECK(waitpid(children[id],&status,0)==children[id] && WIFEXITED(status) && !WEXITSTATUS(status));
+ }
+ unsigned counts[2]={0};
+ for(unsigned i=0;i<200;i++) {
+  uint32_t record[2];
+  CHECK(read(file,record,sizeof record)==sizeof record && record[0]<2);
+  CHECK(record[1]==counts[record[0]]++);
+ }
+ char extra;
+ CHECK(counts[0]==100 && counts[1]==100 && read(file,&extra,1)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  char descriptor[16]; snprintf(descriptor,sizeof descriptor,"%d",file);
+  char *args[]={"musl-fd-check","--cloexec-check",descriptor,NULL};
+  execv("/sbin/init",args); _exit(103);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==29);
+ CHECK(close(file)==0 && unlink("/musl-append")==0);
+ return 0;
+}
+static int duplication_check(void)
+{
+ int source=open("/musl-dup",O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC,0600);
+ CHECK(source>=0 && write(source,"AB",2)==2 && lseek(source,0,SEEK_SET)==0);
+ int plain=fcntl(source,F_DUPFD,20), flagged=fcntl(source,F_DUPFD_CLOEXEC,20);
+ CHECK(plain==20 && flagged==21);
+ CHECK(fcntl(plain,F_GETFD)==0 && (fcntl(flagged,F_GETFD)&FD_CLOEXEC));
+ char value;
+ CHECK(read(plain,&value,1)==1 && value=='A' && read(flagged,&value,1)==1 && value=='B');
+ CHECK(dup2(flagged,flagged)==flagged && (fcntl(flagged,F_GETFD)&FD_CLOEXEC));
+ CHECK(dup3(flagged,flagged,O_CLOEXEC)==-1 && errno==EINVAL);
+ CHECK(dup3(source,plain,O_NONBLOCK)==-1 && errno==EINVAL);
+ CHECK(fcntl(plain,F_GETFD)==0);
+ CHECK(dup3(source,plain,O_CLOEXEC)==plain && (fcntl(plain,F_GETFD)&FD_CLOEXEC));
+ CHECK(dup3(-1,plain,0)==-1 && errno==EBADF);
+ CHECK(fcntl(plain,F_GETFD)&FD_CLOEXEC);
+ CHECK(syscall(SYS_dup3,source,plain,0)==plain && fcntl(plain,F_GETFD)==0);
+ CHECK(fcntl(source,F_DUPFD,-1)==-1 && errno==EINVAL);
+ CHECK(fcntl(source,F_DUPFD_CLOEXEC,1000)==-1 && errno==EINVAL);
+ CHECK(close(plain)==0 && close(flagged)==0);
+ int channel[2]; CHECK(pipe2(channel,O_CLOEXEC|O_NONBLOCK)==0);
+ CHECK((fcntl(channel[0],F_GETFD)&FD_CLOEXEC) && (fcntl(channel[1],F_GETFD)&FD_CLOEXEC));
+ CHECK((fcntl(channel[0],F_GETFL)&(O_ACCMODE|O_NONBLOCK))==(O_RDONLY|O_NONBLOCK));
+ CHECK((fcntl(channel[1],F_GETFL)&(O_ACCMODE|O_NONBLOCK))==(O_WRONLY|O_NONBLOCK));
+ CHECK(read(channel[0],&value,1)==-1 && errno==EAGAIN);
+ CHECK(write(channel[1],"Q",1)==1 && read(channel[0],&value,1)==1 && value=='Q');
+ CHECK(close(channel[0])==0 && close(channel[1])==0);
+ channel[0]=123; channel[1]=456;
+ CHECK(pipe2(channel,O_APPEND)==-1 && errno==EINVAL && channel[0]==123 && channel[1]==456);
+ CHECK(syscall(SYS_pipe2,1,O_CLOEXEC)==-1 && errno==EFAULT);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  close(0); close(1); close(2);
+  int file=open("/musl-dup",O_RDONLY);
+  if(file!=0) _exit(105);
+  int pair[2];
+  if(pipe2(pair,O_CLOEXEC) || pair[0]!=1 || pair[1]!=2) _exit(106);
+  close(pair[0]); close(pair[1]); close(file);
+  if(fcntl(source,F_DUPFD_CLOEXEC,0)!=0) _exit(107);
+  _exit(0);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ int filled[128], count=0;
+ while(count<128) {
+  int fd=fcntl(source,F_DUPFD_CLOEXEC,0);
+  if(fd<0)break;
+  filled[count++]=fd;
+ }
+ CHECK(count<128 && errno==EMFILE);
+ channel[0]=123; channel[1]=456;
+ CHECK(pipe2(channel,0)==-1 && errno==EMFILE && channel[0]==123 && channel[1]==456);
+ for(int i=0;i<count;i++) CHECK(close(filled[i])==0);
+ CHECK(close(source)==0 && unlink("/musl-dup")==0);
+ return 0;
+}
+static volatile sig_atomic_t signals_received, signal_mask_ok;
+static void handle_usr1(int signo)
+{
+ sigset_t blocked;
+ if(signo==SIGUSR1 && sigprocmask(SIG_SETMASK,NULL,&blocked)==0 &&
+     sigismember(&blocked,SIGUSR1)==1) signal_mask_ok=1;
+ signals_received++;
+}
+static int signals_check(void)
+{
+ struct sigaction action={.sa_handler=handle_usr1}, previous, queried;
+ sigemptyset(&action.sa_mask);
+ CHECK(sigaction(SIGUSR1,&action,&previous)==0);
+ CHECK(sigaction(SIGUSR1,NULL,&queried)==0 && queried.sa_handler==handle_usr1);
+ CHECK(raise(SIGUSR1)==0 && signals_received==1 && signal_mask_ok);
+ sigset_t mask;
+ sigemptyset(&mask);
+ sigaddset(&mask,SIGUSR1);
+ CHECK(sigprocmask(SIG_BLOCK,&mask,NULL)==0);
+ CHECK(kill(getpid(),SIGUSR1)==0 && signals_received==1);
+ CHECK(sigprocmask(SIG_UNBLOCK,&mask,NULL)==0 && signals_received==2);
+ CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
+ CHECK(signal(SIGPIPE,SIG_IGN)!=SIG_ERR && raise(SIGPIPE)==0);
+ action.sa_flags=SA_SIGINFO;
+ CHECK(sigaction(SIGUSR1,&action,NULL)==-1 && errno==EOPNOTSUPP);
+ return 0;
+}
+static volatile sig_atomic_t usr2_count, custom_mask_valid, usr1_inside;
+static void handle_usr2(int signo)
+{
+ if(signo==SIGUSR2) usr2_count++;
+}
+static void handle_masked_usr1(int signo)
+{
+ sigset_t blocked;
+ if(signo==SIGUSR1 && sigprocmask(SIG_SETMASK,NULL,&blocked)==0 &&
+     sigismember(&blocked,SIGUSR1)==1 && sigismember(&blocked,SIGUSR2)==1 &&
+     sigismember(&blocked,SIGKILL)==0) custom_mask_valid=1;
+ if(kill(getpid(),SIGUSR2)==0 && usr2_count==0) usr1_inside=1;
+}
+static int signal_action_check(void)
+{
+ struct sigaction usr2={.sa_handler=handle_usr2}, usr1={.sa_handler=handle_masked_usr1};
+ struct sigaction old1,old2,queried;
+ sigemptyset(&usr1.sa_mask); sigemptyset(&usr2.sa_mask);
+ sigaddset(&usr1.sa_mask,SIGUSR2); sigaddset(&usr1.sa_mask,SIGKILL);
+ sigaddset(&usr1.sa_mask,SIGSTOP);
+ CHECK(sigaction(SIGUSR2,&usr2,&old2)==0 && sigaction(SIGUSR1,&usr1,&old1)==0);
+ CHECK(sigaction(SIGUSR1,NULL,&queried)==0 && sigismember(&queried.sa_mask,SIGUSR2)==1 &&
+     sigismember(&queried.sa_mask,SIGKILL)==0 && sigismember(&queried.sa_mask,SIGSTOP)==0);
+ CHECK(raise(SIGUSR1)==0 && custom_mask_valid && usr1_inside && usr2_count==1);
+ sigset_t blocked;
+ CHECK(sigprocmask(SIG_SETMASK,NULL,&blocked)==0 && !sigismember(&blocked,SIGUSR2));
+ struct { struct os_signal_action action; uint64_t guard; } native={.guard=0xabcdef9876543210ULL};
+ CHECK(__os_raw(SYSCALL_SIGACTION,SIGUSR1,0,(long)&native.action,0,0,0)==0);
+ CHECK(native.action.handler==(uintptr_t)handle_masked_usr1 && native.guard==0xabcdef9876543210ULL);
+ CHECK(native.action.mask & (1ULL << SIGUSR2));
+ CHECK(sigaction(SIGUSR1,&old1,NULL)==0 && sigaction(SIGUSR2,&old2,NULL)==0);
+ CHECK(sigaction(SIGUSR1,NULL,NULL)==0);
+ struct sigaction default_action={.sa_handler=SIG_DFL};
+ CHECK(sigaction(SIGKILL,&default_action,NULL)==-1 && errno==EINVAL);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  struct sigaction once={.sa_handler=handle_usr2,.sa_flags=SA_RESETHAND};
+  sigemptyset(&once.sa_mask);
+  int before=usr2_count;
+  if(sigaction(SIGUSR2,&once,NULL) || raise(SIGUSR2) || usr2_count!=before+1) _exit(108);
+  struct sigaction current;
+  if(sigaction(SIGUSR2,NULL,&current) || current.sa_handler!=SIG_DFL) _exit(109);
+  raise(SIGUSR2); _exit(110);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFSIGNALED(status) && WTERMSIG(status)==SIGUSR2);
+ return 0;
+}
+static volatile sig_atomic_t nested_depth, nested_peak, nested_calls, nested_bad;
+static pid_t nested_pid;
+static void handle_nested(int signo)
+{
+ int depth=++nested_depth;
+ if(depth>nested_peak) nested_peak=depth;
+ nested_calls++;
+ sigset_t blocked;
+ if(signo!=SIGUSR1 || sigprocmask(SIG_SETMASK,NULL,&blocked) ||
+     sigismember(&blocked,SIGUSR1)) nested_bad=1;
+ uint64_t marker=0x1234567800000000ULL+(unsigned)depth, observed;
+ volatile uint64_t stack_cookie=marker;
+ __asm__ volatile("movq %0, %%xmm15" : : "r"(marker) : "xmm15");
+ if(depth<4 && nested_calls<10) {
+  long number=SYSCALL_KILL;
+  __asm__ volatile("int $0x80" : "+a"(number) : "D"((long)nested_pid),
+      "S"((long)SIGUSR1) : "memory","cc","rcx","r11");
+  if(number) nested_bad=1;
+ }
+ __asm__ volatile("movq %%xmm15, %0" : "=r"(observed));
+ if(observed!=marker || stack_cookie!=marker) nested_bad=1;
+ nested_depth--;
+}
+static volatile sig_atomic_t signal_child, signal_child_pid;
+static void handle_forking_signal(int signo)
+{
+ (void)signo;
+ pid_t child=fork();
+ if(!child) signal_child=1;
+ else signal_child_pid=child;
+}
+static void handle_overflow_signal(int signo)
+{
+ (void)signo;
+ kill(getpid(),SIGUSR1);
+}
+static int nested_signal_check(void)
+{
+ nested_pid=getpid();
+ struct sigaction action={.sa_handler=handle_nested,.sa_flags=SA_NODEFER}, previous;
+ sigemptyset(&action.sa_mask);
+ CHECK(sigaction(SIGUSR1,&action,&previous)==0);
+ long number=SYSCALL_KILL;
+ unsigned char near_ok,far_ok;
+ uint64_t cookie=0xdeadbeefabcdef01ULL;
+ /* Signals must preserve the entire SysV red zone, even though the port's
+  * C code normally uses -mno-red-zone. */
+ __asm__ volatile("movq %[cookie], -8(%%rsp); movq %[cookie], -128(%%rsp);"
+     "int $0x80; cmpq %[cookie], -8(%%rsp); sete %[near_ok];"
+     "cmpq %[cookie], -128(%%rsp); sete %[far_ok]"
+     : "+a"(number), [near_ok]"=&q"(near_ok), [far_ok]"=&q"(far_ok)
+     : "D"((long)nested_pid), "S"((long)SIGUSR1), [cookie]"r"(cookie)
+     : "memory","cc","rcx","r11");
+ CHECK(number==0 && near_ok && far_ok);
+ CHECK(nested_depth==0 && nested_peak==4 && nested_calls==4 && !nested_bad);
+ action.sa_handler=handle_forking_signal; action.sa_flags=0;
+ CHECK(sigaction(SIGUSR1,&action,NULL)==0 && raise(SIGUSR1)==0);
+ if(signal_child) _exit(0);
+ CHECK(signal_child_pid>0);
+ int status;
+ CHECK(waitpid(signal_child_pid,&status,0)==signal_child_pid &&
+     WIFEXITED(status) && !WEXITSTATUS(status));
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  action.sa_handler=handle_overflow_signal; action.sa_flags=SA_NODEFER;
+  if(sigaction(SIGUSR1,&action,NULL)) _exit(111);
+  raise(SIGUSR1); _exit(112);
+ }
+ CHECK(waitpid(child,&status,0)==child && WIFSIGNALED(status) && WTERMSIG(status)==SIGSEGV);
+ CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
+ return 0;
+}
+static int process_check(void)
+{
+ sigset_t set, old, current;
+ sigemptyset(&set);
+ sigaddset(&set,SIGUSR1);
+ CHECK(sigprocmask(SIG_BLOCK,&set,&old)==0);
+ CHECK(sigprocmask(SIG_SETMASK,NULL,&current)==0);
+ CHECK(sigismember(&current,SIGUSR1)==1);
+ CHECK(sigprocmask(SIG_SETMASK,&old,NULL)==0);
+ CHECK(getuid()==0 && geteuid()==0 && getgid()==0 && getegid()==0);
+ int channel[2];
+ CHECK(pipe(channel)==0);
+ pid_t parent=getpid(), child=fork();
+ CHECK(child>=0);
+ if(!child) {
+  if(getpid()==parent || getppid()!=parent || tls!=456) _exit(80);
+  tls=789;
+  if(close(channel[0]) || write(channel[1],"F",1)!=1) _exit(81);
+  _exit(143); /* Must remain a regular exit, not SIGTERM. */
+ }
+ CHECK(close(channel[1])==0);
+ char value=0;
+ CHECK(read(channel[0],&value,1)==1 && value=='F' && close(channel[0])==0);
+ struct { int status; unsigned guard; } result={-1,0xabcdef01};
+ CHECK(waitpid(child,&result.status,0)==child);
+ CHECK(WIFEXITED(result.status) && WEXITSTATUS(result.status)==143);
+ CHECK(result.guard==0xabcdef01 && tls==456);
+ CHECK(waitpid(child,NULL,WNOHANG)==-1 && errno==ECHILD);
+ child=fork();
+ CHECK(child>=0);
+ if(!child) { for(;;) { struct timespec t={1,0}; nanosleep(&t,NULL); } }
+ CHECK(waitpid(child,&result.status,WNOHANG)==0);
+ CHECK(kill(child,SIGTERM)==0 && waitpid(child,&result.status,0)==child);
+ CHECK(WIFSIGNALED(result.status) && WTERMSIG(result.status)==SIGTERM);
+ child=fork();
+ CHECK(child>=0);
+ if(!child) {
+  char *args[]={"musl-exec-check","--exec-check",NULL};
+  char *env[]={"MUSL_EXEC_CHECK=present",NULL};
+  execve("/sbin/init",args,env);
+  _exit(82);
+ }
+ CHECK(waitpid(child,(int *)1,0)==-1 && errno==EFAULT);
+ CHECK(waitpid(child,&result.status,0)==child);
+ CHECK(WIFEXITED(result.status) && WEXITSTATUS(result.status)==27);
+ child=fork();
+ CHECK(child>=0);
+ if(!child) _exit(59);
+ struct { int status; unsigned guard; } native={0,0xaabbccdd};
+ CHECK(__os_raw(SYSCALL_WAITPID,child,(long)&native.status,0,0,0,0)==child);
+ CHECK(WIFEXITED(native.status) && WEXITSTATUS(native.status)==59 && native.guard==0xaabbccdd);
+ return 0;
+}
+static int terminal_check(void)
+{
+ int pair[2];
+ CHECK(__os_raw(SYSCALL_PTY_PAIR,(long)pair,0,0,0,0,0)==0);
+ struct termios tty;
+ CHECK(tcgetattr(pair[1],&tty)==0 && (tty.c_lflag&ICANON));
+ CHECK(tty.c_cc[VINTR]==3 && tty.c_cc[VEOF]==4 && tty.c_cc[VERASE]==127);
+ struct winsize size={.ws_row=37,.ws_col=91}, retrieved;
+ CHECK(ioctl(pair[1],TIOCSWINSZ,&size)==0 && ioctl(pair[1],TIOCGWINSZ,&retrieved)==0);
+ CHECK(retrieved.ws_row==37 && retrieved.ws_col==91);
+ cfmakeraw(&tty);
+ CHECK(tcsetattr(pair[1],TCSANOW,&tty)==0);
+ CHECK(tcgetattr(pair[1],&tty)==0 && !(tty.c_lflag&ICANON) && !(tty.c_lflag&ECHO));
+ CHECK(write(pair[0],"R",1)==1);
+ int available=0;
+ CHECK(ioctl(pair[1],FIONREAD,&available)==0 && available==1);
+ char value;
+ CHECK(read(pair[1],&value,1)==1 && value=='R');
+ CHECK(isatty(pair[1]));
+ CHECK(write(pair[0],"pending",7)==7);
+ CHECK(tcsetattr(pair[1],TCSADRAIN,&tty)==0);
+ CHECK(ioctl(pair[1],FIONREAD,&available)==0 && available==7);
+ CHECK(tcsetattr(pair[1],TCSAFLUSH,&tty)==0);
+ CHECK(ioctl(pair[1],FIONREAD,&available)==0 && available==0);
+ CHECK(write(pair[0],"discard",7)==7 && tcflush(pair[1],TCIFLUSH)==0);
+ CHECK(ioctl(pair[1],FIONREAD,&available)==0 && available==0);
+ CHECK(tcflush(pair[1],99)==-1 && errno==EINVAL);
+ CHECK(write(pair[1],"output",6)==6 && tcdrain(pair[1])==0);
+ char output[8]={0};
+ CHECK(read(pair[0],output,6)==6 && !strcmp(output,"output"));
+ tty.c_cc[VERASE]='x'; tty.c_cc[VEOF]='z';
+ tty.c_lflag|=ICANON; tty.c_lflag&=~ECHO;
+ CHECK(cfsetospeed(&tty,B9600)==0 && tcsetattr(pair[1],TCSANOW,&tty)==0);
+ struct termios roundtrip;
+ CHECK(tcgetattr(pair[1],&roundtrip)==0 && cfgetospeed(&roundtrip)==B9600 &&
+     roundtrip.c_cc[VERASE]=='x' && roundtrip.c_cc[VEOF]=='z');
+ CHECK(write(pair[0],"abxc\n",5)==5);
+ memset(output,0,sizeof output);
+ CHECK(read(pair[1],output,sizeof output)==3 && !strcmp(output,"ac\n"));
+ CHECK(write(pair[0],"z",1)==1 && read(pair[1],output,sizeof output)==0);
+ CHECK(close(pair[0])==0 && close(pair[1])==0);
+ return 0;
+}
+static int curses_check(void)
+{
+ CHECK(setenv("TERM","xterm-256color",1)==0);
+ SCREEN *screen=newterm(NULL,stdout,stdin);
+ CHECK(screen);
+ CHECK(cbreak()==OK && noecho()==OK);
+ CHECK(mvaddstr(1,2,"musl ncurses check")==OK && refresh()==OK);
+ CHECK(endwin()==OK);
+ delscreen(screen);
+ return 0;
+}
+static int poll_check(void)
+{
+ int channel[2]; CHECK(pipe(channel)==0);
+ struct pollfd fds[3]={{channel[0],POLLIN,0},{-1,POLLIN,99},{12345,0,0}};
+ CHECK(poll(fds,3,1000)==1 && fds[2].revents==POLLNVAL && !fds[1].revents);
+ CHECK(poll(fds,1,0)==0 && !fds[0].revents);
+ CHECK(write(channel[1],"P",1)==1);
+ CHECK(poll(fds,1,1000)==1 && (fds[0].revents&POLLIN));
+ CHECK(close(channel[1])==0);
+ CHECK(poll(fds,1,0)==1 && (fds[0].revents&POLLHUP) && (fds[0].revents&POLLIN));
+ char value; CHECK(read(channel[0],&value,1)==1 && value=='P');
+ fds[0].events=0;
+ CHECK(poll(fds,1,0)==1 && fds[0].revents==POLLHUP);
+ CHECK(close(channel[0])==0);
+ CHECK(syscall(SYS_poll,1,1,0)==-1 && errno==EFAULT);
+ CHECK(poll(NULL,1025,0)==-1 && errno==EINVAL);
+ struct timespec before,after;
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&before)==0 && poll(NULL,0,30)==0);
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&after)==0);
+ CHECK((after.tv_sec-before.tv_sec)*1000000000L+after.tv_nsec-before.tv_nsec>=20000000);
+ struct sigaction action={.sa_handler=handle_usr1}, previous;
+ sigemptyset(&action.sa_mask);
+ CHECK(sigaction(SIGUSR1,&action,&previous)==0);
+ pid_t parent=getpid(), child=fork(); CHECK(child>=0);
+ if(!child) {
+  struct timespec delay={0,50000000}; nanosleep(&delay,NULL);
+  _exit(kill(parent,SIGUSR1)==0 ? 0 : 94);
+ }
+ CHECK(poll(NULL,0,-1)==-1 && errno==EINTR);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
+ return 0;
+}
+static int dns_check(void)
+{
+ struct resolvconf conf;
+ unsigned char dhcp_dns[4];
+ CHECK(__os_raw(SYSCALL_NET_GET_DNS_SERVER,(long)dhcp_dns,0,0,0,0,0)==0);
+ CHECK(__get_resolv_conf(&conf,NULL,0)==0 && conf.nns==1 &&
+     conf.ns[0].family==AF_INET && !memcmp(conf.ns[0].addr,dhcp_dns,4));
+ unsigned char config[12];
+ CHECK(__os_raw(SYSCALL_NET_GET_IPV4_CONFIG,(long)config,0,0,0,0,0)==0);
+ int server=socket(AF_INET,SOCK_DGRAM,0);
+ CHECK(server>=0);
+ struct sockaddr_in address={.sin_family=AF_INET,.sin_port=htons(53)};
+ memcpy(&address.sin_addr,config,4);
+ CHECK(bind(server,(struct sockaddr *)&address,sizeof address)==0);
+ FILE *resolv=fopen("/etc/resolv.conf","w"); CHECK(resolv);
+ CHECK(fprintf(resolv,"nameserver %u.%u.%u.%u\noptions timeout:1 attempts:1\n",config[0],config[1],config[2],config[3])>0);
+ CHECK(fclose(resolv)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  unsigned char packet[512]; struct sockaddr_in peer; socklen_t size=sizeof peer;
+  int received=recvfrom(server,packet,sizeof packet,0,(struct sockaddr *)&peer,&size);
+  if(received<17 || received>480) _exit(95);
+  size_t end=12;
+  while(end<(size_t)received && packet[end]) end+=packet[end]+1;
+  end+=5;
+  if(end>(size_t)received || end+16>sizeof packet) _exit(96);
+  packet[2]=0x81; packet[3]=0x80; packet[6]=0; packet[7]=1;
+  packet[8]=packet[9]=packet[10]=packet[11]=0;
+  const unsigned char answer[]={0xc0,0x0c,0,1,0,1,0,0,0,1,0,4,192,0,2,42};
+  memcpy(packet+end,answer,sizeof answer);
+  int sent=sendto(server,packet,end+sizeof answer,0,(struct sockaddr *)&peer,size);
+  close(server); _exit(sent==(int)(end+sizeof answer) ? 0 : 97);
+ }
+ CHECK(close(server)==0);
+ struct addrinfo hints={.ai_family=AF_INET,.ai_socktype=SOCK_STREAM}, *result=NULL;
+ int resolved=getaddrinfo("musl-port.test","80",&hints,&result);
+ if(resolved) fprintf(stderr,"DNS result %d: %s\n",resolved,gai_strerror(resolved));
+ CHECK(resolved==0 && result && result->ai_family==AF_INET);
+ struct sockaddr_in *in=(void *)result->ai_addr;
+ const unsigned char expected[]={192,0,2,42};
+ CHECK(!memcmp(&in->sin_addr,expected,4) && ntohs(in->sin_port)==80);
+ freeaddrinfo(result);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ CHECK(unlink("/etc/resolv.conf")==0);
+ CHECK(__get_resolv_conf(&conf,NULL,0)==0 && !memcmp(conf.ns[0].addr,dhcp_dns,4));
+ return 0;
+}
+static int network_check(void)
+{
+ struct sockaddr_un address={.sun_family=AF_UNIX,.sun_path="/musl-socket"};
+ int server=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
+ CHECK(server>=0 && (fcntl(server,F_GETFD)&FD_CLOEXEC));
+ CHECK(fcntl(server,F_GETFL)&O_NONBLOCK);
+ CHECK(bind(server,(struct sockaddr *)&address,sizeof address)==0 && listen(server,2)==0);
+ CHECK(accept(server,NULL,NULL)==-1 && errno==EAGAIN);
+ int type=0; socklen_t length=sizeof type;
+ CHECK(getsockopt(server,SOL_SOCKET,SO_TYPE,&type,&length)==0 && type==SOCK_STREAM);
+ int duplicate=dup(server);
+ CHECK(duplicate>=0);
+ length=sizeof type;
+ CHECK(getsockopt(duplicate,SOL_SOCKET,SO_DOMAIN,&type,&length)==0 && type==AF_UNIX);
+ CHECK(close(duplicate)==0);
+ pid_t child=fork();
+ CHECK(child>=0);
+ if(!child) {
+  close(server);
+  int client=socket(AF_UNIX,SOCK_STREAM,0);
+  if(client<0 || connect(client,(struct sockaddr *)&address,sizeof address)) _exit(90);
+  if(send(client,"hello",5,0)!=5) _exit(91);
+  char reply[3]={0};
+  if(recv(client,reply,2,0)!=2 || strcmp(reply,"ok")) _exit(92);
+  close(client);
+  _exit(0);
+ }
+ fd_set reads;
+ FD_ZERO(&reads); FD_SET(server,&reads);
+ struct timeval timeout={2,0};
+ CHECK(select(server+1,&reads,NULL,NULL,&timeout)==1 && FD_ISSET(server,&reads));
+ int peer=accept4(server,NULL,NULL,SOCK_CLOEXEC);
+ CHECK(peer>=0 && (fcntl(peer,F_GETFD)&FD_CLOEXEC));
+ FD_ZERO(&reads); FD_SET(peer,&reads);
+ timeout=(struct timeval){2,0};
+ CHECK(select(peer+1,&reads,NULL,NULL,&timeout)==1);
+ fd_set writes;
+ FD_ZERO(&reads); FD_SET(peer,&reads);
+ FD_ZERO(&writes); FD_SET(peer,&writes);
+ timeout=(struct timeval){0};
+ CHECK(select(peer+1,&reads,&writes,NULL,&timeout)==2);
+ char message[6]={0};
+ CHECK(recv(peer,message,5,0)==5 && !strcmp(message,"hello"));
+ CHECK(send(peer,"ok",2,0)==2);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ CHECK(recv(peer,message,sizeof message,0)==0);
+ CHECK(shutdown(peer,SHUT_RDWR)==0 && close(peer)==0 && close(server)==0);
+ CHECK(unlink(address.sun_path)==0);
+ unsigned char config[12];
+ int configured=0;
+ for(int i=0;i<100;i++) {
+  if(__os_raw(SYSCALL_NET_GET_IPV4_CONFIG,(long)config,0,0,0,0,0)==0) {configured=1;break;}
+  struct timespec pause={0,100000000}; nanosleep(&pause,NULL);
+ }
+ CHECK(configured);
+ int udp=socket(AF_INET,SOCK_DGRAM|SOCK_NONBLOCK,0);
+ CHECK(udp>=0);
+ struct sockaddr_in local={.sin_family=AF_INET};
+ CHECK(bind(udp,(struct sockaddr *)&local,sizeof local)==0);
+ length=sizeof local;
+ CHECK(getsockname(udp,(struct sockaddr *)&local,&length)==0 && length==sizeof local && local.sin_port!=0);
+ CHECK(recv(udp,message,sizeof message,0)==-1 && errno==EAGAIN);
+ CHECK(recv(udp,message,(size_t)-1,0)==-1 && errno==EINVAL);
+ CHECK(send(udp,message,1,MSG_PEEK)==-1 && errno==EOPNOTSUPP);
+ struct sockaddr_in remote={.sin_family=AF_INET,.sin_port=htons(MUSL_TEST_UDP_PORT)};
+ unsigned char host[4]={10,0,2,2};
+ memcpy(&remote.sin_addr,host,4);
+ struct iovec outgoing[2]={{"data",4},{"gram",4}};
+ struct msghdr send_header={.msg_name=&remote,.msg_namelen=sizeof remote,
+     .msg_iov=outgoing,.msg_iovlen=2};
+ CHECK(sendmsg(udp,&send_header,MSG_NOSIGNAL)==8);
+ CHECK(fcntl(udp,F_SETFL,0)==0);
+ length=sizeof remote;
+ struct iovec incoming[2]={{message,1},{message+1,2}};
+ struct msghdr recv_header={.msg_name=&remote,.msg_namelen=sizeof remote,
+     .msg_iov=incoming,.msg_iovlen=2};
+ CHECK(recvmsg(udp,&recv_header,MSG_TRUNC)==8 && !memcmp(message,"dat",3));
+ CHECK((recv_header.msg_flags&MSG_TRUNC) && recv_header.msg_namelen==sizeof remote &&
+     ntohs(remote.sin_port)==MUSL_TEST_UDP_PORT);
+ CHECK(close(udp)==0);
+ int tcp=socket(AF_INET,SOCK_STREAM|SOCK_CLOEXEC,0);
+ CHECK(tcp>=0);
+ remote.sin_port=htons(MUSL_TEST_TCP_PORT);
+ CHECK(connect(tcp,(struct sockaddr *)&remote,sizeof remote)==0);
+ length=sizeof remote;
+ CHECK(getpeername(tcp,(struct sockaddr *)&remote,&length)==0 && ntohs(remote.sin_port)==MUSL_TEST_TCP_PORT);
+ CHECK(send(tcp,"hello",5,0)==5);
+ memset(message,0,sizeof message);
+ int total=0;
+ while(total<5) { int got=recv(tcp,message+total,5-total,0); CHECK(got>0); total+=got; }
+ CHECK(!strcmp(message,"world") && close(tcp)==0);
+ CHECK(socket(AF_INET6,SOCK_STREAM,0)==-1 && errno==EAFNOSUPPORT);
+ return 0;
+}
+int main(int argc, char **argv)
+{
+ if(argc==3 && !strcmp(argv[1],"--cloexec-check")) {
+  return fcntl(atoi(argv[2]),F_GETFD)==-1 && errno==EBADF ? 29 : 104;
+ }
+ if(argc==2 && !strcmp(argv[1],"--exec-check")) {
+  const char *env=getenv("MUSL_EXEC_CHECK");
+  return env && !strcmp(env,"present") && tls==123 && constructed==42 ? 27 : 83;
+ }
+ if(argc<0 || (argc && !argv[0])) return 11;
+ if(tls!=123) return 12;
+ if(constructed!=42) return 13;
+ tls=456;
+ char *p=malloc(1024*1024);
+ if(!p) return 2;
+ memset(p,0x5a,1024*1024);
+ p=realloc(p,2*1024*1024);
+ if(!p || p[999999]!=0x5a) return 3;
+ free(p);
+ errno=0;
+ if(close(-1)!=-1 || errno!=EBADF || tls!=456) return 4;
+ errno=0;
+ if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
+ CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
+ const long retired[]={4,5,6,7,109};
+ for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
+  CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
+ CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
+ struct timespec t;
+ if(clock_gettime(CLOCK_MONOTONIC,&t)) return 5;
+ int file_result=files_check();
+ if(file_result) return file_result;
+ int at_result=openat_check();
+ if(at_result) return at_result;
+ int capability_result=directory_capability_check();
+ if(capability_result) return capability_result;
+ int append_result=concurrent_append_check();
+ if(append_result) return append_result;
+ int duplication_result=duplication_check();
+ if(duplication_result) return duplication_result;
+ int signal_result=signals_check();
+ if(signal_result) return signal_result;
+ int action_result=signal_action_check();
+ if(action_result) return action_result;
+ int nested_result=nested_signal_check();
+ if(nested_result) return nested_result;
+ int process_result=process_check();
+ if(process_result) return process_result;
+ int terminal_result=terminal_check();
+ if(terminal_result) return terminal_result;
+ int curses_result=curses_check();
+ if(curses_result) return curses_result;
+ int poll_result=poll_check();
+ if(poll_result) return poll_result;
+ int network_result=network_check();
+ if(network_result) return network_result;
+ int dns_result=dns_check();
+ if(dns_result) return dns_result;
+ printf("MUSL_PASS pid=%ld tls=%d ctor=%d malloc=ok errno=ok files=ok processes=ok signals=ok sockets=ok poll=ok dns=ok terminal=ok ncurses=ok openat=ok append=ok duplication=ok sigaction=ok nested-signals=ok\n",(long)getpid(),tls,constructed);
+ return 0;
+}

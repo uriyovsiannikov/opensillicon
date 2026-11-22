@@ -40,6 +40,7 @@
 #define PROCESS_ERROR_EAGAIN 11U
 #define PROCESS_ERROR_ENOMEM 12U
 #define PROCESS_ERROR_EINVAL 22U
+#define PROCESS_ERROR_EOPNOTSUPP 95U
 #define PROCESS_ERROR_E2BIG 7U
 #define PROCESS_ERROR_EBUSY 16U
 #define PROCESS_ERROR_ESRCH 3U
@@ -52,6 +53,7 @@
 #define PROCESS_ERROR_ENOTDIR 20U
 #define PROCESS_ERROR_ERANGE 34U
 #define PROCESS_ERROR_EINVAL 22U
+#define PROCESS_ERROR_EOPNOTSUPP 95U
 #define PROCESS_USER_BASE 0x10000ULL
 #define PROCESS_USER_END 0x00007ffffffff000ULL
 
@@ -71,6 +73,17 @@ struct process_tls_metadata {
 	uint64_t alignment;
 };
 
+#define PROCESS_SIGNAL_DEPTH_LIMIT 16U
+struct process_signal_context {
+ uint64_t restorer;
+ uint64_t handler_stack;
+ uint64_t saved_mask;
+ struct interrupt_frame frame;
+ _Alignas(16) uint8_t fpu_state[ARCH_FPU_STATE_SIZE];
+};
+_Static_assert(_Alignof(struct process_signal_context) >= 16,
+ "signal FXSAVE state must remain aligned in nested contexts");
+
 struct process {
 	uint64_t id;
 	char name[OS_PROCESS_NAME_SIZE];
@@ -80,9 +93,9 @@ struct process {
 	bool resume_on_bsp;
 	enum process_slice_stop ap_stop_reason;
 	uint8_t exit_status;
+	uint8_t exit_signal;
 	uint8_t requested_exit_status;
 	uint64_t waiting_for;
-	uint64_t wait_status_address;
 	uint64_t wake_tick;
 	uint64_t select_deadline;
 	uint64_t nanosleep_start_tick;
@@ -112,11 +125,8 @@ struct process {
 	struct fd_table descriptors;
 	struct os_signal_state signals;
 	char current_directory[VFS_PATH_MAX];
-	bool signal_active;
-	uint64_t signal_restorer;
-	uint64_t signal_handler_stack;
-	struct interrupt_frame signal_saved_frame;
-	_Alignas(16) uint8_t signal_fpu_state[ARCH_FPU_STATE_SIZE];
+	unsigned int signal_depth;
+	struct process_signal_context signal_stack[PROCESS_SIGNAL_DEPTH_LIMIT];
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
 	bool test_private_mapping_child;
 	uint64_t test_private_mapping_base;
@@ -303,7 +313,6 @@ process_set_interrupted_result(struct process *process)
 	}
 	process->saved_frame->rflags |= 1U;
 	process->waiting_for = 0;
-	process->wait_status_address = 0;
 	process->wake_tick = 0;
 	process->select_deadline = 0;
 	process->nanosleep_active = false;
@@ -325,7 +334,6 @@ process_wake_retry(struct process *process)
 {
 	process->wake_tick = 0;
 	process->waiting_for = 0;
-	process->wait_status_address = 0;
 	process->block_reason = PROCESS_BLOCK_NONE;
 	process->retry_pending = !process->local_syscall_pending;
 	process->state = PROCESS_READY;
@@ -1668,10 +1676,26 @@ process_signal_mask(int how, const uint64_t *set, uint64_t *old_set)
 		case 1: current_process->signals.blocked &= ~*set; break;
 		case 2: current_process->signals.blocked = *set; break;
 		}
-		current_process->signals.blocked &= ~(1ULL << OS_SIGKILL);
+		current_process->signals.blocked &= ~((1ULL << OS_SIGKILL) | (1ULL << OS_SIGSTOP));
 	}
 	spinlock_unlock_irqrestore(&signal_lock, flags);
 	return 0;
+}
+
+static struct interrupt_frame *
+process_terminate_signal(struct interrupt_frame *frame, unsigned int signo)
+{
+	if (current_process != NULL)
+		current_process->exit_signal = signo;
+	return process_exit(frame, 128U + signo);
+}
+
+static struct interrupt_frame *
+process_terminate_fault(struct interrupt_frame *frame)
+{
+	if (current_process != NULL)
+		current_process->exit_signal = 11;
+	return process_exit(frame, 128U + 14U);
 }
 
 struct interrupt_frame *
@@ -1681,27 +1705,32 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 	static const uint8_t restorer_bytes[] = {
 		0xb8, SYSCALL_SIGRETURN, 0x00, 0x00, 0x00, 0xcd, 0x80, 0x0f, 0x0b
 	};
-	struct os_signal_action new_action;
+	struct os_signal_action new_action = {0};
 	struct os_signal_action old_action;
 	uint8_t actual_restorer[sizeof(restorer_bytes)];
 	struct process *process = current_process;
 	size_t i;
 
 	if (process == NULL || !os_signal_valid(signo) ||
-	    (new_address == 0 && old_address == 0)) {
+	    (signo == OS_SIGKILL && new_address != 0)) {
 		*error = PROCESS_ERROR_EINVAL;
 		return frame;
 	}
 	if (old_address != 0 && !vmm_validate_user_write(process->address_space,
-	    old_address, sizeof(old_action))) {
+	    old_address, sizeof(struct os_signal_action))) {
 		*error = PROCESS_ERROR_EFAULT;
 		return frame;
 	}
 	if (new_address != 0 && !vmm_copy_from_user(process->address_space,
-	    &new_action, new_address, sizeof(new_action))) {
+	    &new_action, new_address, sizeof(struct os_signal_action))) {
 		*error = PROCESS_ERROR_EFAULT;
 		return frame;
 	}
+	if (new_address != 0 && (new_action.flags & ~(OS_SA_RESETHAND | OS_SA_NODEFER)) != 0) {
+		*error = PROCESS_ERROR_EOPNOTSUPP;
+		return frame;
+	}
+	new_action.mask &= ~((1ULL << OS_SIGKILL) | (1ULL << OS_SIGSTOP));
 	if (new_address != 0 && !os_signal_action_valid(signo, &new_action)) {
 		*error = PROCESS_ERROR_EINVAL;
 		return frame;
@@ -1726,7 +1755,7 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 	uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 	old_action = process->signals.actions[signo];
 	if (old_address != 0 && !vmm_copy_to_user(process->address_space,
-	    old_address, &old_action, sizeof(old_action))) {
+	    old_address, &old_action, sizeof(struct os_signal_action))) {
 		spinlock_unlock_irqrestore(&signal_lock, flags);
 		*error = PROCESS_ERROR_EFAULT;
 		return frame;
@@ -1793,14 +1822,12 @@ process_prepare_user_return(struct interrupt_frame *frame)
 		if (action.handler == OS_SIGNAL_IGNORE && signo != OS_SIGKILL)
 			continue;
 		if (signo == OS_SIGKILL || action.handler == OS_SIGNAL_DEFAULT) {
-			frame = process_exit(frame, 128U + signo);
+			frame = process_terminate_signal(frame, signo);
 			continue;
 		}
-		if (current_process->signal_active) {
-			flags = spinlock_lock_irqsave(&signal_lock);
-			(void)os_signal_queue(&current_process->signals, signo);
-			spinlock_unlock_irqrestore(&signal_lock, flags);
-			return frame;
+		if (current_process->signal_depth >= PROCESS_SIGNAL_DEPTH_LIMIT) {
+			frame = process_terminate_fault(frame);
+			continue;
 		}
 		{
 			uint64_t old_stack = frame->user_rsp;
@@ -1810,7 +1837,7 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			size_t i;
 
 			if (!os_signal_user_stack(old_stack, &new_stack)) {
-				frame = process_exit(frame, 128U + 14U);
+				frame = process_terminate_fault(frame);
 				continue;
 			}
 			if (!vmm_validate_user_write(current_process->address_space,
@@ -1821,7 +1848,7 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			    action.restorer, sizeof(restorer_bytes)) ||
 			    !vmm_copy_from_user(current_process->address_space,
 			    actual_restorer, action.restorer, sizeof(actual_restorer))) {
-				frame = process_exit(frame, 128U + 14U);
+				frame = process_terminate_fault(frame);
 				continue;
 			}
 			for (i = 0; i < sizeof(restorer_bytes); i++) {
@@ -1831,14 +1858,25 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			if (i != sizeof(restorer_bytes) ||
 			    !vmm_copy_to_user(current_process->address_space, new_stack,
 			    &return_address, sizeof(return_address))) {
-				frame = process_exit(frame, 128U + 14U);
+				frame = process_terminate_fault(frame);
 				continue;
 			}
-			current_process->signal_saved_frame = *frame;
-			arch_fpu_save(current_process->signal_fpu_state);
-			current_process->signal_active = true;
-			current_process->signal_restorer = action.restorer;
-			current_process->signal_handler_stack = new_stack;
+			struct process_signal_context *context =
+			    &current_process->signal_stack[current_process->signal_depth];
+			context->frame = *frame;
+			arch_fpu_save(context->fpu_state);
+			uint64_t signal_flags = spinlock_lock_irqsave(&signal_lock);
+			context->saved_mask = current_process->signals.blocked;
+			current_process->signals.blocked |= action.mask;
+			if ((action.flags & OS_SA_NODEFER) == 0)
+				current_process->signals.blocked |= 1ULL << signo;
+			current_process->signals.blocked &= ~((1ULL << OS_SIGKILL) | (1ULL << OS_SIGSTOP));
+			if ((action.flags & OS_SA_RESETHAND) != 0)
+				current_process->signals.actions[signo] = (struct os_signal_action){0};
+			spinlock_unlock_irqrestore(&signal_lock, signal_flags);
+			current_process->signal_depth++;
+			context->restorer = action.restorer;
+			context->handler_stack = new_stack;
 			frame->rip = action.handler;
 			frame->rdi = signo;
 			frame->user_rsp = new_stack;
@@ -1863,27 +1901,30 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 
 	/* Fatal validation can schedule another process on the BSP. */
 	*error = 0;
-	if (process == NULL || !process->signal_active) {
+	if (process == NULL || process->signal_depth == 0) {
 		*error = PROCESS_ERROR_EINVAL;
 		return frame;
 	}
-	if (process->signal_restorer > UINT64_MAX - 7 ||
+	struct process_signal_context *context =
+	    &process->signal_stack[process->signal_depth - 1];
+	if (context->restorer > UINT64_MAX - 7 ||
 	    frame->vector != 128U ||
 	    frame->rax != SYSCALL_SIGRETURN ||
-	    frame->rip != process->signal_restorer + 7 ||
-	    frame->user_rsp != process->signal_handler_stack + 8 ||
+	    frame->rip != context->restorer + 7 ||
+	    frame->user_rsp != context->handler_stack + 8 ||
 	    !vmm_validate_user_exec(process->address_space,
-	    process->signal_restorer, sizeof(restorer_bytes)) ||
+	    context->restorer, sizeof(restorer_bytes)) ||
 	    !vmm_copy_from_user(process->address_space, actual_restorer,
-	    process->signal_restorer, sizeof(actual_restorer)))
-		return process_exit(frame, 128U + 14U);
+	    context->restorer, sizeof(actual_restorer)))
+		return process_terminate_fault(frame);
 	for (i = 0; i < sizeof(restorer_bytes); i++) {
 		if (actual_restorer[i] != restorer_bytes[i])
-			return process_exit(frame, 128U + 14U);
+			return process_terminate_fault(frame);
 	}
-	process->signal_active = false;
-	process->signal_restorer = 0;
-	process->signal_handler_stack = 0;
+	uint64_t signal_flags = spinlock_lock_irqsave(&signal_lock);
+	process->signals.blocked = context->saved_mask;
+	spinlock_unlock_irqrestore(&signal_lock, signal_flags);
+	process->signal_depth--;
 	process->block_reason = PROCESS_BLOCK_NONE;
 	process->local_syscall_pending = false;
 	process->retry_pending = false;
@@ -1891,8 +1932,8 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 	*error = 0;
 	/* Interrupt continuations run below the returned frame. Keep it on
 	 * this process's kernel stack, never inside the heap process object. */
-	*frame = process->signal_saved_frame;
-	arch_fpu_restore(process->signal_fpu_state);
+	*frame = context->frame;
+	arch_fpu_restore(context->fpu_state);
 	struct smp_cpu *cpu = smp_current_cpu();
 	if (cpu != NULL && !cpu->bsp)
 		__atomic_store_n(&cpu->user_signal_return, true, __ATOMIC_RELAXED);
@@ -1956,9 +1997,9 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->state = PROCESS_RUNNING;
 	root->resume_on_bsp = false;
 	root->exit_status = 0;
+	root->exit_signal = 0;
 	root->requested_exit_status = 0;
 	root->waiting_for = 0;
-	root->wait_status_address = 0;
 	root->wake_tick = 0;
 	root->select_deadline = 0;
 	root->nanosleep_start_tick = 0;
@@ -1981,9 +2022,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->tls = process_tls_from_plan(&root->loaded_image->plan);
 	root->saved_frame = NULL;
 	os_signal_state_init(&root->signals);
-	root->signal_active = false;
-	root->signal_restorer = 0;
-	root->signal_handler_stack = 0;
+	root->signal_depth = 0;
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
 	root->test_private_mapping_child = false;
 	root->test_private_mapping_base = 0;
@@ -2183,10 +2222,6 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 		*error = PROCESS_ERROR_ECHILD;
 		return frame;
 	}
-	if (current_process->signal_active) {
-		*error = PROCESS_ERROR_EBUSY;
-		return frame;
-	}
 	child = kheap_alloc(sizeof(*child));
 	if (child == NULL) {
 		*error = PROCESS_ERROR_ENOMEM;
@@ -2220,9 +2255,9 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	child->state = PROCESS_READY;
 	child->resume_on_bsp = false;
 	child->exit_status = 0;
+	child->exit_signal = 0;
 	child->requested_exit_status = 0;
 	child->waiting_for = 0;
-	child->wait_status_address = 0;
 	child->wake_tick = 0;
 	child->select_deadline = 0;
 	child->nanosleep_start_tick = 0;
@@ -2246,9 +2281,9 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	child->initial_user_stack = current_process->initial_user_stack;
 	child->user_fs_base = current_process->user_fs_base;
 	os_signal_fork_state(&current_process->signals, &child->signals);
-	child->signal_active = false;
-	child->signal_restorer = 0;
-	child->signal_handler_stack = 0;
+	child->signal_depth = current_process->signal_depth;
+	for (i = 0; i < child->signal_depth; i++)
+		child->signal_stack[i] = current_process->signal_stack[i];
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
 	child->test_private_mapping_child = false;
 	child->test_private_mapping_base = 0;
@@ -2399,9 +2434,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	}
 	process->initial_user_stack = stack_top;
 	os_signal_exec_state(&process->signals);
-	process->signal_active = false;
-	process->signal_restorer = 0;
-	process->signal_handler_stack = 0;
+	process->signal_depth = 0;
 	process->timer_wait_on_ap = false;
 	process->timer_resume_pending = false;
 	process->block_reason = PROCESS_BLOCK_NONE;
@@ -2414,34 +2447,6 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	process->saved_frame = new_frame;
 	*error = 0;
 	return new_frame;
-}
-
-struct interrupt_frame *
-process_exec(struct interrupt_frame *frame, uint64_t *error)
-{
-	void *image_copy;
-	struct interrupt_frame *result;
-	uint64_t image_size = frame->rsi;
-
-	if (current_process == NULL || image_size == 0 || image_size > SIZE_MAX) {
-		*error = PROCESS_ERROR_EFAULT;
-		return frame;
-	}
-	image_copy = kheap_alloc((size_t)image_size);
-	if (image_copy == NULL) {
-		*error = PROCESS_ERROR_ENOMEM;
-		return frame;
-	}
-	if (!vmm_copy_from_user(current_process->address_space, image_copy,
-	    frame->rdi, (size_t)image_size)) {
-		(void)kheap_free(image_copy);
-		*error = PROCESS_ERROR_EFAULT;
-		return frame;
-	}
-	result = replace_process_image(frame, image_copy, (size_t)image_size,
-	    PROCESS_ERROR_EINVAL, error, 0, NULL, 0, NULL, "elf", NULL);
-	(void)kheap_free(image_copy);
-	return result;
 }
 
 struct interrupt_frame *
@@ -2497,20 +2502,6 @@ process_exec_path_env(struct interrupt_frame *frame, const char *path,
 	return result;
 }
 
-struct interrupt_frame *
-process_exec_path_argv(struct interrupt_frame *frame,const char *path,
-    size_t argc,const char *const argv[],uint64_t *error)
-{
-    return process_exec_path_env(frame,path,argc,argv,0,NULL,error);
-}
-
-struct interrupt_frame *
-process_exec_path(struct interrupt_frame *frame, const char *path,
-	uint64_t *error)
-{
-	return process_exec_path_argv(frame, path, 0, NULL, error);
-}
-
 static struct process *
 find_child(struct process *parent, uint64_t pid, bool zombie_only)
 {
@@ -2538,8 +2529,10 @@ reap_child(struct process *parent, struct process *child,
 	uint64_t test_mapping_physical = child->test_private_mapping_physical;
 #endif
 
+	int32_t status = child->exit_signal ? child->exit_signal :
+	    (int32_t)child->exit_status << 8;
 	if (status_address != 0 && !vmm_copy_to_user(parent->address_space,
-	    status_address, &child->exit_status, sizeof(child->exit_status))) {
+	    status_address, &status, sizeof(status))) {
 		*error = PROCESS_ERROR_EFAULT;
 		return false;
 	}
@@ -2624,7 +2617,6 @@ process_waitpid(struct interrupt_frame *frame, uint64_t *error)
 	parent->state = PROCESS_BLOCKED;
 	parent->saved_frame = frame;
 	parent->waiting_for = pid;
-	parent->wait_status_address = frame->rsi;
 	parent->block_reason = PROCESS_BLOCK_WAIT;
 	parent->retry_pending = false;
 	parent->retry_in_progress = false;
@@ -2922,5 +2914,8 @@ process_user_exception(struct interrupt_frame *frame)
 #endif
 		user_return_to_kernel(0x100U + frame->vector);
 	}
+	if (current_process != NULL)
+		current_process->exit_signal = frame->vector == 0 ? 8 :
+		    frame->vector == 6 ? 4 : 11;
 	return process_exit(frame, 128U + frame->vector);
 }

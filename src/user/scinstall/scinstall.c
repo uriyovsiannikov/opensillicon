@@ -453,8 +453,8 @@ main(int argc, char **argv)
 	error = run(newfs);
 	if (error)
 		goto failed;
-	struct silliconfs_args args = {root_path};
-	if (mount("silliconfs", TARGET, 0, &args) != 0) {
+
+	if (mount(root_path, TARGET, "silliconfs", 0, NULL) != 0) {
 		error = -errno;
 		goto failed;
 	}
@@ -481,7 +481,7 @@ main(int argc, char **argv)
 	error = save_journal();
 	if (error)
 		goto failed;
-	if (unmount(TARGET, 0) != 0) {
+	if (umount2(TARGET, 0) != 0) {
 		error = -errno;
 		goto failed;
 	}
@@ -520,7 +520,7 @@ failed:
 	note(
 	    "INSTALLATION FAILED at %s (errno %d), path=%s. See /tmp/scinstall.log\n",
 	    stage, -error, tree.failed_path);
-	if (mounted && unmount(TARGET, 0) != 0)
+	if (mounted && umount2(TARGET, 0) != 0)
 		note(
 		    "Target remains mounted at %s; close files and retry umount (errno %d).\n",
 		    TARGET, errno);

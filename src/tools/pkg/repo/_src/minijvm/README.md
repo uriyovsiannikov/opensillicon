@@ -42,7 +42,7 @@ remain unsupported.
 OpenGL uses the classic OSMesa software renderer from
 [Mesa 7.8.2](https://archive.mesa3d.org/older-versions/7.x/7.8.2/).
 The first graphics build downloads the pinned source archive and verifies
-its SHA-256 before compiling the static renderer for libos.
+its SHA-256 before compiling the static renderer for libc.
 
 Minecraft 1.0 reaches its main menu using the original client JAR.
 QEMU checks also covered the Options and Select World screens.
@@ -53,7 +53,7 @@ JARs on the classpath. Start `net.minecraft.client.Minecraft` and set
 `-Duser.home=/path/to/writable/directory` for its working files.
 The QEMU checks use `/tmp` as this directory. The runtime also lacks Java SE networking,
 native shared library loading and JDWP. Audio remains unsupported.
-Append-mode file output is unavailable because libos does not implement
+Append-mode file output is unavailable because libc does not implement
 O_APPEND. File creation and truncating writes are supported. MessageDigest supplies
 incremental MD5, SHA-1 and SHA-256 through the existing mbedTLS port
 (Copyright The Mbed TLS Contributors).
@@ -61,9 +61,9 @@ The package contains no
 Minecraft assets or binaries.
 
 RandomAccessFile supports non-truncating read/write access, seeking, file
-length/position queries and extension. Shrinking a file is unavailable in libos.
+length/position queries and extension. Shrinking a file is unavailable in libc.
 File.renameTo supports regular files through a copy followed by removal of the
-source, since libos has no rename syscall. This operation is not atomic, does
+source, since libc has no rename syscall. This operation is not atomic, does
 not overwrite an existing destination, and does not support directories.
 InflaterInputStream, DeflaterOutputStream and the gzip streams use streaming
 zlib compression; corrupt or truncated data raises IOException. The gzip reader
@@ -134,7 +134,7 @@ the monotonic fallback has higher overhead. No profiling is enabled by default.
 `MINIJVM_CHECK_PROFILE=1 python3 src/tools/checks/minijvm_jit.py` runs the
 arithmetic/array/thread probe in both modes and checks that exclusive category
 totals match the measured interval. QEMU exposes invariant TSC for this check.
-`python3 src/tools/checks/libos_allocator.py` checks allocation data, alignment,
+`python3 src/tools/checks/libc_allocator.py` checks allocation data, alignment,
 reallocation, overflow, calloc and fork behavior in the native kernel.
 
 JAR resources use direct metadata lookup. Opening a ZipFile no longer creates

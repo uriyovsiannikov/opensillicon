@@ -40,6 +40,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_FCHOWN] = { .bsp = syscall_file_bsp },
 	[SYSCALL_CHDIR] = { .bsp = syscall_file_bsp },
 	[SYSCALL_GETCWD] = { .bsp = syscall_file_bsp },
+	[SYSCALL_OPENAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_OPEN] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTAT] = { .bsp = syscall_file_bsp },
 	[SYSCALL_FSTATAT] = { .bsp = syscall_file_bsp },
@@ -52,11 +53,14 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_READ] = { .local = syscall_io_local, .bsp = syscall_io_bsp },
 	[SYSCALL_WRITE] = { .local = syscall_io_local, .bsp = syscall_io_bsp },
 	[SYSCALL_CLOSE] = { .local = syscall_io_local, .bsp = syscall_io_bsp },
+	[SYSCALL_PIPE2] = { .local = syscall_io_local },
 	[SYSCALL_PIPE] = { .local = syscall_io_local },
 	[SYSCALL_FCNTL] = { .bsp = syscall_io_bsp },
+	[SYSCALL_DUP3] = { .bsp = syscall_io_bsp },
 	[SYSCALL_DUP2] = { .bsp = syscall_io_bsp },
 	[SYSCALL_DUP] = { .bsp = syscall_io_bsp },
 	[SYSCALL_LSEEK] = { .bsp = syscall_io_bsp },
+	[SYSCALL_POLL] = { .bsp = syscall_io_bsp },
 	[SYSCALL_SELECT] = { .bsp = syscall_io_bsp },
 	/* Memory */
 	[SYSCALL_MMAP] = { .local = syscall_memory_local },
@@ -65,6 +69,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_SHM_CREATE] = { .local = syscall_memory_local },
 	[SYSCALL_SHM_DETACH] = { .local = syscall_memory_local },
 	/* Internet sockets and network configuration */
+	[SYSCALL_SOCKET_KIND] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_SOCKET] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_BIND] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_CONNECT] = { .bsp = syscall_net_bsp },
@@ -106,9 +111,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_PROCESS_SNAPSHOT] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_PROCESS_INFO] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_FORK] = { .bsp = syscall_proc_bsp },
-	[SYSCALL_EXEC] = { .bsp = syscall_proc_bsp },
-	[SYSCALL_EXEC_PATH] = { .bsp = syscall_proc_bsp },
-	[SYSCALL_EXEC_PATH_ARGV] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_EXECVE] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_WAITPID] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_KILL] = { .bsp = syscall_proc_bsp },
@@ -192,7 +194,8 @@ syscall_dispatch(struct interrupt_frame *frame)
 			process_channel_wait_begin();
 			if (route != NULL && route->local != NULL &&
 			    route->local(&frame)) {
-				if ((number == SYSCALL_SIGACTION || number == SYSCALL_SIGPROCMASK) &&
+				if ((number == SYSCALL_SIGACTION ||
+				    number == SYSCALL_SIGPROCMASK) &&
 				    (frame->rflags & 1U) == 0)
 					__atomic_store_n(&cpu->user_signal_calls, true, __ATOMIC_RELAXED);
 				if (shared_memory && (frame->rflags & 1U) == 0)

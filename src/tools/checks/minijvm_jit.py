@@ -37,10 +37,10 @@ cc = os.environ.get('CC', 'gcc')
 headers = subprocess.check_output([cc, '-print-file-name=include'], text=True).strip()
 run(cc, *(['-DJIT_PROFILE_CHECK'] if os.environ.get('MINIJVM_CHECK_PROFILE') == '1' else []), *(['-DJIT_METHOD_PROFILE_CHECK'] if os.environ.get('MINIJVM_CHECK_PROFILE_METHODS')=='1' else []), '-std=c11', '-O2', '-ffreestanding', '-fno-builtin', '-fno-stack-protector',
     '-fno-pic', '-fno-pie', '-m64', '-mno-red-zone', '-nostdinc', '-Isrc/include',
-    '-Isrc/user/libos/include', '-isystem', headers, '-c', TESTS/'JitMemoryProbe.c', '-o', OUT/'init.o')
+    '-Isrc/build/musl/sysroot/include', '-isystem', headers, '-c', TESTS/'JitMemoryProbe.c', '-o', OUT/'init.o')
 run(cc, '-c', OUT/'blobs.S', '-o', OUT/'blobs.o')
 run(cc, '-nostdlib', '-static', '-no-pie', '-Wl,-z,noexecstack', '-T', 'src/user/c_linker.ld',
-    'src/build/libos/crt0.o', OUT/'init.o', OUT/'blobs.o', 'src/build/libos/liblibos.a', '-lgcc', '-o', OUT/'init.elf')
+    'src/build/musl/sysroot/lib/crt1.o', OUT/'init.o', OUT/'blobs.o', 'src/build/musl/sysroot/lib/libc.a', '-lgcc', '-o', OUT/'init.elf')
 run('python3', 'src/tools/packers/mksilliconfs.py', OUT/'root.img', '--inodes', '1024',
     '--reserve-mib', '64', '--size-from', OUT/'init.elf')
 run('src/build/populate_root', OUT/'root.img', OUT/'init.elf', 'src/build/shell.elf')

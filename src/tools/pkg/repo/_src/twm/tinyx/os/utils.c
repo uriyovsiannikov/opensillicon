@@ -91,7 +91,7 @@ OR PERFORMANCE OF THIS SOFTWARE.
 #include "opaque.h"
 
 #if defined(OPEN_SILLICON) && !defined(MONOTONIC_CLOCK)
-#error "OpenSillicon requires the libos monotonic clock"
+#error "OpenSillicon requires the libc monotonic clock"
 #endif
 
 #ifdef SMART_SCHEDULE

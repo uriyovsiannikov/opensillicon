@@ -15,6 +15,8 @@
 #define VFS_O_CREAT 0x40U
 #define VFS_O_EXCL 0x80U
 #define VFS_O_TRUNC 0x200U
+#define VFS_O_APPEND 0x400U
+#define VFS_O_CLOEXEC 0x80000U
 #define VFS_O_DIRECTORY 0x10000U
 #define VFS_O_NONBLOCK 0x800U
 #define VFS_ACCESS_EXEC 0x01U
@@ -121,6 +123,8 @@ int vfs_stat_path_as(const char *path, uint32_t uid, uint32_t gid,
 	struct vfs_stat *status);
 int vfs_open(const char *path, uint32_t flags, uint32_t mode,
 	struct fd_object **result);
+int vfs_open_from_as(struct vnode *directory, const char *path, uint32_t flags,
+ uint32_t mode, uint32_t uid, uint32_t gid, struct fd_object **result);
 int vfs_open_as(const char *path, uint32_t flags, uint32_t mode,
 	uint32_t uid, uint32_t gid, struct fd_object **result);
 bool vfs_access(const struct vnode *node, uint32_t uid, uint32_t gid,

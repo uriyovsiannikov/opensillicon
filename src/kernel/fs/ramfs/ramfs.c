@@ -203,6 +203,7 @@ ramfs_create(struct vnode *directory, const char *name, size_t name_length,
 			return -RAMFS_EINVAL;
 	}
 	parent = ramfs_from_vnode(directory);
+	if (parent->parent_held) return -RAMFS_ENOENT;
 	for (cursor = parent->children; cursor != NULL; cursor = cursor->next) {
 		if (strlen(cursor->name) == name_length &&
 		    memcmp(cursor->name, name, name_length) == 0)

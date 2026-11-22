@@ -6,7 +6,7 @@ headers=$3
 cc=$4
 host_cc=$5
 
-# Keep the generator native to the build host. Only the library uses libos.
+# Keep the generator native to the build host. Only the library uses libc.
 mkdir -p "$build"
 tar -xm -f "$archive" -C "$build"
 cd "$build/Mesa-7.8.2"

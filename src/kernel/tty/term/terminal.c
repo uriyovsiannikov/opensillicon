@@ -486,13 +486,19 @@ terminal_input_available(void)
 }
 
 void
+terminal_flush_input(void)
+{
+ struct terminal_state *terminal = active_state();
+ terminal->line_length = 0;
+ terminal->input_head = 0;
+ terminal->input_count = 0;
+}
+
+void
 terminal_set_raw_mode(bool enabled)
 {
 	struct terminal_state *terminal = active_state();
 	terminal->raw_mode = enabled;
-	terminal->line_length = 0;
-	terminal->input_head = 0;
-	terminal->input_count = 0;
 }
 
 bool

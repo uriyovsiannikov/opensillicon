@@ -1,21 +1,7 @@
+#include <unistd.h>
 #include <stdbool.h>
 
 #include "include/os.h"
-
-struct shell_startup_phdr {
-	uint32_t type;
-	uint32_t flags;
-	uint64_t offset;
-	uint64_t virtual_address;
-	uint64_t physical_address;
-	uint64_t file_size;
-	uint64_t memory_size;
-	uint64_t alignment;
-};
-
-static __thread volatile uint64_t shell_tls_value =
-	UINT64_C(0x5348454c4c544c53);
-static uint64_t shell_tls_storage[128] __attribute__((aligned(16)));
 
 #define LINE_CAPACITY 256U
 #define ARGUMENT_CAPACITY U_EXEC_ARG_MAX
@@ -37,48 +23,6 @@ static const char *const internal_commands[] = {
 
 static const char *const default_environment[]={"TERM=xterm",NULL};
 static const char *const *shell_environment=default_environment;
-static uint64_t startup_auxv(const uint64_t *stack) {
-    uint64_t index=stack[0]+2;
-    for(unsigned n=0;n<=64;n++,index++)if(!stack[index])return index+1;
-    return 0;
-}
-
-static int
-initialize_shell_tls(const uint64_t *startup_stack)
-{
-	uint64_t auxv = startup_auxv(startup_stack);
-    if(!auxv)return 0;
-	const struct shell_startup_phdr *headers =
-		(const struct shell_startup_phdr *)(uintptr_t)startup_stack[auxv + 1];
-	const struct shell_startup_phdr *tls = 0;
-	uintptr_t thread_pointer = (uintptr_t)&shell_tls_storage[64];
-	uint8_t *destination;
-	const uint8_t *source;
-	uint64_t i;
-
-	for (i = 0; i < startup_stack[auxv + 5]; i++) {
-		if (headers[i].type == 7) {
-			tls = &headers[i];
-			break;
-		}
-	}
-	if (tls == 0 || tls->file_size > tls->memory_size ||
-	    tls->memory_size > thread_pointer -
-	    (uintptr_t)&shell_tls_storage[0] || tls->alignment == 0 ||
-	    (tls->alignment & (tls->alignment - 1)) != 0 ||
-	    (thread_pointer & (tls->alignment - 1)) != 0)
-		return 0;
-	destination = (uint8_t *)(thread_pointer - tls->memory_size);
-	source = (const uint8_t *)(uintptr_t)tls->virtual_address;
-	for (i = 0; i < tls->memory_size; i++)
-		destination[i] = 0;
-	for (i = 0; i < tls->file_size; i++)
-		destination[i] = source[i];
-	*(uintptr_t *)thread_pointer = thread_pointer;
-	return u_set_fs_base(thread_pointer) == 0 &&
-	    shell_tls_value == UINT64_C(0x5348454c4c544c53);
-}
-
 static char current_directory[PATH_CAPACITY] = "/";
 static char command_history[HISTORY_CAPACITY][LINE_CAPACITY];
 static size_t history_count;
@@ -309,14 +253,14 @@ print_help_commands(void)
 }
 
 static void
-command_external(size_t argc, const char *const argv[], int background,
+command_external(const char *const argv[], int background,
 	int interactive)
 {
 	char path[PATH_CAPACITY];
 	const char *command = argv[0];
 	long child;
 	long wait_result;
-	uint8_t status = 0xff;
+	int status = 0;
 
 	if (command[0] == '/') {
 		if (u_strlen(command) >= sizeof(path)) {
@@ -360,7 +304,7 @@ command_external(size_t argc, const char *const argv[], int background,
 		goto resume_editor;
 	}
 	if (child == 0) {
-		(void)u_exec_path_env(path, argc, argv, shell_environment);
+		(void)execve(path, (char *const *)argv, (char *const *)shell_environment);
 		print_error("exec", path);
 		u_exit(127);
 	}
@@ -372,7 +316,8 @@ command_external(size_t argc, const char *const argv[], int background,
 			print_error("waitpid", command);
 		else if (status != 0) {
 		u_puts("sh: command exited status ");
-		u_put_u64(status);
+		u_put_u64((status & 0x7f) != 0 ? 128U + (status & 0x7f) :
+		    (unsigned int)status >> 8);
 		u_puts("\n");
 		}
 	} else {
@@ -839,63 +784,22 @@ run_command(char *line, int interactive)
 		return 0;
 	} else {
 		arguments[count] = 0;
-		command_external(count, (const char *const *)arguments, background,
+		command_external((const char *const *)arguments, background,
 		    interactive);
 	}
 	return 1;
 }
 
 int
-user_main(uint64_t argc, char **argv, const uint64_t *startup_stack)
+main(int argc, char **argv)
 {
 	char line[LINE_CAPACITY];
-	const struct shell_startup_phdr *phdr;
-	uint64_t auxv;
-	if (argc > ARGUMENT_CAPACITY || argv == NULL || startup_stack == 0 ||
-	    startup_stack[0] != argc || argv != (char **)(startup_stack + 1) ||
-	    (argc == 1 && (argv[0] == NULL || argv[0][0] == '\0')) ||
-	    argv[argc] != NULL || !startup_auxv(startup_stack) ||
-	    ((uintptr_t)startup_stack & 15U) != 0) {
-		u_puts("OpenSillicon shell: invalid exec arguments (argc ");
-		u_put_u64(argc);
-		u_puts(", stack argc ");
-		u_put_u64(startup_stack == 0 ? UINT64_MAX : startup_stack[0]);
-		u_puts(")\n");
-		u_exit(1);
-	}
-	auxv = startup_auxv(startup_stack);
-    if(startup_stack[argc+2])shell_environment=(const char *const *)(startup_stack+argc+2);
-	if (startup_stack[auxv] != 3 ||
-	    startup_stack[auxv + 2] != 4 ||
-	    startup_stack[auxv + 3] != sizeof(*phdr) ||
-	    startup_stack[auxv + 4] != 5 ||
-	    startup_stack[auxv + 6] != 6 ||
-	    startup_stack[auxv + 7] != 4096 ||
-	    startup_stack[auxv + 8] != 9 ||
-	    startup_stack[auxv + 10] != 7 ||
-	    startup_stack[auxv + 11] != 0 ||
-	    startup_stack[auxv + 12] != 0 ||
-	    startup_stack[auxv + 13] != 0 ||
-	    startup_stack[auxv + 1] == 0 ||
-	    startup_stack[auxv + 5] == 0 ||
-	    startup_stack[auxv + 9] == 0) {
-		u_puts("OpenSillicon shell: invalid exec auxiliary vector\n");
-		u_exit(1);
-	}
-	if (!initialize_shell_tls(startup_stack)) {
-		u_puts("OpenSillicon shell: exec PT_TLS setup failed\n");
-		u_exit(1);
-	}
+	extern char **environ;
+
+	if (environ != NULL && environ[0] != NULL)
+		shell_environment = (const char *const *)environ;
 	if (u_getcwd(current_directory, sizeof(current_directory)) < 0) {
 		u_puts("OpenSillicon shell: getcwd failed\n");
-		u_exit(1);
-	}
-	phdr = (const struct shell_startup_phdr *)(uintptr_t)startup_stack[auxv + 1];
-	if (phdr[0].type != 1 || (phdr[0].flags & 4U) == 0 ||
-	    phdr[0].offset != 0 || phdr[0].virtual_address + 64 !=
-	    startup_stack[auxv + 1] || phdr[0].file_size <
-	    64 + startup_stack[auxv + 5] * sizeof(*phdr)) {
-		u_puts("OpenSillicon shell: unreadable AT_PHDR\n");
 		u_exit(1);
 	}
 	if (argc == 3 && u_streq(argv[1], "-c")) {

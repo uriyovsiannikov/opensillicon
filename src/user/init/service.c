@@ -1,3 +1,4 @@
+#include <sys/un.h>
 #include <sys/disk.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
@@ -518,7 +519,7 @@ start_service(struct service *service, uint64_t now)
 			argument += strlen(argument) + 1;
 		}
 		argv[service->argc] = NULL;
-		u_exec_path_argv(argv[0], service->argc, argv);
+		execve(argv[0], (char *const *)argv, NULL);
 		report(service->name, "exec failed");
 		_exit(127);
 	}

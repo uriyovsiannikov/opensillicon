@@ -134,7 +134,7 @@ main(int argc, char **argv)
 	int error;
 	int coreutils_start = 0;
 	int coreutils_count = 0;
-	const char *libos_path = NULL;
+	const char *libc_path = NULL;
 	const char *nano_path = NULL;
 	const char *htop_path = NULL;
 	const char *pkg_ca_path = NULL;
@@ -154,9 +154,9 @@ main(int argc, char **argv)
 		return 2;
 	}
 	for (arg = 4; arg < argc; arg++) {
-		if (strcmp(argv[arg], "--libos") == 0 && arg + 1 < argc) {
-			if (libos_path != NULL) return 2;
-			libos_path = argv[++arg];
+		if (strcmp(argv[arg], "--libc") == 0 && arg + 1 < argc) {
+			if (libc_path != NULL) return 2;
+			libc_path = argv[++arg];
 		} else if (strcmp(argv[arg], "--nano") == 0 && arg + 1 < argc) {
 			if (nano_path != NULL) return 2;
 			nano_path = argv[++arg];
@@ -311,9 +311,9 @@ main(int argc, char **argv)
 			}
 		}
 	}
-	if (libos_path != NULL &&
-	    (error = add_file("/bin/libos-test", libos_path, 0755)) != 0) {
-		fprintf(stderr, "SilliconFS libos fixture population failed: %d\n", error);
+	if (libc_path != NULL &&
+	    (error = add_file("/bin/libc-test", libc_path, 0755)) != 0) {
+		fprintf(stderr, "SilliconFS libc fixture population failed: %d\n", error);
 		fclose(image);
 		return 1;
 	}
@@ -380,7 +380,7 @@ main(int argc, char **argv)
 		    "permit nopass 1000 as root cmd /bin/sysupgrade\n"
 		    "permit nopass 1000 as root cmd /bin/audioconf args --codec\n"
 		    "permit nopass 1000 as root cmd /bin/audioconf args --tone\n";
-		static const char resolv_conf[] = "nameserver 10.15.3.3\n";
+		static const char resolv_conf[] = "# musl uses DHCP DNS when no nameserver is configured.\n";
 		if (add_data("/etc/passwd", passwd, sizeof(passwd) - 1, 0644) != 0 ||
 		    add_data("/etc/group", group, sizeof(group) - 1, 0644) != 0 ||
 		    add_data("/etc/pkg.conf", pkg_conf, sizeof(pkg_conf) - 1, 0644) != 0 ||

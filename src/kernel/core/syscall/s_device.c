@@ -7,6 +7,7 @@
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/ioctl.h"
+#include "abi/termios.h"
 #include "arch/x86_64/ps2_keyboard.h"
 #include "kernel/block.h"
 #include "kernel/framebuffer_device.h"
@@ -399,13 +400,23 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if ((pty_is_object(object) || fd_object_is_terminal(object)) &&
-			    (frame->rsi == TCGETS_REQUEST || frame->rsi == TCSETS_REQUEST)) {
-				struct syscall_termios {
-					uint32_t input_flags, output_flags, control_flags, local_flags;
-					uint8_t control_chars[32];
-					uint32_t input_speed, output_speed;
-				} attributes;
-				bool set = frame->rsi == TCSETS_REQUEST;
+			    (frame->rsi == 0x5409U || frame->rsi == 0x540bU)) {
+				int result = 0;
+				if (frame->rsi == 0x5409U) {
+					/* Writes already reach the console or the PTY peer's receive
+					 * queue synchronously; there is no pending transmit queue. */
+					if (frame->rdx != 1) result = -EOPNOTSUPP;
+				} else if (frame->rdx > 2) result = -EINVAL;
+				else if (frame->rdx != 1)
+					result = pty_is_object(object) ? pty_flush_input(object) : tty_flush_input();
+				if (result) syscall_error(frame, errno_from_kernel(result));
+				else frame->rax = 0;
+				break;
+			}
+			if ((pty_is_object(object) || fd_object_is_terminal(object)) &&
+			    (frame->rsi >= TCGETS_REQUEST && frame->rsi <= 0x5404U)) {
+				struct os_termios attributes;
+				bool set = frame->rsi != TCGETS_REQUEST;
 				struct address_space *space = vmm_active_address_space();
 				int result;
 
@@ -416,6 +427,10 @@ syscall_device_bsp(struct interrupt_frame *frame)
 					syscall_error(frame, ERRNO_EFAULT);
 					break;
 				}
+				if (frame->rsi == 0x5404U) {
+					result = pty_is_object(object) ? pty_flush_input(object) : tty_flush_input();
+					if (result) { syscall_error(frame, errno_from_kernel(result)); break; }
+				}
 				if (pty_is_object(object))
 					result = pty_termios(object, &attributes, set);
 				else if (set)
@@ -423,7 +438,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				else {
 					/* The native console exposes canonical/echo or raw input;
 					 * PTYs retain their more complete termios implementation. */
-					attributes = (struct syscall_termios){
+					attributes = (struct os_termios){
 						.input_flags = tty_raw_mode() ? 0 : 0x100U,
 						.output_flags = 5U,
 						.control_flags = 0xb0U,

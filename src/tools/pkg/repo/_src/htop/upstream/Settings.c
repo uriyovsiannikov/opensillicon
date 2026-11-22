@@ -1033,7 +1033,7 @@ Settings* Settings_new(const Machine* host, Hashtable* dynamicMeters, Hashtable*
       ok = Settings_read(this, SYSCONFDIR "/htoprc", host, /*checkWritability*/false);
    }
 #ifdef OPENSILLICON
-   /* libos does not provide the rename required for atomic settings writes. */
+   /* libc does not provide the rename required for atomic settings writes. */
    this->writeConfig = false;
 #endif
    if (!ok) {

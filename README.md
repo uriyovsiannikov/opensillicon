@@ -14,7 +14,7 @@ monolithic kernel and a native userspace.
   virtual mem, shared mem, signals, pipes, and file descriptors.
 - vfs with ramfs, initramfs, devfs, procfs, and the native SilliconFS.
 - f/b terminal, ps/2 keyboard, shell, and core utilities.
-- native `libos` runtime.
+- musl libc port (migration in progress; signal/socket/thread adapters remain incomplete).
 - service supervision by `/sbin/init`, with per-service configuration and
   control via [svctl](src/user/init/README.md).
 - tinyx session with `twm`, `xterm`, and `xeyes`.
@@ -33,7 +33,7 @@ make run-gui   # graphical display
 ## source map
 
 - `src/kernel/` - kernel, architecture code, drivers, filesystems, and networking.
-- `src/user/` - init, shell, utilities, `libos`, and xorg components.
+- `src/user/` - init, shell, utilities, musl under `thirdparty/musl/`, and xorg components.
 - `src/include/` - kernel and userspace abi headers.
 - `src/tools/` - image and filesystem build tools.
 - `src/build/` - generated build artifacts.

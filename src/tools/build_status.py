@@ -49,7 +49,7 @@ def label_for(target, source):
     fixed = {
         "kernel.elf": "KERNEL link", "root.img": "ROOT filesystem",
         "opensillicon.iso": "ISO boot image", "initramfs.cpio": "INITRAMFS",
-        "liblibos.a": "LIB libos", "libz.a": "LIB zlib",
+        "libc.a": "LIB libc", "libz.a": "LIB zlib",
         "libfontenc.a": "LIB libfontenc", "libXfont.a": "LIB libXfont",
         "X": "PKG TinyX", ".apps-ready": "PKG X11 applications",
         ".opensillicon-configured": "PKG TinyX configure", "nano": "USER nano",
@@ -67,7 +67,7 @@ def label_for(target, source):
         return "ACPICA " + target.split("/acpica/", 1)[1].removesuffix(".o")
     if "/cyclone/" in target:
         return "KERNEL CycloneTCP/" + target.split("/cyclone/", 1)[1].removesuffix(".o")
-    for prefix, group in (("src/kernel/", "KERNEL"), ("src/user/libos/", "LIBOS"),
+    for prefix, group in (("src/kernel/", "KERNEL"), ("src/user/thirdparty/musl/", "MUSL"),
                           ("src/tools/pkg/repo/_src/doom/", "DOOM"),
                           ("src/tools/pkg/repo/_src/twm/deps/", "LIB"),
                           ("src/user/", "USER"), ("src/tools/", "HOST")):

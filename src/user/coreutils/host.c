@@ -33,7 +33,7 @@ print_help(void)
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	struct addrinfo hints = {0};
 	struct addrinfo *result = NULL;

@@ -8,28 +8,26 @@ QEMU ?= qemu-system-x86_64
 OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
 BUILD_DIR := src/build
 ISO_ROOT := $(BUILD_DIR)/iso_root
-LIBOS_BUILD_DIR ?= src/build/libos
-LIBOS_QEMU_BUILD_DIR ?= src/build/libos-qemu
+LIBC_BUILD_DIR := src/build/musl/sysroot/lib
 LIBZ_BUILD_DIR ?= src/build/libz
 LIBFONTENC_BUILD_DIR ?= src/build/libfontenc
 LIBXFONT_BUILD_DIR ?= src/build/libxfont
 TINYX_BUILD_DIR ?= src/build/tinyx/target
 TINYX_SOURCE_DIR ?= src/build/tinyx/source
 TINYX_BINARY := $(TINYX_BUILD_DIR)/kdrive/opensillicon/X
-LIBOS_TEST := $(LIBOS_BUILD_DIR)/libos-test.elf
-LIBOS_ARCHIVE := $(LIBOS_BUILD_DIR)/liblibos.a
+LIBC_ARCHIVE := $(LIBC_BUILD_DIR)/libc.a
 
 LIBZ_ARCHIVE := $(LIBZ_BUILD_DIR)/libz.a
 LIBFONTENC_ARCHIVE := $(LIBFONTENC_BUILD_DIR)/libfontenc.a
 LIBXFONT_ARCHIVE := $(LIBXFONT_BUILD_DIR)/libXfont.a
-LIBOS_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector \
-	-fno-pic -fno-pie -m64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -msoft-float \
-	-Wall -Wextra -Werror -nostdinc -Isrc/include -Isrc/user/libos/include -Isrc/user/libos/src \
+LIBC_CFLAGS := -D_GNU_SOURCE= -std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector \
+	-fno-pic -fno-pie -m64 -mno-red-zone \
+	-Wall -Wextra -Werror -nostdinc -Isrc/include -isystem src/build/musl/sysroot/include -Isrc/user/thirdparty/musl/opensillicon/overlay \
 	-isystem $(shell $(CC) -print-file-name=include)
 
 KERNEL_CFLAGS := -std=c11 -O2 -g -ffreestanding -fno-stack-protector \
 	-fno-pic -fno-pie -m64 -mno-red-zone -mcmodel=kernel \
-	-mgeneral-regs-only -mno-mmx -mno-sse -mno-sse2 -msoft-float \
+	-mgeneral-regs-only \
 	-Wall -Wextra -Werror -MMD -MP -Isrc/limine -Isrc/include \
 	-Isrc/kernel/net/cyclonetcp/opensillicon \
 	-Isrc/kernel/net/cyclonetcp -Isrc/kernel/net/cyclonetcp/common
@@ -71,7 +69,7 @@ $(BUILD_DIR):
 
 # Shared variables are exported for nested make invocations and tool scripts.
 export CC LD XORRISO QEMU OVMF_CODE BUILD_DIR ISO_ROOT
-export LIBOS_BUILD_DIR LIBOS_QEMU_BUILD_DIR LIBOS_TEST LIBOS_ARCHIVE LIBOS_CFLAGS
+export LIBC_BUILD_DIR LIBC_ARCHIVE LIBC_CFLAGS
 export LIBZ_BUILD_DIR LIBZ_ARCHIVE LIBFONTENC_BUILD_DIR LIBFONTENC_ARCHIVE
 export LIBXFONT_BUILD_DIR LIBXFONT_ARCHIVE
 export TINYX_BUILD_DIR TINYX_SOURCE_DIR TINYX_BINARY

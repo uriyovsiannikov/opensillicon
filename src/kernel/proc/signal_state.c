@@ -100,10 +100,10 @@ os_signal_user_stack(uint64_t interrupted_rsp, uint64_t *handler_rsp)
 {
 	uint64_t result;
 
-	if (handler_rsp == NULL || interrupted_rsp < 16)
+	if (handler_rsp == NULL || interrupted_rsp < 144)
 		return false;
-	result = ((interrupted_rsp - 16) & ~15ULL) + 8;
-	if (result >= interrupted_rsp || interrupted_rsp - result > 16)
+	result = ((interrupted_rsp - 144) & ~15ULL) + 8;
+	if (result >= interrupted_rsp || interrupted_rsp - result > 144)
 		return false;
 	*handler_rsp = result;
 	return true;

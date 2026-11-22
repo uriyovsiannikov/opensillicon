@@ -1,10 +1,12 @@
 #include "kernel/errno.h"
+#include "abi/termios.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/pipe.h"
 #include "kernel/pty.h"
 
 struct pty_state {
+	struct os_termios attributes;
 	struct pipe_buffer input;
 	struct pipe_buffer output;
 	uint8_t line[256];
@@ -101,9 +103,9 @@ pty_write(void *context, uint64_t offset, const void *buffer, size_t length,
 		 * a byte, so a short write can be retried without duplicating input. */
 		while (*write_length < length) {
 			uint8_t byte = bytes[*write_length];
-			if (byte == '\r')
+			if (byte == '\r' && (pty->attributes.input_flags & 0x100U))
 				byte = '\n';
-			if (byte == 4) {
+			if (byte && byte == pty->attributes.control_chars[4]) {
 				if (pty->line_length > PIPE_CAPACITY - pty->input.count)
 					break;
 				if (pty->line_length == 0)
@@ -112,7 +114,7 @@ pty_write(void *context, uint64_t offset, const void *buffer, size_t length,
 					(void)pipe_buffer_write(&pty->input, pty->line,
 					    pty->line_length);
 				pty->line_length = 0;
-			} else if (byte == 8 || byte == 127) {
+			} else if (byte && byte == pty->attributes.control_chars[2]) {
 				if (pty->line_length != 0) {
 					if (pty->echo && PIPE_CAPACITY - pty->output.count < 3)
 						break;
@@ -156,7 +158,7 @@ pty_poll(void *context, uint32_t events)
 	if (read_queue->count != 0 || !peer_open || (!endpoint->master && pty->eof))
 		ready |= FD_POLL_READ;
 	if (!peer_open)
-		ready |= FD_POLL_ERROR | FD_POLL_WRITE;
+		ready |= FD_POLL_ERROR | FD_POLL_WRITE | FD_POLL_HANGUP;
 	else if (write_queue->count < PIPE_CAPACITY &&
 	    (!endpoint->master || pty->raw || !pty->eof) &&
 	    (!endpoint->master || pty->raw ||
@@ -269,60 +271,41 @@ pty_set_raw(struct fd_object *object, bool enabled)
 	return 0;
 }
 
-/* ABI-compatible x86-64 termios subset used by the userland X clients. */
-struct pty_termios_abi {
-	uint32_t input_flags;
-	uint32_t output_flags;
-	uint32_t control_flags;
-	uint32_t local_flags;
-	uint8_t control_chars[32];
-	uint32_t input_speed;
-	uint32_t output_speed;
-};
-
 int
 pty_termios(struct fd_object *object, void *attributes, bool set)
 {
-	struct pty_endpoint *endpoint;
-	struct pty_termios_abi *termios = attributes;
-	const uint32_t canonical = 0x0002U;
-	const uint32_t echo = 0x0008U;
+ struct pty_endpoint *endpoint;
+ struct os_termios *termios = attributes;
+ if (!pty_is_object(object) || termios == NULL) return -EINVAL;
+ endpoint = object->context;
+ if (set) {
+  endpoint->pty->attributes = *termios;
+  endpoint->pty->raw = (termios->local_flags & 2U) == 0;
+  endpoint->pty->echo = (termios->local_flags & 8U) != 0;
+  endpoint->pty->output_post = (termios->output_flags & 1U) != 0;
+  endpoint->pty->output_newline_crlf = (termios->output_flags & 4U) != 0;
+ } else {
+  *termios = endpoint->pty->attributes;
+  if (endpoint->pty->raw) termios->local_flags &= ~2U;
+  else termios->local_flags |= 2U;
+ }
+ return 0;
+}
 
-	if (!pty_is_object(object) || termios == NULL)
-		return -EINVAL;
-	endpoint = object->context;
-	if (set) {
-		endpoint->pty->raw = (termios->local_flags & canonical) == 0;
-		endpoint->pty->echo = (termios->local_flags & echo) != 0;
-		endpoint->pty->output_post = (termios->output_flags & 0x1U) != 0;
-		endpoint->pty->output_newline_crlf = (termios->output_flags & 0x4U) != 0;
-	} else {
-		*termios = (struct pty_termios_abi){
-			.input_flags = 0x00000100U,
-			.output_flags = 0x00000005U,
-			.control_flags = 0x000000bFU,
-			.local_flags = 0x00008A3BU,
-			.input_speed = 38400,
-			.output_speed = 38400
-		};
-		termios->control_chars[0] = 3;
-		termios->control_chars[1] = 28;
-		termios->control_chars[2] = 127;
-		termios->control_chars[3] = 21;
-		termios->control_chars[4] = 4;
-		termios->control_chars[5] = 0;
-		termios->control_chars[6] = 1;
-		termios->control_chars[9] = 19;
-		termios->control_chars[10] = 17;
-		termios->control_chars[16] = 26;
-		if (!endpoint->pty->raw)
-			termios->local_flags |= canonical;
-		else
-			termios->local_flags &= ~canonical;
-		if (!endpoint->pty->echo)
-			termios->local_flags &= ~echo;
-	}
-	return 0;
+int
+pty_flush_input(struct fd_object *object)
+{
+ if (!pty_is_object(object)) return -ENOTTY;
+ struct pty_endpoint *endpoint = object->context;
+ struct pty_state *pty = endpoint->pty;
+ if (endpoint->master) pipe_buffer_init(&pty->output);
+ else {
+  pipe_buffer_init(&pty->input);
+  pty->line_length = 0;
+  pty->eof = false;
+ }
+ fd_readiness_wake();
+ return 0;
 }
 
 int
@@ -346,7 +329,11 @@ pty_create(struct fd_table *table, int *master, int *slave)
 	}
 	*pty = (struct pty_state){.master_open = true, .slave_open = true,
 	    .echo = true, .output_post = true, .output_newline_crlf = true,
-	    .dimensions = {24, 80, 0, 0}};
+	    .dimensions = {24, 80, 0, 0},
+	    .attributes = {.input_flags = 0x100U, .output_flags = 5U,
+	    .control_flags = 0xbfU, .local_flags = 0x8a3bU,
+	    .control_chars = {3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26},
+	    .input_speed = 38400, .output_speed = 38400}};
 	*first = (struct pty_endpoint){.pty = pty, .master = true};
 	*second = (struct pty_endpoint){.pty = pty, .master = false};
 	master_object = fd_object_create(&pty_operations, first);

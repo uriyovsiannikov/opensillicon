@@ -1,7 +1,9 @@
 #include "syscall_internal.h"
 
 #include "abi/select.h"
+#include "abi/poll.h"
 #include "kernel/pipe.h"
+#include "kernel/heap.h"
 #include "kernel/hda_audio.h"
 #include "kernel/process.h"
 #include "kernel/pty.h"
@@ -17,6 +19,8 @@
 #define SYSCALL_MAX_IOV 16U
 #define SYSCALL_MAX_IOV_BYTES (64U * 1024U)
 #define SYSCALL_IOV_CHUNK 512U
+#define NATIVE_F_DUPFD 0U
+#define NATIVE_F_DUPFD_CLOEXEC 1030U
 #define NATIVE_F_GETFD 1U
 #define NATIVE_F_SETFD 2U
 #define NATIVE_F_GETFL 3U
@@ -119,16 +123,17 @@ syscall_select(struct interrupt_frame *frame)
 		} else {
 			ready = fd_object_poll(object, requested);
 		}
-		if (ready != 0)
-			ready_count++;
 		if ((ready & FD_POLL_READ) != 0) {
 			fd_set_add(&ready_read, descriptor);
+			ready_count++;
 		}
 		if ((ready & FD_POLL_WRITE) != 0) {
 			fd_set_add(&ready_write, descriptor);
+			ready_count++;
 		}
 		if ((ready & FD_POLL_ERROR) != 0) {
 			fd_set_add(&ready_except, descriptor);
+			ready_count++;
 		}
 	}
 	if (ready_count != 0) {
@@ -192,6 +197,74 @@ syscall_select(struct interrupt_frame *frame)
 	}
 	return process_block_on_channel_until(frame, fd_readiness_wait_channel(),
 	    deadline == UINT64_MAX ? 0 : deadline);
+}
+
+/* Linux-compatible pollfd wire layout; never retain user buffers across waits. */
+_Static_assert(sizeof(struct os_pollfd) == 8, "pollfd ABI");
+static struct interrupt_frame *
+syscall_poll(struct interrupt_frame *frame)
+{
+ uint64_t count = frame->rsi, deadline = process_select_deadline();
+ int64_t timeout = (int64_t)frame->rdx;
+ struct os_pollfd *fds = NULL;
+ size_t bytes;
+ int ready_count = 0;
+ bool console = false;
+ uint64_t error = 0;
+ if (count > OS_POLL_MAX || timeout > INT32_MAX) { error = EINVAL; goto fail; }
+ bytes = count * sizeof(*fds);
+ if (bytes != 0) {
+  if (!vmm_validate_user_write(vmm_active_address_space(), frame->rdi, bytes)) {
+   error = EFAULT; goto fail;
+  }
+  fds = kheap_alloc(bytes);
+  if (fds == NULL) { error = ENOMEM; goto fail; }
+  if (!vmm_copy_from_user(vmm_active_address_space(), fds, frame->rdi, bytes)) {
+   error = EFAULT; goto fail;
+  }
+ }
+ for (size_t i = 0; i < count; i++) {
+  fds[i].revents = 0;
+  if (fds[i].fd < 0) continue;
+  struct fd_object *object = fd_object_for_descriptor(current_fd_table(), fds[i].fd);
+  if (object == NULL) { fds[i].revents = OS_POLLNVAL; ready_count++; continue; }
+  uint32_t requested = FD_POLL_ERROR | FD_POLL_HANGUP;
+  if (fds[i].events & (OS_POLLIN | OS_POLLRDNORM)) requested |= FD_POLL_READ;
+  if (fds[i].events & (OS_POLLOUT | OS_POLLWRNORM)) requested |= FD_POLL_WRITE;
+  uint32_t ready = fd_object_poll(object, requested);
+  if ((requested & FD_POLL_READ) && fd_object_is_console(object)) {
+   console = true;
+   ready = (ready & ~FD_POLL_READ) | (tty_input_ready() ? FD_POLL_READ : 0);
+  }
+  if (ready & FD_POLL_READ) fds[i].revents |= fds[i].events & (OS_POLLIN | OS_POLLRDNORM);
+  if (ready & FD_POLL_WRITE) fds[i].revents |= fds[i].events & (OS_POLLOUT | OS_POLLWRNORM);
+  if (ready & FD_POLL_ERROR) fds[i].revents |= OS_POLLERR;
+  if (ready & FD_POLL_HANGUP) fds[i].revents |= OS_POLLHUP;
+  if (fds[i].revents) ready_count++;
+ }
+ if (deadline == 0) {
+  deadline = timeout < 0 ? UINT64_MAX : timer_ticks() +
+      ((uint64_t)timeout * MONOTONIC_TICK_HZ + 999) / 1000;
+  process_select_deadline_set(deadline);
+ }
+ if (ready_count || (deadline != UINT64_MAX && timer_ticks() >= deadline)) {
+  if (bytes && !vmm_copy_to_user(vmm_active_address_space(), frame->rdi, fds, bytes)) {
+   error = EFAULT; goto fail;
+  }
+  if (fds != NULL) (void)kheap_free(fds);
+  process_select_deadline_clear();
+  frame->rax = ready_count;
+  return frame;
+ }
+ if (fds != NULL) (void)kheap_free(fds);
+ if (console && timer_ticks() + 1 < deadline) deadline = timer_ticks() + 1;
+ return process_block_on_channel_until(frame, fd_readiness_wait_channel(),
+     deadline == UINT64_MAX ? 0 : deadline);
+fail:
+ if (fds != NULL) (void)kheap_free(fds);
+ process_select_deadline_clear();
+ syscall_error(frame, error);
+ return frame;
 }
 
 static int
@@ -562,9 +635,15 @@ syscall_io_local(struct interrupt_frame **result_frame)
 				frame->rax = 0;
 		}
 		return true;
+	case SYSCALL_PIPE2:
 	case SYSCALL_PIPE:
 		{
 			uint32_t descriptors[2];
+			uint64_t flags = frame->rax == SYSCALL_PIPE2 ? frame->rsi : 0;
+			if (flags & ~(uint64_t)(VFS_O_CLOEXEC | VFS_O_NONBLOCK)) {
+				syscall_error(frame, EINVAL);
+				return true;
+			}
 			int reader, writer;
 			struct address_space *space = vmm_active_address_space();
 			struct fd_table *table = current_fd_table();
@@ -576,6 +655,16 @@ syscall_io_local(struct interrupt_frame **result_frame)
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				return true;
+			}
+			if (flags & VFS_O_CLOEXEC) {
+				(void)fd_set_descriptor_flags(table,reader,FD_DESCRIPTOR_CLOEXEC);
+				(void)fd_set_descriptor_flags(table,writer,FD_DESCRIPTOR_CLOEXEC);
+			}
+			if (flags & VFS_O_NONBLOCK) {
+				struct fd_object *read_end = fd_object_for_descriptor(table,reader);
+				struct fd_object *write_end = fd_object_for_descriptor(table,writer);
+				__atomic_fetch_or(&read_end->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
+				__atomic_fetch_or(&write_end->status_flags, FD_STATUS_NONBLOCK, __ATOMIC_RELAXED);
 			}
 			descriptors[0] = (uint32_t)reader;
 			descriptors[1] = (uint32_t)writer;
@@ -689,6 +778,14 @@ syscall_io_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			switch (frame->rsi) {
+			case NATIVE_F_DUPFD:
+			case NATIVE_F_DUPFD_CLOEXEC: {
+				int result = fd_dup_from(current_fd_table(),frame->rdi,frame->rdx,
+				    frame->rsi == NATIVE_F_DUPFD_CLOEXEC ? FD_DESCRIPTOR_CLOEXEC : 0);
+				if (result < 0) syscall_error(frame,errno_from_kernel(result));
+				else frame->rax = result;
+				break;
+			}
 			case NATIVE_F_GETFD: {
 				uint32_t flags;
 				int result = fd_get_descriptor_flags(current_fd_table(),
@@ -716,7 +813,7 @@ syscall_io_bsp(struct interrupt_frame *frame)
 				__atomic_store_n(&object->status_flags,
 				    (__atomic_load_n(&object->status_flags, __ATOMIC_RELAXED) &
 				    NATIVE_O_ACCMODE) | ((uint32_t)frame->rdx &
-				    NATIVE_O_NONBLOCK), __ATOMIC_RELAXED);
+				    (NATIVE_O_NONBLOCK | FD_STATUS_APPEND)), __ATOMIC_RELAXED);
 				fd_readiness_wake();
 				frame->rax = 0;
 				break;
@@ -729,9 +826,16 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			}
 		}
 		break;
+	case SYSCALL_DUP3:
 	case SYSCALL_DUP2:
 		{
 			int result;
+			bool dup3 = frame->rax == SYSCALL_DUP3;
+			if (dup3 && (frame->rdi == frame->rsi ||
+			    (frame->rdx & ~(uint64_t)VFS_O_CLOEXEC))) {
+				syscall_error(frame, EINVAL);
+				break;
+			}
 			if (frame->rdi > UINT32_MAX || frame->rsi > UINT32_MAX) {
 				syscall_error(frame, EBADF);
 				break;
@@ -739,8 +843,11 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			result = fd_dup2(current_fd_table(), frame->rdi, frame->rsi);
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));
-			else
+			else {
+				if (dup3 && (frame->rdx & VFS_O_CLOEXEC))
+					(void)fd_set_descriptor_flags(current_fd_table(),result,FD_DESCRIPTOR_CLOEXEC);
 				frame->rax = (uint64_t)result;
+			}
 		}
 		break;
 	case SYSCALL_DUP:
@@ -843,6 +950,8 @@ syscall_io_bsp(struct interrupt_frame *frame)
 			frame->rax = amount;
 		}
 		break;
+	case SYSCALL_POLL:
+		return syscall_poll(frame);
 	case SYSCALL_SELECT:
 		return syscall_select(frame);
 	default:

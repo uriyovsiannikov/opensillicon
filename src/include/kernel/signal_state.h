@@ -3,10 +3,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "abi/signal.h"
 
 #define OS_SIGINT 2U
 #define OS_SIGHUP 1U
 #define OS_SIGKILL 9U
+#define OS_SIGSTOP 19U
 #define OS_SIGUSR1 10U
 #define OS_SIGPIPE 13U
 #define OS_SIGALRM 14U
@@ -17,11 +19,6 @@
 
 #define OS_SIGNAL_DEFAULT 0ULL
 #define OS_SIGNAL_IGNORE 1ULL
-
-struct os_signal_action {
-	uint64_t handler;
-	uint64_t restorer;
-};
 
 struct os_signal_state {
 	uint64_t pending;

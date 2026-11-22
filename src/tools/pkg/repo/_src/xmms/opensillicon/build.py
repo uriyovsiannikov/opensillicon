@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the original XMMS 1.2.11 GUI and static WAV/MP3 plugins for libos."""
+"""Build the original XMMS 1.2.11 GUI and static WAV/MP3 plugins for libc."""
 from pathlib import Path
 import os,re,subprocess
 ROOT=Path(__file__).resolve().parents[7]

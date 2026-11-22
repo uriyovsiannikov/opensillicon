@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* libos has no rename syscall. Java File.renameTo does not promise atomicity;
+/* The kernel has no rename syscall. Java File.renameTo does not promise atomicity;
  * support regular files without overwriting an existing destination. */
 int minijvm_rename(const char *source, const char *destination)
 {

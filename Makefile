@@ -48,3 +48,5 @@ run-gui:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+include src/user/thirdparty/musl/opensillicon/Makefile

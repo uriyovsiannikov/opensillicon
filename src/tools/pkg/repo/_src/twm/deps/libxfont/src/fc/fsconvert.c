@@ -37,7 +37,7 @@
 #include	<X11/fonts/fontstruct.h>
 #include	"fservestr.h"
 #include	<X11/fonts/fontutil.h>
-#include	"fslibos.h"
+#include	"fslibc.h"
 
 extern char _fs_glyph_undefined;
 extern char _fs_glyph_requested;

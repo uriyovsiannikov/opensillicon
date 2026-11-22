@@ -1,4 +1,6 @@
+#define _GNU_SOURCE
 #include <errno.h>
+#include <sys/syscall.h>
 #include <stdio.h>
 #include <unistd.h>
 int
@@ -9,7 +11,7 @@ main(int argc, char **argv)
 		fputs("usage: sync\n", stderr);
 		return 2;
 	}
-	if (sync_all() != 0) {
+	if (syscall(SYS_sync) != 0) {
 		fprintf(stderr, "sync: failed (errno %d)\n", errno);
 		return 1;
 	}

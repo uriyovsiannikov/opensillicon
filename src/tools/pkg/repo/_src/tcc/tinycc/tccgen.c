@@ -7144,7 +7144,7 @@ ST_FUNC void free_inline_functions(TCCState *s)
     dynarray_reset(&s->inline_fns, &s->nb_inline_fns);
 }
 
-/* Backported from TinyCC's newer declaration parser for libos headers. */
+/* Backported from TinyCC's newer declaration parser for libc headers. */
 static void parse_static_assert(void)
 {
     CString message;

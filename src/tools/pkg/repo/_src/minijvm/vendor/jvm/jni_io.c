@@ -322,7 +322,7 @@ s32 org_mini_fs_InnerFile_setLength0(Runtime *runtime, JClass *clazz) {
         long position = ftell(fd);
         if (position >= 0 && fseek(fd, 0, SEEK_END) == 0) {
             long size = ftell(fd);
-            /* libos can extend a file by writing, but cannot shrink it. */
+            /* libc can extend a file by writing, but cannot shrink it. */
             if (size >= 0 && length >= size &&
                 (length == size ||
                  (fseek(fd, length - 1, SEEK_SET) == 0 && fputc(0, fd) != EOF)))

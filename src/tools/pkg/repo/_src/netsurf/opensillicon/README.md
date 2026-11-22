@@ -59,8 +59,8 @@ for the compressed NetSurf Messages resource.
 ## Verification
 
 ```sh
-sh src/tests/libos_strftime.sh
-sh src/tests/libos_allocator.sh
+sh src/tests/libc_strftime.sh
+sh src/tests/libc_allocator.sh
 NETSURF_TEST_INPUT=1 QEMU_ACCEL=tcg QEMU_CPU=max python3 src/tests/tls_qemu.py
 ```
 

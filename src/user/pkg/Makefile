@@ -31,14 +31,14 @@ PKG_HOST_FLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror \
 
 $(BUILD_DIR)/pkg/%.o: $(PKG_DIR)/%.c $(PKG_HEADERS) src/mk/common.mk
 	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) $(PKG_TLS_FLAGS) -MMD -MP -I$(PKG_DIR) -c $< -o $@
+	$(CC) $(LIBC_CFLAGS) $(PKG_TLS_FLAGS) -MMD -MP -I$(PKG_DIR) -c $< -o $@
 
-$(BUILD_DIR)/coreutils/pkg.elf: $(PKG_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o \
-		$(LIBOS_ARCHIVE) $(BUILD_DIR)/mbedtls/.pkg-ready src/user/c_linker.ld
+$(BUILD_DIR)/coreutils/pkg.elf: $(PKG_OBJECTS) $(LIBC_BUILD_DIR)/crt1.o \
+		$(LIBC_ARCHIVE) $(BUILD_DIR)/mbedtls/.pkg-ready src/user/c_linker.ld
 	mkdir -p $(@D)
 	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(PKG_OBJECTS) -Wl,--start-group $(PKG_TLS_LIBS) $(LIBOS_ARCHIVE) \
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o \
+		$(PKG_OBJECTS) -Wl,--start-group $(PKG_TLS_LIBS) $(LIBC_ARCHIVE) \
 		-Wl,--end-group -lgcc -o $@
 
 $(BUILD_DIR)/pkg/pkg-host: $(PKG_CLIENT) $(PKG_HEADERS) $(BUILD_DIR)/mbedtls-host/.pkg-ready
@@ -55,12 +55,12 @@ $(BUILD_DIR)/pkg/pkg-server: src/tools/pkg/server/server.c $(PKG_COMMON) $(PKG_D
 		$(PKG_HOST_TLS_LIBS) -o $@
 
 $(BUILD_DIR)/pkg/hello-system-stage/usr/bin/hello: src/tools/pkg/repo/_src/hello/hello.c \
-		$(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+		$(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $(BUILD_DIR)/pkg/hello.o
+	$(CC) $(LIBC_CFLAGS) -c $< -o $(BUILD_DIR)/pkg/hello.o
 	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(BUILD_DIR)/pkg/hello.o $(LIBOS_ARCHIVE) -o $@
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o \
+		$(BUILD_DIR)/pkg/hello.o $(LIBC_ARCHIVE) -o $@
 
 src/tools/pkg/repo/_pkges/hello-1.0.0.spkg: $(BUILD_DIR)/pkg/hello-system-stage/usr/bin/hello \
 		$(BUILD_DIR)/pkg/pkg-build
@@ -90,8 +90,8 @@ DOOM_OBJECTS := $(addprefix $(DOOM_BUILD_DIR)/,$(addsuffix .o,$(DOOM_VENDOR_SOUR
 
 # Upstream is C89-era code: keep its warnings visible but do not let them fail
 # the build.  Doom prints floats through varargs, so SSE must stay enabled like
-# the other X11 clients; only the kernel and the core libos are SSE-free.
-DOOM_CFLAGS := $(filter-out -mno-sse -mno-sse2 -mno-mmx -msoft-float,$(LIBOS_CFLAGS)) \
+# the other X11 clients; only the kernel and the core libc are SSE-free.
+DOOM_CFLAGS := $(filter-out -mno-sse -mno-sse2 -mno-mmx -msoft-float,$(LIBC_CFLAGS)) \
 	-Wno-error -I$(DOOM_DIR)/doomgeneric -I$(X11_PREFIX)/include \
 	-idirafter /usr/include -DOPEN_SILLICON \
 	-DDOOMGENERIC_RESX=$(DOOM_RESX) -DDOOMGENERIC_RESY=$(DOOM_RESY)
@@ -112,10 +112,10 @@ $(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o: \
 	$(CC) $(DOOM_CFLAGS) -c $< -o $@
 
 # The X11 client libraries come from the shared X11 build prefix.
-$(BUILD_DIR)/doom/doom: $(DOOM_OBJECTS) $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) \
+$(BUILD_DIR)/doom/doom: $(DOOM_OBJECTS) $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) \
 		$(BUILD_DIR)/x11/.apps-ready
-	$(LD) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(DOOM_OBJECTS) \
-		--start-group $(LIBOS_ARCHIVE) $(X11_DOOM_LIBS) --end-group -o $@
+	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(DOOM_OBJECTS) \
+		--start-group $(LIBC_ARCHIVE) $(X11_DOOM_LIBS) --end-group -o $@
 
 LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
 LIBZ_OBJECTS := $(addprefix $(LIBZ_BUILD_DIR)/,$(addsuffix .o,$(LIBZ_SOURCES)))
@@ -124,14 +124,14 @@ $(LIBZ_BUILD_DIR):
 	mkdir -p $@
 
 $(LIBZ_BUILD_DIR)/%.o: src/tools/pkg/repo/_src/twm/deps/libz/%.c $(wildcard src/tools/pkg/repo/_src/twm/deps/libz/*.h) \
-		$(wildcard src/user/libos/include/* src/user/libos/include/sys/*) | $(LIBZ_BUILD_DIR)
-	$(CC) $(LIBOS_CFLAGS) -DDYNAMIC_CRC_TABLE -DNO_GZCOMPRESS -DZ_HAVE_UNISTD_H \
+		$(wildcard src/build/musl/sysroot/include/* src/build/musl/sysroot/include/sys/*) | $(LIBZ_BUILD_DIR)
+	$(CC) $(LIBC_CFLAGS) -DDYNAMIC_CRC_TABLE -DNO_GZCOMPRESS -DZ_HAVE_UNISTD_H \
 		-Isrc/tools/pkg/repo/_src/twm/deps/libz -c $< -o $@
 
 $(LIBZ_ARCHIVE): $(LIBZ_OBJECTS)
 	ar rcs $@ $^
 
-LIBFONTENC_CPPFLAGS := -nostdinc -I$(abspath src/user/libos/include) \
+LIBFONTENC_CPPFLAGS := -nostdinc -I$(abspath src/build/musl/sysroot/include) \
 	-I$(abspath src/tools/pkg/repo/_src/twm/tinyx/include) -I$(abspath src/tools/pkg/repo/_src/twm/deps/libfontenc/include) \
 	-isystem $(shell $(CC) -print-file-name=include) -idirafter /usr/include \
 	-DFONT_ENCODINGS_DIRECTORY=\"/usr/share/fonts/encodings\"
@@ -150,7 +150,7 @@ $(LIBFONTENC_BUILD_DIR)/%.o: src/tools/pkg/repo/_src/twm/deps/libfontenc/src/%.c
 $(LIBFONTENC_ARCHIVE): $(LIBFONTENC_OBJECTS)
 	ar rcs $@ $^
 
-LIBXFONT_CPPFLAGS := -nostdinc -I$(abspath src/user/libos/include) \
+LIBXFONT_CPPFLAGS := -nostdinc -I$(abspath src/build/musl/sysroot/include) \
 	-I$(abspath src/tools/pkg/repo/_src/twm/deps/libz) -I$(abspath src/tools/pkg/repo/_src/twm/tinyx/include) \
 	-I$(abspath src/tools/pkg/repo/_src/twm/deps/libxfont/include) \
 	-isystem $(shell $(CC) -print-file-name=include) \
@@ -180,7 +180,7 @@ $(LIBXFONT_ARCHIVE): $(LIBZ_ARCHIVE) $(LIBFONTENC_ARCHIVE) \
 	cp $(LIBXFONT_BUILD_DIR)/src/.libs/libXfont.a $@
 
 TINYX_CPPFLAGS := -nostdinc -I$(abspath src/include) \
-	-I$(abspath src/user/libos/include) -I$(abspath src/tools/pkg/repo/_src/twm/deps/libz) \
+	-I$(abspath src/build/musl/sysroot/include) -I$(abspath src/tools/pkg/repo/_src/twm/deps/libz) \
 	-I$(abspath src/tools/pkg/repo/_src/twm/deps/libfontenc/include) -I$(abspath src/tools/pkg/repo/_src/twm/deps/libxfont/include) \
 	-I$(abspath $(TINYX_SOURCE_DIR)/include) \
 	-I$(abspath $(TINYX_BUILD_DIR)/include) \
@@ -191,16 +191,16 @@ TINYX_CFLAGS := -std=gnu11 -O2 -ffreestanding -fno-builtin \
 	-msse2 -mfpmath=sse -Wno-unused-parameter
 TINYX_FONT_LIBS := -Wl,--start-group $(abspath $(LIBXFONT_ARCHIVE)) \
 	$(abspath $(LIBFONTENC_ARCHIVE)) $(abspath $(LIBZ_ARCHIVE)) \
-	$(abspath $(LIBOS_ARCHIVE)) -Wl,--end-group
+	$(abspath $(LIBC_ARCHIVE)) -Wl,--end-group
 TINYX_SOURCES := $(shell find src/tools/pkg/repo/_src/twm/tinyx -type f ! -path '*/.git/*' -print)
 
 # Configure only when sources or the build configuration change. Runtime
 # archives are link inputs; changing libc must not regenerate the source tree.
 TINYX_CONFIG_STAMP := $(TINYX_BUILD_DIR)/.opensillicon-configured
 $(TINYX_CONFIG_STAMP): $(TINYX_SOURCES) src/user/pkg/Makefile src/mk/common.mk \
-        $(wildcard src/user/libos/include/*.h src/user/libos/include/sys/*.h) \
+        $(wildcard src/build/musl/sysroot/include/*.h src/build/musl/sysroot/include/sys/*.h) \
         $(wildcard src/include/abi/*.h) src/user/c_linker.ld | $(LIBXFONT_ARCHIVE) \
-        $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
+        $(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o
 	mkdir -p $(TINYX_SOURCE_DIR) $(TINYX_BUILD_DIR)
 	tar --exclude=.git -cf - -C src/tools/pkg/repo/_src/twm/tinyx . | tar -xf - -C $(TINYX_SOURCE_DIR)
 	find $(TINYX_SOURCE_DIR) -name Makefile.am -exec touch {} +
@@ -208,7 +208,7 @@ $(TINYX_CONFIG_STAMP): $(TINYX_SOURCES) src/user/pkg/Makefile src/mk/common.mk \
 	cd $(TINYX_SOURCE_DIR) && autoreconf -fi
 	cd $(TINYX_BUILD_DIR) && \
 		OPEN_SILLICON_LIBS='$(TINYX_FONT_LIBS)' \
-		OPEN_SILLICON_CRT0='$(abspath $(LIBOS_BUILD_DIR)/crt0.o)' \
+		OPEN_SILLICON_CRT0='$(abspath $(LIBC_BUILD_DIR)/crt1.o)' \
 		OPEN_SILLICON_LDFLAGS='-nostdlib -static -no-pie \
 			-Wl,--build-id=none -Wl,-z,noexecstack \
 			-Wl,-T,$(abspath src/user/c_linker.ld)' \
@@ -222,28 +222,28 @@ $(TINYX_CONFIG_STAMP): $(TINYX_SOURCES) src/user/pkg/Makefile src/mk/common.mk \
 		--with-default-font-path=built-ins,/usr/share/fonts/misc
 	touch $@
 
-$(TINYX_BINARY): $(TINYX_CONFIG_STAMP) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
-        $(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
+$(TINYX_BINARY): $(TINYX_CONFIG_STAMP) $(LIBC_ARCHIVE) $(LIBZ_ARCHIVE) \
+        $(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o
 	$(MAKE) -C $(TINYX_BUILD_DIR)
 	test -x "$@"
 
 $(TINYX_BINARY): | $(BUILD_DIR)
 
 $(BUILD_DIR)/startx.o: src/tools/pkg/repo/_src/twm/startx/startx.c | $(BUILD_DIR)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $@
+	$(CC) $(LIBC_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBOS_BUILD_DIR)/crt0.o $(LIBOS_ARCHIVE) src/user/c_linker.ld
+$(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(BUILD_DIR)/startx.o $(LIBOS_ARCHIVE) -o $@
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o \
+		$(BUILD_DIR)/startx.o $(LIBC_ARCHIVE) -o $@
 
 .PHONY: $(BUILD_DIR)/x11/.apps-ready
-$(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
+$(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBC_ARCHIVE) $(LIBZ_ARCHIVE) \
 		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE)
 	sh src/tools/builders/build_x11_if_needed.sh
 
 .PHONY: $(BUILD_DIR)/netsurf/.ready
-$(BUILD_DIR)/netsurf/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o
+$(BUILD_DIR)/netsurf/.ready: $(BUILD_DIR)/x11/.apps-ready $(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o
 	sh src/tools/builders/build_netsurf.sh
 
 # Desktop applications are built on demand as packages. The root image does
@@ -288,7 +288,7 @@ src/tools/pkg/repo/_pkges/twm-1.0.0.spkg: $(BUILD_DIR)/pkg/xorg-stage.ready $(BU
 X11_CLIENT_PREFIX := $(BUILD_DIR)/x11/prefix
 X11_CLIENT_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin -fno-strict-aliasing \
 	-fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -DOPEN_SILLICON \
-	-nostdinc -Isrc/user/libos/include -I$(X11_CLIENT_PREFIX)/include \
+	-nostdinc -Isrc/build/musl/sysroot/include -I$(X11_CLIENT_PREFIX)/include \
 	-I$(BUILD_DIR)/x11/libX11/include \
 	-isystem $(shell $(CC) -print-file-name=include) -idirafter /usr/include
 X11_CLIENT_LIBS := -lXaw7 -lXpm -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau
@@ -301,13 +301,13 @@ $(BUILD_DIR)/x11/clients/xclock: private CLIENT_FLAGS := -DNO_I18N -DHAVE_GETPID
 $(BUILD_DIR)/x11/clients/xclock: $(wildcard $(X11_CLIENT_SOURCE)/xclock/*.[ch] $(X11_CLIENT_SOURCE)/xclock/*.bit)
 
 $(addprefix $(BUILD_DIR)/x11/clients/,xeyes xclock): $(BUILD_DIR)/x11/.apps-ready \
-		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld src/user/pkg/Makefile
+		$(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld src/user/pkg/Makefile
 	mkdir -p $(@D)
 	$(CC) $(X11_CLIENT_CFLAGS) $(CLIENT_FLAGS) $(filter %.c,$^) \
 		-nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o -L$(X11_CLIENT_PREFIX)/lib \
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o -L$(X11_CLIENT_PREFIX)/lib \
 		-Wl,--start-group $(CLIENT_LIBS) $(X11_CLIENT_LIBS) $(X11_CLIENT_PREFIX)/lib/libi18n.a \
-		$(LIBOS_ARCHIVE) -Wl,--end-group -o $@
+		$(LIBC_ARCHIVE) -Wl,--end-group -o $@
 
 define X11_CLIENT_PACKAGE
 src/tools/pkg/repo/_pkges/$(1)-$(2).spkg: $(BUILD_DIR)/x11/clients/$(1) \
@@ -336,7 +336,7 @@ NANO_NCURSES_COPYING := $(BUILD_DIR)/nano/deps/ncurses-6.5/COPYING
 NANO_SOURCES := $(shell find $(NANO_DIR)/upstream/src -type f ! -path '*/.git/*'; find $(NANO_DIR)/upstream -maxdepth 1 -type f ! -path '*/.git/*')
 
 $(BUILD_DIR)/nano/nano: $(NANO_SOURCES) $(NANO_DIR)/build.sh $(NCURSES_ARCHIVE) \
-		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+		$(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	sh $(NANO_DIR)/build.sh
 
 src/tools/pkg/repo/_pkges/nano-9.3.1.spkg: $(BUILD_DIR)/nano/nano \
@@ -357,7 +357,7 @@ HTOP_SOURCES := $(wildcard $(HTOP_DIR)/upstream/*.[ch] \
 	$(HTOP_DIR)/upstream/opensillicon/*.[ch]) $(HTOP_DIR)/upstream/Makefile.am
 
 $(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) $(HTOP_DIR)/build.sh $(NCURSES_ARCHIVE) \
-		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o \
+		$(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o \
 		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
 	sh $(HTOP_DIR)/build.sh
 
@@ -393,11 +393,11 @@ $(QUAKE_BUILD)/%.o: $(QUAKE_DIR)/opensillicon/%.c $(QUAKE_HEADERS) src/user/pkg/
 $(QUAKE_BUILD)/vid_x11.o: | $(BUILD_DIR)/x11/.apps-ready
 
 $(QUAKE_BUILD)/quake: $(QUAKE_OBJECTS) $(BUILD_DIR)/x11/.apps-ready \
-		$(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+		$(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o $(QUAKE_OBJECTS) \
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o $(QUAKE_OBJECTS) \
 		-Wl,--start-group $(X11_DOOM_LIBS) $(X11_PREFIX)/lib/libi18n.a \
-		$(LIBOS_ARCHIVE) -Wl,--end-group -lgcc -o $@
+		$(LIBC_ARCHIVE) -Wl,--end-group -lgcc -o $@
 
 src/tools/pkg/repo/_pkges/quake-1.09.spkg: $(QUAKE_BUILD)/quake $(QUAKE_DIR)/COPYING \
 		$(QUAKE_DIR)/README.md $(BUILD_DIR)/pkg/pkg-build
@@ -425,14 +425,14 @@ $(MINIJVM_MESA_ARCHIVE):
 	printf '%s  %s\n' 505bf418dceba05837f4ea1b1972b9620c35f8cb94bc4d1e6d573c15f562576d $@.tmp | sha256sum -c -
 	mv $@.tmp $@
 
-$(MINIJVM_OSMESA): $(MINIJVM_MESA_ARCHIVE) $(MINIJVM_DIR)/opensillicon/build-mesa.sh $(LIBOS_ARCHIVE)
+$(MINIJVM_OSMESA): $(MINIJVM_MESA_ARCHIVE) $(MINIJVM_DIR)/opensillicon/build-mesa.sh $(LIBC_ARCHIVE)
 	+sh $(MINIJVM_DIR)/opensillicon/build-mesa.sh $(abspath $<) $(abspath $(dir $<)) \
-		$(abspath src/user/libos/include) "$(CC)" "$(HOST_CC)"
+		$(abspath src/build/musl/sysroot/include) "$(CC)" "$(HOST_CC)"
 
-$(MINIJVM_BUILD)/java: $(MINIJVM_SOURCES) $(LIBOS_ARCHIVE) $(BUILD_DIR)/x11/.apps-ready \
-		$(MINIJVM_OSMESA) $(BUILD_DIR)/mbedtls/libmbedcrypto.a $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+$(MINIJVM_BUILD)/java: $(MINIJVM_SOURCES) $(LIBC_ARCHIVE) $(BUILD_DIR)/x11/.apps-ready \
+		$(MINIJVM_OSMESA) $(BUILD_DIR)/mbedtls/libmbedcrypto.a $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	sh $(MINIJVM_DIR)/opensillicon/build.sh $(MINIJVM_DIR) $(MINIJVM_BUILD) \
-		$(CC) $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o $(X11_PREFIX) $(MINIJVM_MESA) \
+		$(CC) $(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o $(X11_PREFIX) $(MINIJVM_MESA) \
 		$(MINIJVM_OSMESA) $(X11_DOOM_LIBS) $(X11_PREFIX)/lib/libi18n.a \
 		$(X11_PREFIX)/lib/libpng16.a $(LIBZ_ARCHIVE) $(BUILD_DIR)/mbedtls/libmbedcrypto.a
 
@@ -466,10 +466,10 @@ MINECRAFT_SUPPORT_JARS := \
 	src/build/minecraft-package-input/jinput-2.0.5.jar \
 	src/build/minecraft-package-input/jutils-1.0.0.jar
 
-$(MINECRAFT_BUILD)/minecraft: $(MINECRAFT_DIR)/minecraft.c $(LIBOS_ARCHIVE) $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+$(MINECRAFT_BUILD)/minecraft: $(MINECRAFT_DIR)/minecraft.c $(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	mkdir -p $(@D)
-	$(CC) $(LIBOS_CFLAGS) -c $< -o $(MINECRAFT_BUILD)/minecraft.o
-	$(CC) $(USER_C_LDFLAGS) $(LIBOS_BUILD_DIR)/crt0.o $(MINECRAFT_BUILD)/minecraft.o $(LIBOS_ARCHIVE) -lgcc -o $@
+	$(CC) $(LIBC_CFLAGS) -c $< -o $(MINECRAFT_BUILD)/minecraft.o
+	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(MINECRAFT_BUILD)/minecraft.o $(LIBC_ARCHIVE) -lgcc -o $@
 
 $(MINECRAFT_BUILD)/compat.jar: $(MINECRAFT_DIR)/compat/ahy.java $(MINECRAFT_CLIENT_JAR)
 	mkdir -p $(MINECRAFT_BUILD)/compat
@@ -495,21 +495,21 @@ TCC_SOURCE := $(TCC_PACKAGE_DIR)/tinycc
 TCC_PORT := $(TCC_PACKAGE_DIR)/opensillicon
 TCC_BUILD := $(BUILD_DIR)/tcc
 TCC_STAGE := $(TCC_BUILD)/stage
-TCC_HEADERS := $(shell find src/user/libos/include -type f -name '*.h')
+TCC_HEADERS := $(shell find src/build/musl/sysroot/include -type f -name '*.h' 2>/dev/null)
 TCC_BUILTIN_HEADERS := $(wildcard $(TCC_SOURCE)/include/*.h)
 TCC_RUNTIME := $(addprefix $(TCC_BUILD)/,libtcc1.o va_list.o alloca86_64.o)
 TCC_CFLAGS := -std=gnu11 -O2 -ffreestanding -fno-builtin -fno-stack-protector \
-	-fno-pie -mno-red-zone -nostdinc -Isrc/user/libos/include \
+	-fno-pie -mno-red-zone -nostdinc -Isrc/build/musl/sysroot/include \
 	-isystem $(shell $(CC) -print-file-name=include)
 
 $(TCC_BUILD)/tcc: $(wildcard $(TCC_SOURCE)/*.[ch] $(TCC_SOURCE)/*.def) \
-		$(TCC_PORT)/config.h $(TCC_PORT)/compat.c $(TCC_HEADERS) $(LIBOS_ARCHIVE) \
-		$(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld src/user/pkg/Makefile
+		$(TCC_PORT)/config.h $(TCC_HEADERS) $(LIBC_ARCHIVE) \
+		$(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld src/user/pkg/Makefile
 	mkdir -p $(@D)
 	$(CC) $(TCC_CFLAGS) -I$(TCC_PORT) \
 		-nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack \
-		-Wl,-T,src/user/c_linker.ld $(LIBOS_BUILD_DIR)/crt0.o \
-		$(TCC_SOURCE)/tcc.c $(TCC_PORT)/compat.c $(LIBOS_ARCHIVE) -lgcc -o $@
+		-Wl,-T,src/user/c_linker.ld $(LIBC_BUILD_DIR)/crt1.o \
+		$(TCC_SOURCE)/tcc.c $(LIBC_ARCHIVE) -lgcc -o $@
 
 $(TCC_BUILD)/%.o: $(TCC_SOURCE)/lib/%.c src/user/pkg/Makefile
 	mkdir -p $(@D)
@@ -527,11 +527,11 @@ src/tools/pkg/repo/_pkges/tcc-0.9.27.spkg: $(TCC_BUILD)/tcc $(TCC_BUILD)/libtcc1
 		$(TCC_SOURCE)/COPYING $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(TCC_STAGE)
 	install -D -m 755 $(TCC_BUILD)/tcc $(TCC_STAGE)/usr/bin/tcc
-	install -D -m 644 $(LIBOS_ARCHIVE) $(TCC_STAGE)/usr/lib/tcc/lib/liblibos.a
+	install -D -m 644 $(LIBC_ARCHIVE) $(TCC_STAGE)/usr/lib/tcc/lib/libc.a
 	install -D -m 644 $(TCC_BUILD)/libtcc1.a $(TCC_STAGE)/usr/lib/tcc/lib/libtcc1.a
-	install -D -m 644 $(LIBOS_BUILD_DIR)/crt0.o $(TCC_STAGE)/usr/lib/tcc/lib/crt0.o
+	install -D -m 644 $(LIBC_BUILD_DIR)/crt1.o $(TCC_STAGE)/usr/lib/tcc/lib/crt0.o
 	install -D -m 644 src/include/abi/disk.h $(TCC_STAGE)/usr/lib/tcc/include/abi/disk.h
-	cp -R src/user/libos/include/. $(TCC_STAGE)/usr/lib/tcc/include/
+	cp -R src/build/musl/sysroot/include/. $(TCC_STAGE)/usr/lib/tcc/include/
 	install -m 644 $(TCC_BUILTIN_HEADERS) $(TCC_PORT)/include/stdint.h $(TCC_STAGE)/usr/lib/tcc/include/
 	install -D -m 644 $(TCC_SOURCE)/COPYING $(TCC_STAGE)/usr/share/licenses/tcc/COPYING
 	$(BUILD_DIR)/pkg/pkg-build tcc 0.9.27 $(TCC_STAGE) $@ 'Tiny C Compiler for OpenSillicon'
@@ -571,8 +571,8 @@ XMMS_BUILD := $(BUILD_DIR)/xmms
 XMMS_STAGE := $(XMMS_BUILD)/stage
 XMMS_SOURCES := $(shell find $(XMMS_DIR) -type f)
 
-$(XMMS_BUILD)/xmms: $(XMMS_SOURCES) $(LIBOS_ARCHIVE) $(LIBZ_ARCHIVE) \
-		$(BUILD_DIR)/x11/.apps-ready $(LIBOS_BUILD_DIR)/crt0.o src/user/c_linker.ld
+$(XMMS_BUILD)/xmms: $(XMMS_SOURCES) $(LIBC_ARCHIVE) $(LIBZ_ARCHIVE) \
+		$(BUILD_DIR)/x11/.apps-ready $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	python3 $(XMMS_DIR)/opensillicon/build.py
 
 $(XMMS_BUILD)/sources.tar.gz: $(XMMS_SOURCES)

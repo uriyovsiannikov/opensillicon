@@ -37,7 +37,7 @@ flock 9
 		"$root/src/tools/pkg/repo/_src/twm/twm" \
 		"$root/src/tools/pkg/repo/_src/twm/xterm" \
 		"$root/src/tools/pkg/repo/_src/twm/feh" \
-		"$root/src/user/libos/include" \
+		"$root/src/build/musl/sysroot/include" \
 		"$root/src/include/abi" \
 		"$root/src/tools/builders/build_x11_if_needed.sh" \
 		"$root/src/tools/builders/build_x11_apps.sh" \
@@ -48,7 +48,7 @@ flock 9
 
 # Implementation changes in libc/zlib require relinking, not reconfiguring
 # every X11 dependency. Public headers remain part of the source fingerprint.
-sha256sum "$root/src/build/libos/liblibos.a" "$root/src/build/libos/crt0.o" \
+sha256sum "$root/src/build/musl/sysroot/lib/libc.a" "$root/src/build/musl/sysroot/lib/crt1.o" \
     "$root/src/build/libz/libz.a" "$root/src/user/c_linker.ld" > "$link_tmp"
 
 mode=full

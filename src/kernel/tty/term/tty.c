@@ -222,6 +222,16 @@ tty_console_framebuffer_owner_exit(uint64_t owner_pid)
 }
 
 int
+tty_flush_input(void)
+{
+ if (!console_input_permitted()) return -1;
+ struct terminal_key_event event;
+ while (console_keyboard_poll(&event)) { }
+ terminal_flush_input();
+ return 0;
+}
+
+int
 tty_set_raw_mode(bool enabled)
 {
 	if (!console_input_permitted())
