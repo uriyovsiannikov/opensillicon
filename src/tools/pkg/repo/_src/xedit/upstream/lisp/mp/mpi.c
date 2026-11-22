@@ -34,9 +34,6 @@
 #ifdef __APPLE__
 # define finite(x) isfinite(x)
 #endif
-#ifdef OPEN_SILLICON
-# define copysign(x, y) ((y) < 0 ? -fabs(x) : fabs(x))
-#endif
 
 /*
  * Prototypes

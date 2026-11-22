@@ -42,16 +42,7 @@
 #include <X11/Xaw/SmeBSB.h>
 #include <X11/Xaw/SimpleMenu.h>
 
-#ifdef OPEN_SILLICON
-typedef void *caddr_t;
 #include <fcntl.h>
-static int
-xedit_creat(const char *path, mode_t mode)
-{
-	return open(path, O_CREAT | O_WRONLY | O_TRUNC, mode);
-}
-#define creat xedit_creat
-#endif
 
 /*
  * Prototypes
@@ -150,7 +141,7 @@ MakeCommandButton(Widget box, char *name, XtCallbackProc function)
 {
   Widget w = XtCreateManagedWidget(name, commandWidgetClass, box, NULL, ZERO);
   if (function != NULL)
-    XtAddCallback(w, XtNcallback, function, (caddr_t) NULL);
+    XtAddCallback(w, XtNcallback, function, (XtPointer) NULL);
   else
     XtVaSetValues(w, XtNsensitive, False, NULL);
   return w;
