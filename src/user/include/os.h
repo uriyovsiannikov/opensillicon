@@ -4,10 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define U_AF_INET 2U
-#define U_SOCK_STREAM 1U
-#define U_IPPROTO_TCP 6U
-
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/credentials.h"
@@ -16,20 +12,12 @@
 
 #define U_O_RDONLY 0U
 #define U_O_WRONLY 1U
-#define U_O_RDWR 2U
 #define U_O_CREAT 0x40U
-#define U_O_EXCL 0x80U
-#define U_O_TRUNC 0x200U
-#define U_O_DIRECTORY 0x10000U
 #define U_SIGINT 2U
 #define U_SIGKILL 9U
 #define U_SIGTERM 15U
-#define U_SIG_DFL 0ULL
-#define U_SIG_IGN 1ULL
 #define U_EXEC_ARG_MAX 16U
-#define U_EXEC_ARG_BYTES_MAX 2048U
 #define U_WAIT_NOHANG 1U
-#define U_TIOCGWINSZ 0x5413U
 #define U_TIOCSRAW 0x4f530001U
 #define U_TIOCCANON 0x4f530002U
 #define U_ICMP_ECHO_PAYLOAD_MAX 32U
