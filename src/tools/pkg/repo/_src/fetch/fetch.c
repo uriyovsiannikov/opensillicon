@@ -1,6 +1,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/sysctl.h>
+#include <time.h>
 #include "include/os.h"
 
 #define LOGO_WIDTH 24U
@@ -84,61 +86,12 @@ write_palette(const char *const colors[8])
 }
 
 static int
-read_proc(const char *path, char *buffer, size_t capacity)
-{
-	long descriptor = u_open(path, U_O_RDONLY);
-	size_t used = 0;
-	long amount;
-
-	if (descriptor < 0)
-		return 0;
-	while (used < capacity - 1) {
-		amount = u_read((uint64_t)descriptor, buffer + used,
-		    capacity - 1 - used);
-		if (amount == -4)
-			continue;
-		if (amount < 0) {
-			(void)u_close((uint64_t)descriptor);
-			return 0;
-		}
-		if (amount == 0)
-			break;
-		used += (size_t)amount;
-	}
-	(void)u_close((uint64_t)descriptor);
-	buffer[used] = '\0';
-	return used != 0 && used < capacity - 1;
-}
-
-static int
-parse_u64(const char **text, uint64_t *value)
-{
-	const char *cursor = *text;
-	uint64_t result = 0;
-
-	if (*cursor < '0' || *cursor > '9')
-		return 0;
-	while (*cursor >= '0' && *cursor <= '9') {
-		uint64_t digit = (uint64_t)(*cursor++ - '0');
-		if (result > (UINT64_MAX - digit) / 10U)
-			return 0;
-		result = result * 10U + digit;
-	}
-	*text = cursor;
-	*value = result;
-	return 1;
-}
-
-static int
 write_uptime(void)
 {
-	char content[128];
-	const char *cursor = content;
-	uint64_t seconds;
-
-	if (!read_proc("/proc/uptime", content, sizeof(content)) ||
-	    !parse_u64(&cursor, &seconds) || *cursor != '.')
+	struct timespec uptime;
+	if (clock_gettime(CLOCK_MONOTONIC, &uptime) < 0 || uptime.tv_sec < 0)
 		return write_string("unavailable");
+	uint64_t seconds = (uint64_t)uptime.tv_sec;
 	u_put_u64(seconds / 3600U);
 	if (!write_string("h "))
 		return 0;
@@ -147,31 +100,6 @@ write_uptime(void)
 		return 0;
 	u_put_u64(seconds % 60U);
 	return write_string("s");
-}
-
-static int
-memory_value(const char *content, const char *label, uint64_t *value)
-{
-	size_t length = u_strlen(label);
-
-	while (*content != '\0') {
-		size_t i = 0;
-		while (i < length && content[i] == label[i])
-			i++;
-		if (i == length) {
-			content += length;
-			while (*content == ' ' || *content == '\t')
-				content++;
-			return parse_u64(&content, value) &&
-			    content[0] == ' ' && content[1] == 'k' &&
-			    content[2] == 'B' && content[3] == '\n';
-		}
-		while (*content != '\0' && *content != '\n')
-			content++;
-		if (*content == '\n')
-			content++;
-	}
-	return 0;
 }
 
 static int
@@ -187,15 +115,24 @@ write_mib(uint64_t kib)
 static int
 write_memory(void)
 {
-	char content[128];
-	uint64_t total, free;
-
-	if (!read_proc("/proc/meminfo", content, sizeof(content)) ||
-	    !memory_value(content, "MemTotal:", &total) ||
-	    !memory_value(content, "MemFree:", &free) || free > total)
+	uint64_t total, free_pages;
+	int page_size;
+	size_t length = sizeof(total);
+	if (sysctlbyname("hw.physmem", &total, &length, NULL, 0) < 0 ||
+	    length != sizeof(total))
 		return write_string("unavailable");
-	return write_mib(total - free) && write_string(" / ") &&
-	    write_mib(total) && write_string(" MiB");
+	length = sizeof(free_pages);
+	if (sysctlbyname("vm.freepages", &free_pages, &length, NULL, 0) < 0 ||
+	    length != sizeof(free_pages))
+		return write_string("unavailable");
+	length = sizeof(page_size);
+	if (sysctlbyname("hw.pagesize", &page_size, &length, NULL, 0) < 0 ||
+	    length != sizeof(page_size) || page_size <= 0 ||
+	    free_pages > total / (uint64_t)page_size)
+		return write_string("unavailable");
+	uint64_t free = free_pages * (uint64_t)page_size;
+	return write_mib((total - free) / 1024U) && write_string(" / ") &&
+	    write_mib(total / 1024U) && write_string(" MiB");
 }
 
 static int
