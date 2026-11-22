@@ -4,8 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "abi/fcntl.h"
-
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/credentials.h"
@@ -25,12 +23,6 @@ struct u_winsize {
 	uint16_t ypixel;
 };
 
-struct u_ipv4_config {
-	uint8_t address[4];
-	uint8_t netmask[4];
-	uint8_t gateway[4];
-};
-
 struct u_icmp_echo_request {
 	uint8_t destination[4];
 	uint16_t identifier;
@@ -42,18 +34,12 @@ struct u_icmp_echo_request {
 	uint64_t elapsed_ticks;
 };
 
-_Static_assert(sizeof(struct u_ipv4_config) == 12,
-	"OpenSillicon IPv4 config ABI must be twelve bytes");
 _Static_assert(sizeof(struct u_icmp_echo_request) == 56,
 	"OpenSillicon ICMP Echo ABI must be 56 bytes");
 
 long u_write(uint64_t fd, const void *buffer, size_t length);
 long u_read(uint64_t fd, void *buffer, size_t length);
-long u_open(const char *path, uint64_t flags);
-long u_close(uint64_t fd);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);
-long u_network_ipv4_config(struct u_ipv4_config *config);
-long u_network_dns_server(uint8_t address[4]);
 long u_icmp_echo(struct u_icmp_echo_request *request);
 long u_power_control(uint64_t command);
 long u_kernel_crash(void);

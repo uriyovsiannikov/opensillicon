@@ -1,5 +1,7 @@
 #include "syscall_internal.h"
 #include "abi/sysctl.h"
+#include "abi/inet.h"
+#include "kernel/cyclone_net.h"
 #include "kernel/pmm.h"
 #include "kernel/fd.h"
 #include "kernel/smp.h"
@@ -20,6 +22,8 @@ struct sysctl_value {
 	union {
 		int32_t integer;
 		uint64_t wide;
+		struct os_ipv4_config ipv4;
+		uint8_t dns[4];
 	} number;
 	const void *data;
 	size_t size;
@@ -45,6 +49,29 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 		value->data = &value->number.wide;
 		value->size = sizeof(value->number.wide);
 		return 0;
+	} else if (name[0] == CTL_NET) {
+		switch (name[1]) {
+		case NET_INTERFACE:
+			text = cyclone_net_device_name();
+			if (text == NULL)
+				return ENXIO;
+			break;
+		case NET_IPV4_CONFIG:
+			if (!cyclone_net_ipv4_config(value->number.ipv4.address,
+			    value->number.ipv4.netmask, value->number.ipv4.gateway))
+				return EAGAIN;
+			value->data = &value->number.ipv4;
+			value->size = sizeof(value->number.ipv4);
+			return 0;
+		case NET_IPV4_DNS:
+			if (!cyclone_net_dns_server(value->number.dns))
+				return EAGAIN;
+			value->data = value->number.dns;
+			value->size = sizeof(value->number.dns);
+			return 0;
+		default:
+			return ENOENT;
+		}
 	} else if (name[0] == CTL_HW) {
 		switch (name[1]) {
 		case HW_MACHINE:

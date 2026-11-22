@@ -78,8 +78,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_TCP_SHUTDOWN] = { .bsp = syscall_net_bsp },
 	[SYSCALL_TCP_GETSOCKOPT] = { .bsp = syscall_net_bsp },
 	[SYSCALL_TCP_SETSOCKOPT] = { .bsp = syscall_net_bsp },
-	[SYSCALL_NET_GET_DNS_SERVER] = { .bsp = syscall_net_bsp },
-	[SYSCALL_NET_GET_IPV4_CONFIG] = { .bsp = syscall_net_bsp },
 	[SYSCALL_ICMP_ECHO] = { .bsp = syscall_net_bsp },
 	/* Processes and signals */
 	[SYSCALL_GET_ABI_VERSION] = { .local = syscall_proc_local },

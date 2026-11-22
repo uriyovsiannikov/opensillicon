@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v13.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v14.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -279,3 +279,11 @@ namespace or separate target-specific implementation.
 `kern.maxfilesperproc` reports the kernel descriptor-table capacity.
 `getrlimit(RLIMIT_NOFILE)` and `sysconf(_SC_OPEN_MAX)` query this value.
 Other resource limit queries are unsupported; limits are not currently mutable.
+
+ABI v14 retires the dedicated DNS-server and IPv4-configuration syscalls
+(slots 93 and 94). Native network queries use sysctl: `net.interface` is the
+active device name, `net.inet.ip.config` is an `os_ipv4_config`, and
+`net.inet.ip.dns` is four IPv4 octets. The latter two return EAGAIN while DHCP
+configuration is unavailable. These are OpenSillicon MIB nodes, not a complete
+BSD routing or interface tree. ifconfig and libc's resolver use this shared
+interface. Rebuild static applications for ABI v14.

@@ -18,15 +18,8 @@ long u_write(uint64_t fd, const void *buffer, size_t length)
 { return syscall4(SYSCALL_WRITE, fd, (uintptr_t)buffer, length, 0); }
 long u_read(uint64_t fd, void *buffer, size_t length)
 { return syscall4(SYSCALL_READ, fd, (uintptr_t)buffer, length, 0); }
-long u_open(const char *path, uint64_t flags)
-{ return syscall4(SYSCALL_OPENAT, OS_AT_FDCWD, (uintptr_t)path, flags, 0); }
-long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)
 { return syscall4(SYSCALL_IOCTL, fd, request, (uintptr_t)argument, 0); }
-long u_network_ipv4_config(struct u_ipv4_config *config)
-{ return syscall4(SYSCALL_NET_GET_IPV4_CONFIG, (uintptr_t)config, 0, 0, 0); }
-long u_network_dns_server(uint8_t address[4])
-{ return syscall4(SYSCALL_NET_GET_DNS_SERVER, (uintptr_t)address, 0, 0, 0); }
 long u_icmp_echo(struct u_icmp_echo_request *request)
 { return syscall4(SYSCALL_ICMP_ECHO, (uintptr_t)request, 0, sizeof(*request), 0); }
 long u_power_control(uint64_t command)

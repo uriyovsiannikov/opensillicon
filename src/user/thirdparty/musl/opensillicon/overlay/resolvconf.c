@@ -1,6 +1,5 @@
 #include "lookup.h"
-#include "abi/syscall.h"
-extern long __os_native_call(long,long,long,long,long,long,long);
+#include <sys/sysctl.h>
 #include "stdio_impl.h"
 #include <ctype.h>
 #include <errno.h>
@@ -87,7 +86,8 @@ int __get_resolv_conf(struct resolvconf *conf, char *search, size_t search_sz)
 no_resolv_conf:
 	if (!nns) {
 		unsigned char dns[4];
-		if (__os_native_call(SYSCALL_NET_GET_DNS_SERVER,(long)dns,0,0,0,0,0)==0) {
+		size_t dns_length = sizeof dns;
+		if (sysctlbyname("net.inet.ip.dns",dns,&dns_length,NULL,0)==0 && dns_length==sizeof dns) {
 			memset(conf->ns,0,sizeof conf->ns[0]);
 			conf->ns[0].family=AF_INET;
 			memcpy(conf->ns[0].addr,dns,4);

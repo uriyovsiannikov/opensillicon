@@ -1,67 +1,51 @@
-#include "../include/os.h"
-
-static void
-print_ipv4(const uint8_t address[4])
-{
-	for (size_t i = 0; i < 4; i++) {
-		if (i != 0)
-			u_puts(".");
-		u_put_u64(address[i]);
-	}
-}
-
-static void
-print_interface(void)
-{
-	char name[32];
-	long length = 0;
-	long fd = u_open("/proc/netif", OS_O_RDONLY);
-	if (fd >= 0) {
-		length = u_read((uint64_t)fd, name, sizeof(name));
-		u_close((uint64_t)fd);
-	}
-	if (length > 0 && (size_t)length < sizeof(name))
-		u_putn(name, (size_t)length);
-	else
-		u_puts("ifconfig");
-}
+#include <arpa/inet.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/sysctl.h>
+#include "abi/inet.h"
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	struct u_ipv4_config config;
-	uint8_t dns_server[4];
-	long result;
+	struct os_ipv4_config config;
+	char interface[32];
+	size_t length = sizeof(interface);
 	(void)argv;
 	if (argc != 1) {
-		u_puts("usage: ifconfig\n");
+		fputs("usage: ifconfig\n", stderr);
 		return 1;
 	}
-	result = u_network_ipv4_config(&config);
-	if (result == -11) {
-		print_interface();
-		u_puts(": IPv4 configuration pending (link down or DHCP lease unavailable)\n");
+	if (sysctlbyname("net.interface", interface, &length, NULL, 0) < 0) {
+		perror("ifconfig: interface");
 		return 1;
 	}
-	if (result < 0) {
-		u_puts("ifconfig: unable to read network configuration (errno ");
-		u_put_u64((uint64_t)-result);
-		u_puts(")\n");
+	length = sizeof(config);
+	if (sysctlbyname("net.inet.ip.config", &config, &length, NULL, 0) < 0) {
+		if (errno == EAGAIN)
+			fprintf(stderr, "%s: IPv4 configuration pending (link down or DHCP lease unavailable)\n", interface);
+		else
+			perror("ifconfig: IPv4 configuration");
 		return 1;
 	}
-	print_interface();
-	u_puts(": inet ");
-	print_ipv4(config.address);
-	u_puts(" netmask ");
-	print_ipv4(config.netmask);
-	u_puts(" gateway ");
-	print_ipv4(config.gateway);
-	if (u_network_dns_server(dns_server) == 0) {
-		u_puts(" dns ");
-		print_ipv4(dns_server);
-	} else {
-		u_puts(" dns unavailable");
+	char address[INET_ADDRSTRLEN], netmask[INET_ADDRSTRLEN], gateway[INET_ADDRSTRLEN];
+	if (!inet_ntop(AF_INET, config.address, address, sizeof(address)) ||
+	    !inet_ntop(AF_INET, config.netmask, netmask, sizeof(netmask)) ||
+	    !inet_ntop(AF_INET, config.gateway, gateway, sizeof(gateway))) {
+		perror("ifconfig: IPv4 address");
+		return 1;
 	}
-	u_puts("\n");
-	return 0;
+	if (printf("%s: inet %s netmask %s gateway %s", interface, address, netmask, gateway) < 0)
+		return 1;
+	uint8_t dns[4];
+	char dns_text[INET_ADDRSTRLEN];
+	length = sizeof(dns);
+	if (sysctlbyname("net.inet.ip.dns", dns, &length, NULL, 0) == 0 &&
+	    inet_ntop(AF_INET, dns, dns_text, sizeof(dns_text))) {
+		if (printf(" dns %s\n", dns_text) < 0)
+			return 1;
+	} else if (fputs(" dns unavailable\n", stdout) == EOF) {
+		return 1;
+	}
+	return fflush(stdout) == EOF;
 }

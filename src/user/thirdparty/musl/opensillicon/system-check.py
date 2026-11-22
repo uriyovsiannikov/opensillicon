@@ -54,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('host localhost', 'localhost has address 127.0.0.1'),
                 ('host 127.0.0.1', '127.0.0.1 has address 127.0.0.1'),
                 ('host help', 'usage: host'),
+                ('ifconfig bad', 'usage: ifconfig'),
                 ('uname', 'OpenSillicon\n'),
                 ('basename /etc/hosts', 'hosts\n'),
                 ('basename /tmp/file.txt .txt', 'file\n'),
@@ -126,6 +127,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('rm -f /tmp/dir-check', None),
                 ('doas /bin/pkg list -i', 'Installed packages (0)'),
                 ('doas /bin/pkg repo https://127.0.0.1:1', 'Repository saved in /etc/pkg.conf'),
+                ('ifconfig', 'inet 10.15.3.15 netmask 255.255.255.0 gateway 10.15.3.2'),
                 ('doas /bin/sysupgrade check', 'sysupgrade: unable to fetch a verified release'),
             ]:
                 offset = len(log.read_text(errors='replace'))

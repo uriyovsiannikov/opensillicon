@@ -1,13 +1,11 @@
 #include "syscall_internal.h"
 #include "abi/socket.h"
 
-#include "kernel/cyclone_net.h"
 #include "kernel/icmp_echo.h"
 #include "kernel/process.h"
 #include "kernel/tcp_socket.h"
 #include "kernel/udp_socket.h"
 #include "kernel/unix_socket.h"
-#include "kernel/timer.h"
 #include "kernel/vmm.h"
 
 struct interrupt_frame *
@@ -424,49 +422,6 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			frame->rax = length;
-		}
-		break;
-	case SYSCALL_NET_GET_DNS_SERVER:
-		{
-			uint8_t address[4];
-			struct address_space *space = vmm_active_address_space();
-			if (!vmm_validate_user_write(space, frame->rdi,
-			    sizeof(address))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			if (!cyclone_net_dns_server(address)) {
-				syscall_error(frame, EAGAIN);
-				break;
-			}
-			if (!vmm_copy_to_user(space, frame->rdi, address,
-			    sizeof(address))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
-	case SYSCALL_NET_GET_IPV4_CONFIG:
-		{
-			uint8_t config[12];
-			struct address_space *space = vmm_active_address_space();
-			if (!vmm_validate_user_write(space, frame->rdi,
-			    sizeof(config))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			if (!cyclone_net_ipv4_config(config, config + 4,
-			    config + 8)) {
-				syscall_error(frame, EAGAIN);
-				break;
-			}
-			if (!vmm_copy_to_user(space, frame->rdi, config,
-			    sizeof(config))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
 		}
 		break;
 	case SYSCALL_ICMP_ECHO:

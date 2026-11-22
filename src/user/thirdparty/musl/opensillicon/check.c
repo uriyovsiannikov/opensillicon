@@ -722,11 +722,26 @@ static int dns_check(void)
 {
  struct resolvconf conf;
  unsigned char dhcp_dns[4];
- CHECK(__os_raw(SYSCALL_NET_GET_DNS_SERVER,(long)dhcp_dns,0,0,0,0,0)==0);
+ size_t length=sizeof dhcp_dns;
+ CHECK(sysctlbyname("net.inet.ip.dns",dhcp_dns,&length,NULL,0)==0 && length==sizeof dhcp_dns);
  CHECK(__get_resolv_conf(&conf,NULL,0)==0 && conf.nns==1 &&
      conf.ns[0].family==AF_INET && !memcmp(conf.ns[0].addr,dhcp_dns,4));
  unsigned char config[12];
- CHECK(__os_raw(SYSCALL_NET_GET_IPV4_CONFIG,(long)config,0,0,0,0,0)==0);
+ length=sizeof config;
+ CHECK(sysctlbyname("net.inet.ip.config",config,&length,NULL,0)==0 && length==sizeof config);
+ struct { struct os_ipv4_config value; uint32_t guard; } snapshot={.guard=0xabcdef01U};
+ length=sizeof snapshot.value;
+ CHECK(sysctlbyname("net.inet.ip.config",&snapshot.value,&length,NULL,0)==0 &&
+     length==sizeof snapshot.value && !memcmp(&snapshot.value,config,sizeof config) &&
+     snapshot.guard==0xabcdef01U);
+ struct { unsigned char bytes[3]; unsigned char guard; } prefix={.guard=0xb7};
+ length=sizeof prefix.bytes;
+ CHECK(sysctlbyname("net.inet.ip.dns",prefix.bytes,&length,NULL,0)==-1 && errno==ENOMEM);
+ CHECK(length==sizeof prefix.bytes && !memcmp(prefix.bytes,dhcp_dns,sizeof prefix.bytes) && prefix.guard==0xb7);
+ char interface[32]; length=sizeof interface;
+ CHECK(sysctlbyname("net.interface",interface,&length,NULL,0)==0 &&
+     length>1 && length<=sizeof interface && interface[length-1]==0);
+
  int server=socket(AF_INET,SOCK_DGRAM,0);
  CHECK(server>=0);
  struct sockaddr_in address={.sin_family=AF_INET,.sin_port=htons(53)};
@@ -1013,7 +1028,8 @@ static int network_check(void)
  unsigned char config[12];
  int configured=0;
  for(int i=0;i<100;i++) {
-  if(__os_raw(SYSCALL_NET_GET_IPV4_CONFIG,(long)config,0,0,0,0,0)==0) {configured=1;break;}
+  size_t size=sizeof config;
+  if(sysctlbyname("net.inet.ip.config",config,&size,NULL,0)==0) {configured=1;break;}
   struct timespec pause={0,100000000}; nanosleep(&pause,NULL);
  }
  CHECK(configured);
@@ -1161,7 +1177,9 @@ static int sysctl_check(void)
  };
  for(size_t i=0;i<sizeof nodes/sizeof nodes[0];i++) {
   size_t bytes=0;
-  CHECK(sysctl(nodes[i].mib,2,NULL,&bytes,NULL,0)==0 && bytes>0);
+  int query=sysctl(nodes[i].mib,2,NULL,&bytes,NULL,0);
+  if(nodes[i].mib[0]==CTL_NET && query<0 && errno==EAGAIN) continue;
+  CHECK(query==0 && bytes>0);
   if(nodes[i].kind==OS_SYSCTL_INT32) CHECK(bytes==sizeof(int32_t));
   if(nodes[i].kind==OS_SYSCTL_UINT64) CHECK(bytes==sizeof(uint64_t));
   if(nodes[i].kind==OS_SYSCTL_STRING) {
@@ -1249,7 +1267,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,43,44,46,53,58,63,81,82,84,88,89,91,92,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,43,44,46,53,58,63,81,82,84,88,89,91,92,93,94,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
