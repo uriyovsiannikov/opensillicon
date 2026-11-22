@@ -1006,7 +1006,6 @@ char *feh_http_load_image(char *url)
 
 #endif				/* HAVE_LIBCURL */
 
-#ifndef OPEN_SILLICON
 void feh_imlib_image_fill_text_bg(Imlib_Image im, int w, int h)
 {
 	gib_imlib_image_set_has_alpha(im, 1);
@@ -1020,16 +1019,7 @@ void feh_imlib_image_fill_text_bg(Imlib_Image im, int w, int h)
 
 	imlib_context_set_blend(1);
 }
-#else
-void feh_imlib_image_fill_text_bg(Imlib_Image im, int w, int h)
-{
-	(void)im;
-	(void)w;
-	(void)h;
-}
-#endif
 
-#ifndef OPEN_SILLICON
 static Imlib_Font feh_load_font(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1050,9 +1040,7 @@ static Imlib_Font feh_load_font(winwidget w)
 
 	return fn;
 }
-#endif
 
-#ifndef OPEN_SILLICON
 void feh_draw_zoom(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1085,9 +1073,6 @@ void feh_draw_zoom(winwidget w)
 	gib_imlib_free_image_and_decache(im);
 	return;
 }
-#else
-void feh_draw_zoom(winwidget w) { (void)w; }
-#endif
 
 void im_weprintf(winwidget w, char *fmt, ...)
 {
@@ -1113,7 +1098,6 @@ void im_weprintf(winwidget w, char *fmt, ...)
 }
 
 
-#ifndef OPEN_SILLICON
 void feh_draw_errstr(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1143,14 +1127,7 @@ void feh_draw_errstr(winwidget w)
 	gib_imlib_render_image_on_drawable(w->bg_pmap, im, 0, w->h - th, 1, 1, 0);
 	gib_imlib_free_image_and_decache(im);
 }
-#else
-void feh_draw_errstr(winwidget w)
-{
-	(void)w;
-}
-#endif
 
-#ifndef OPEN_SILLICON
 void feh_draw_filename(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1210,17 +1187,8 @@ void feh_draw_filename(winwidget w)
 	gib_imlib_free_image_and_decache(im);
 	return;
 }
-#else
-void feh_draw_filename(winwidget w)
-{
-	(void)w;
-}
-#endif
 
 #ifdef HAVE_LIBEXIF
-#endif
-
-#ifndef OPEN_SILLICON
 void feh_draw_exif(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1330,11 +1298,8 @@ void feh_draw_exif(winwidget w)
 	return;
 
 }
-#else
-void feh_draw_exif(winwidget w) { (void)w; }
 #endif
 
-#ifndef OPEN_SILLICON
 void feh_draw_info(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1431,8 +1396,11 @@ char *build_caption_filename(feh_file * file, short create_dir)
 	D(("dir %s, cp %s, cdir %s\n", dir, opt.caption_path, caption_dir))
 
 	if (stat(caption_dir, &cdir_stat) == -1) {
-		if (!create_dir)
+		if (!create_dir) {
+			free(caption_dir);
+			free(dir);
 			return NULL;
+		}
 		if (mkdir(caption_dir, 0755) == -1)
 			eprintf("Failed to create caption directory %s:", caption_dir);
 	} else if (!S_ISDIR(cdir_stat.st_mode))
@@ -1445,11 +1413,7 @@ char *build_caption_filename(feh_file * file, short create_dir)
 	free(dir);
 	return caption_filename;
 }
-#else
-void feh_draw_info(winwidget w) { (void)w; }
-#endif
 
-#ifndef OPEN_SILLICON
 void feh_draw_caption(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1862,13 +1826,7 @@ void feh_edit_inplace_lossless(winwidget w, int op)
 	}
 	free(file_str);
 }
-#else
-void feh_draw_caption(winwidget w) { (void)w; }
-void feh_display_status(char stat) { (void)stat; }
-void feh_edit_inplace(winwidget w, int op) { (void)w; (void)op; }
-#endif
 
-#ifndef OPEN_SILLICON
 void feh_draw_actions(winwidget w)
 {
 	static Imlib_Font fn = NULL;
@@ -1962,6 +1920,3 @@ void feh_draw_actions(winwidget w)
 	gib_imlib_free_image_and_decache(im);
 	return;
 }
-#else
-void feh_draw_actions(winwidget w) { (void)w; }
-#endif

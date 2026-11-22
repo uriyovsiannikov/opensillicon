@@ -2,7 +2,6 @@ include ../config.mk
 
 TARGETS = \
 	events.c \
-	feh_platform.c \
 	feh_png.c \
 	filelist.c \
 	gib_hash.c \
