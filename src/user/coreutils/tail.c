@@ -1,137 +1,129 @@
-#include "../include/os.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-#define BUFFER_SIZE 512U
-#define TAIL_CAPACITY (1024U * 1024U)
-#define DEFAULT_LINES 10U
-
-static char saved[TAIL_CAPACITY];
+struct line {
+	struct line *next;
+	char *text;
+	size_t length;
+};
 
 static int
-parse_count(const char *text, uint64_t *count)
+parse_count(const char *text, uintmax_t *count)
 {
-	uint64_t value = 0;
-	if (*text == '\0')
+	char *end;
+
+	if (*text < '0' || *text > '9')
 		return 0;
-	while (*text != '\0') {
-		uint64_t digit;
-		if (*text < '0' || *text > '9')
-			return 0;
-		digit = (uint64_t)(*text++ - '0');
-		if (value > (UINT64_MAX - digit) / 10)
-			return 0;
-		value = value * 10 + digit;
-	}
-	*count = value;
-	return 1;
+	errno = 0;
+	*count = strtoumax(text, &end, 10);
+	return errno == 0 && *end == '\0';
 }
 
 static int
-write_all(const char *data, size_t length)
+tail_stream(FILE *input, uintmax_t limit)
 {
-	while (length != 0) {
-		long amount = u_write(1, data, length);
-		if (amount <= 0 || (size_t)amount > length)
-			return 0;
-		data += (size_t)amount;
-		length -= (size_t)amount;
-	}
-	return 1;
-}
+	struct line *first = NULL, *last = NULL;
+	uintmax_t count = 0;
+	char *text = NULL;
+	size_t capacity = 0;
+	ssize_t length;
+	int error = 0;
 
-static int
-tail_descriptor(uint64_t fd, uint64_t lines)
-{
-	char input[BUFFER_SIZE];
-	size_t used = 0;
-	size_t next = 0;
-	size_t oldest;
-	long amount;
-	while ((amount = u_read(fd, input, sizeof(input))) > 0) {
-		size_t i;
-		for (i = 0; i < (size_t)amount; i++) {
-			saved[next] = input[i];
-			next = (next + 1) % sizeof(saved);
-			if (used < sizeof(saved))
-				used++;
-		}
-	}
-	if (amount < 0)
+	if (limit == 0)
 		return 0;
-	if (lines == 0)
-		return 1;
-	{
-		uint64_t seen = 0;
-		size_t start = used;
-		oldest = (next + sizeof(saved) - used) % sizeof(saved);
-		if (start != 0 && saved[(oldest + start - 1) % sizeof(saved)] == '\n')
-			start--;
-		while (start > 0 && seen < lines) {
-			start--;
-			if (saved[(oldest + start) % sizeof(saved)] == '\n') {
-				seen++;
-				if (seen == lines) start++;
-			}
-		}
-		while (start < used) {
-			char output[BUFFER_SIZE];
-			size_t chunk = used - start;
-			size_t contiguous = sizeof(saved) -
-			    ((oldest + start) % sizeof(saved));
-			if (chunk > sizeof(output)) chunk = sizeof(output);
-			if (chunk > contiguous) chunk = contiguous;
-			for (size_t j = 0; j < chunk; j++)
-				output[j] = saved[(oldest + start + j) % sizeof(saved)];
-			if (!write_all(output, chunk)) return 0;
-			start += chunk;
-		}
-		return 1;
-	}
-}
+	while ((length = getline(&text, &capacity, input)) >= 0) {
+		struct line *line = malloc(sizeof(*line));
 
-static int
-tail_file(const char *name, uint64_t lines)
-{
-	long fd;
-	int result;
-	if (u_streq(name, "-"))
-		return tail_descriptor(0, lines);
-	fd = u_open(name, U_O_RDONLY);
-	if (fd < 0) {
-		u_puts("tail: cannot open: ");
-		u_puts(name);
-		u_puts("\n");
-		return 0;
+		if (line == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		*line = (struct line){ .text = text, .length = (size_t)length };
+		text = NULL;
+		capacity = 0;
+		if (count == limit) {
+			struct line *old = first;
+			first = old->next;
+			if (first == NULL)
+				last = NULL;
+			free(old->text);
+			free(old);
+		} else {
+			count++;
+		}
+		if (last != NULL)
+			last->next = line;
+		else
+			first = line;
+		last = line;
 	}
-	result = tail_descriptor((uint64_t)fd, lines);
-	if (u_close((uint64_t)fd) < 0)
-		result = 0;
-	if (!result) {
-		u_puts("tail: read, write, or close failed: ");
-		u_puts(name);
-		u_puts("\n");
+	if (error == 0 && !feof(input))
+		error = errno != 0 ? errno : EIO;
+	free(text);
+	while (first != NULL) {
+		struct line *line = first;
+
+		first = line->next;
+		if (error == 0 && fwrite(line->text, 1, line->length, stdout) !=
+		    line->length)
+			error = errno != 0 ? errno : EIO;
+		free(line->text);
+		free(line);
 	}
-	return result;
+	return error;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t lines = DEFAULT_LINES, first = 1, i;
-	int failed = 0;
-	if (argc > 1 && u_streq(argv[1], "-n")) {
-		if (argc < 3 || !parse_count(argv[2], &lines))
-			goto usage;
-		first = 3;
-	} else if (argc > 1 && argv[1][0] == '-') {
-		goto usage;
+	uintmax_t lines = 10;
+	int option, failed = 0;
+	int have_output = 0;
+
+	opterr = 0;
+	while ((option = getopt(argc, argv, "n:")) != -1) {
+		if (option != 'n' || !parse_count(optarg, &lines)) {
+			fputs("usage: tail [-n lines] [file ...]\n", stderr);
+			return 2;
+		}
 	}
-	if (first == argc)
-		return tail_descriptor(0, lines) ? 0 : 1;
-	for (i = first; i < argc; i++)
-		if (!tail_file(argv[i], lines))
+	int files = argc - optind;
+	if (files == 0) {
+		int error = tail_stream(stdin, lines);
+		if (error != 0) {
+			fprintf(stderr, "tail: stdin: %s\n", strerror(error));
 			failed = 1;
+		}
+	}
+	for (int i = optind; i < argc; i++) {
+		FILE *input = strcmp(argv[i], "-") == 0 ? stdin :
+		    fopen(argv[i], "rb");
+		if (input == NULL) {
+			fprintf(stderr, "tail: %s: %s\n", argv[i], strerror(errno));
+			failed = 1;
+			continue;
+		}
+		if (files > 1) {
+			if (have_output)
+				putchar('\n');
+			printf("==> %s <==\n", argv[i]);
+			have_output = 1;
+		}
+		int error = tail_stream(input, lines);
+		if (input != stdin && fclose(input) != 0 && error == 0)
+			error = errno;
+		if (error != 0) {
+			fprintf(stderr, "tail: %s: %s\n", argv[i], strerror(error));
+			failed = 1;
+		}
+	}
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("tail: stdout");
+		failed = 1;
+	}
 	return failed;
-usage:
-	u_puts("usage: tail [-n lines] [file ...]\n");
-	return 1;
 }
