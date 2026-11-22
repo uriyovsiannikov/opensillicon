@@ -122,8 +122,6 @@ static struct process *process_head;
 static struct process *ap_dispatch_cursor;
 static struct process *fallback_current_process;
 static uint64_t next_process_id = 1;
-static uint64_t user_preemptions;
-static uint64_t pipe_blocked_ticks;
 static unsigned int reported_ap_stops;
 static uint64_t reported_ap_local_syscalls;
 static uint64_t reported_ap_private_memory;
@@ -1215,8 +1213,6 @@ process_system_init(void)
 	reported_ap_wait_resume = 0;
 	reported_ap_timer_wait = 0;
 	reported_ap_timer_resume = 0;
-	__atomic_store_n(&user_preemptions, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&pipe_blocked_ticks, 0, __ATOMIC_RELAXED);
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
 	test_shm_reap_releases = 0;
 	test_shm_exec_releases = 0;
@@ -1882,18 +1878,6 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 	return frame;
 }
 
-uint64_t
-process_user_preemptions(void)
-{
-	return __atomic_load_n(&user_preemptions, __ATOMIC_RELAXED);
-}
-
-uint64_t
-process_pipe_blocked_ticks(void)
-{
-	return __atomic_load_n(&pipe_blocked_ticks, __ATOMIC_RELAXED);
-}
-
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
 uint64_t
 process_test_shm_reap_releases(void)
@@ -2104,15 +2088,10 @@ process_run_path(const char *path)
 struct interrupt_frame *
 process_timer_preempt(struct interrupt_frame *frame)
 {
-	struct process *next;
-
 	if (current_process == NULL || (frame->cs & 3U) != 3U)
 		return frame;
 	current_process->saved_frame = frame;
 	current_process->state = PROCESS_READY;
-	next = find_next_ready(current_process);
-	if (next != NULL && next != current_process)
-		__atomic_add_fetch(&user_preemptions, 1, __ATOMIC_RELAXED);
 	return schedule_from(current_process);
 }
 
@@ -2713,11 +2692,6 @@ process_timer_wakeup(uint64_t ticks)
 		return;
 	process = process_head;
 	do {
-		if (process->state == PROCESS_BLOCKED &&
-		    process->blocked_channel != NULL &&
-		    __atomic_load_n(&pipe_blocked_ticks, __ATOMIC_RELAXED) !=
-		    UINT64_MAX)
-			__atomic_add_fetch(&pipe_blocked_ticks, 1, __ATOMIC_RELAXED);
 		if (process->state == PROCESS_BLOCKED && process->wake_tick != 0 &&
 		    ticks >= process->wake_tick) {
 			process->wake_tick = 0;
