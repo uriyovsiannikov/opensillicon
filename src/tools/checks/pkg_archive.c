@@ -64,6 +64,14 @@ int main(void)
 	pkg_put_u32(bytes + 8, PKG_HEADER_SIZE);
 	assert(pkg_parse(bytes, PKG_HEADER_SIZE, 0, &archive) != NULL);
 	free(bytes);
+	/* Archives and DB records share one application path policy. */
+	bytes = fixture(1, &length);
+	strcpy((char *)bytes + PKG_HEADER_SIZE, "bin/legacy-command");
+	assert(pkg_parse(bytes, length, 0, &archive) != NULL);
+	memcpy(bytes, PKG_RECORD_MAGIC, 8);
+	pkg_put_u32(bytes + 8, PKG_INSTALLED);
+	assert(pkg_parse(bytes, length, 1, &archive) != NULL);
+	free(bytes);
 	bytes = fixture(PKG_MAX_FILES + 1, &length);
 	assert(pkg_parse(bytes, length, 0, &archive) != NULL);
 	free(bytes);

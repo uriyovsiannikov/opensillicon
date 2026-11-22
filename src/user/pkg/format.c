@@ -44,8 +44,7 @@ int pkg_path(const char *path)
 	if (!n || n == PKG_PATH_SIZE || path[0] == '/' || path[n - 1] == '/')
 		return 0;
 	/* Packages can add applications/data, never the kernel, configuration or DB. */
-	if (strncmp(path, "bin/", 4) && strncmp(path, "usr/", 4) &&
-	    strncmp(path, "opt/", 4))
+	if (strncmp(path, "usr/", 4) && strncmp(path, "opt/", 4))
 		return 0;
 	const char *component = path;
 	for (size_t i = 0; i <= n; i++) {
@@ -84,8 +83,6 @@ static const char *parse_files(const uint8_t *bytes, size_t size, int record,
 		f->hash = f->header + 200;
 		if (!pkg_path(f->path))
 			return "unsafe package path";
-		if (!record && strncmp(f->path, "bin/", 4) == 0)
-			return "package binaries must be stored under usr/bin/";
 		if (f->mode != 0644 && f->mode != 0755)
 			return "unsupported file mode";
 		if (f->size > PKG_MAX_SIZE)
