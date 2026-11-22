@@ -16,6 +16,7 @@
 #define HELP_COLUMN_WIDTH 22U
 #define HISTORY_CAPACITY 16U
 #define COMPLETION_LIMIT 64U
+#define BACKGROUND_CHILD_LIMIT 128U
 
 struct completion_candidate {
 	char name[HELP_NAME_CAPACITY];
@@ -33,7 +34,7 @@ static char command_history[HISTORY_CAPACITY][LINE_CAPACITY];
 static size_t history_count;
 static size_t history_next;
 static size_t history_position;
-static uint64_t background_children[U_PROCESS_SNAPSHOT_MAX];
+static uint64_t background_children[BACKGROUND_CHILD_LIMIT];
 static size_t background_child_count;
 static int cursor_visible = 1;
 static int xterm_cursor;
@@ -254,7 +255,7 @@ command_external(const char *const argv[], int background,
 	}
 	if (background) {
 		reap_background_children();
-		if (background_child_count == U_PROCESS_SNAPSHOT_MAX) {
+		if (background_child_count == BACKGROUND_CHILD_LIMIT) {
 			u_puts("sh: too many unreaped background commands\n");
 			goto resume_editor;
 		}

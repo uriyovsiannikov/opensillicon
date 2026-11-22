@@ -349,7 +349,7 @@ procfs_allocate(const char *name, enum procfs_entry entry,
 static int
 procfs_make_self(uint64_t inode, struct procfs_node **result)
 {
-	struct process_snapshot_entry current;
+	struct process_status current;
 	struct procfs_node *node;
 	static const char *const states[] = {
 		[PROCESS_READY] = "ready",
@@ -359,7 +359,7 @@ procfs_make_self(uint64_t inode, struct procfs_node **result)
 	};
 	int error;
 
-	error = process_current_snapshot(&current);
+	error = process_current_status(&current);
 	if (error != 0)
 		return error;
 	node = procfs_allocate("self", PROCFS_SELF, VNODE_REGULAR, inode);

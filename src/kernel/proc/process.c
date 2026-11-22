@@ -115,9 +115,6 @@ struct process {
 #endif
 };
 
-_Static_assert(sizeof(struct process_snapshot_entry) == 24,
-	"process snapshot ABI size mismatch");
-
 _Static_assert(_Alignof(struct process) >= 16,
 	"process FXSAVE state must be 16-byte aligned");
 
@@ -1466,7 +1463,7 @@ process_resolve_path(const char *path, char *output, size_t capacity)
 }
 
 int
-process_current_snapshot(struct process_snapshot_entry *entry)
+process_current_status(struct process_status *entry)
 {
 	struct process *process;
 	uint64_t flags;
@@ -1479,46 +1476,16 @@ process_current_snapshot(struct process_snapshot_entry *entry)
 	if (process == NULL) {
 		result = -(int)ESRCH;
 	} else {
-		*entry = (struct process_snapshot_entry){
+		*entry = (struct process_status){
 			.pid = process->id,
 			.parent_pid = process->parent == NULL ? 0 : process->parent->id,
 			.state = (uint32_t)process->state,
-			.exit_status = process->exit_status,
-			.reserved = { 0, 0, 0 }
+			.exit_status = process->exit_status
 		};
 	}
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
 	return result;
-}
-
-int
-process_snapshot(struct process_snapshot_entry *entries, size_t capacity)
-{
-	struct process *process;
-	size_t count = 0;
-	if (!process_table_owned_here())
-		return -(int)EBUSY;
-	if (entries == NULL || capacity == 0 || capacity > PROCESS_SNAPSHOT_MAX)
-		return -(int)EINVAL;
-	if (process_head == NULL)
-		return 0;
-	process = process_head;
-	do {
-		if (count == capacity)
-			return -(int)E2BIG;
-		entries[count].pid = process->id;
-		entries[count].parent_pid = process->parent == NULL ? 0 :
-		    process->parent->id;
-		entries[count].state = (uint32_t)process->state;
-		entries[count].exit_status = process->exit_status;
-		entries[count].reserved[0] = 0;
-		entries[count].reserved[1] = 0;
-		entries[count].reserved[2] = 0;
-		count++;
-		process = process->next;
-	} while (process != process_head);
-	return (int)count;
 }
 
 int

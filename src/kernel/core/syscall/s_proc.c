@@ -187,33 +187,6 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 		else
 			frame->rax = process_umask((uint32_t)frame->rdi);
 		break;
-	case SYSCALL_PROCESS_SNAPSHOT:
-		{
-			struct process_snapshot_entry entries[PROCESS_SNAPSHOT_MAX];
-			uint64_t capacity = frame->rsi;
-			int count;
-			if (capacity == 0 || capacity > PROCESS_SNAPSHOT_MAX) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			if (!vmm_validate_user_write(vmm_active_address_space(),
-			    frame->rdi, (size_t)capacity * sizeof(entries[0]))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			count = process_snapshot(entries, (size_t)capacity);
-			if (count < 0) {
-				syscall_error(frame, (uint64_t)(-count));
-				break;
-			}
-			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rdi,
-			    entries, (size_t)count * sizeof(entries[0]))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = (uint64_t)count;
-		}
-		break;
 	case SYSCALL_PROCESS_INFO:
 		{
 			struct os_process_info entries[OS_PROCESS_INFO_MAX];

@@ -15,7 +15,6 @@
 #define PROCESS_EXEC_ENV_MAX 64U
 #define PROCESS_EXEC_ENV_BYTES_MAX 8192U
 #define PROCESS_EXEC_ARG_BYTES_MAX 2048U
-#define PROCESS_SNAPSHOT_MAX 128U
 
 enum process_state {
 	PROCESS_READY = OS_PROCESS_READY,
@@ -24,12 +23,11 @@ enum process_state {
 	PROCESS_ZOMBIE = OS_PROCESS_ZOMBIE
 };
 
-struct process_snapshot_entry {
+struct process_status {
 	uint64_t pid;
 	uint64_t parent_pid;
 	uint32_t state;
 	uint8_t exit_status;
-	uint8_t reserved[3];
 };
 
 void process_system_init(void);
@@ -58,8 +56,7 @@ int process_chdir(const char *path);
 bool process_directory_busy(const char *canonical_path);
 int process_getcwd(char *buffer, size_t capacity);
 int process_resolve_path(const char *path, char *output, size_t capacity);
-int process_current_snapshot(struct process_snapshot_entry *entry);
-int process_snapshot(struct process_snapshot_entry *entries, size_t capacity);
+int process_current_status(struct process_status *entry);
 int process_info_snapshot(struct os_process_info *entries, size_t capacity);
 void process_syscall_retry_begin(void);
 /* Snapshot readiness before a local I/O attempt; publish a wait only if

@@ -704,6 +704,10 @@ static int sysctl_check(void)
   }
  }
  CHECK(found_self);
+ pid_t snapshot_child=fork(); CHECK(snapshot_child>=0);
+ if(!snapshot_child) _exit(0);
+ CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,1,0,0,0,0)==-E2BIG);
+ CHECK(waitpid(snapshot_child,NULL,0)==snapshot_child);
  CHECK(__os_raw(SYSCALL_PROCESS_INFO,1,OS_PROCESS_INFO_MAX,0,0,0,0)==-EFAULT);
  CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,0,0,0,0,0)==-EINVAL);
  CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,OS_PROCESS_INFO_MAX+1,0,0,0,0)==-EINVAL);
@@ -795,7 +799,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,10,14,17,23,53,58,109};
+ const long retired[]={4,5,6,7,9,10,14,17,23,53,58,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
