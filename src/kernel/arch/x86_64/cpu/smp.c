@@ -415,7 +415,7 @@ smp_ap_online(struct smp_cpu *cpu)
 		function = cpu->work_function;
 		argument = cpu->work_argument;
 		if (function == NULL) {
-			klog("OpenSillicon panic: SMP work request has no callback\n");
+			klog("panic: smp work request has no callback\n");
 			kernel_halt();
 		}
 		function(argument);
@@ -509,7 +509,7 @@ smp_run_on_all_cpus(smp_work_function function, void *argument)
 	for (size_t i = 1; i < discovered_count; i++) {
 		if (targets[i] && !lapic_send_ipi(cpus[i].apic_id,
 		    SMP_WORK_IPI_VECTOR)) {
-			klog("OpenSillicon panic: failed to send SMP work IPI\n");
+			klog("panic: failed to send smp work IPI\n");
 			kernel_halt();
 		}
 	}
@@ -534,7 +534,7 @@ smp_run_on_all_cpus(smp_work_function function, void *argument)
 			break;
 		__asm__ volatile ("pause" : : : "memory");
 	}
-	klog("OpenSillicon panic: SMP work callback acknowledgement timed out\n");
+	klog("panic: smp work callback acknowledgement timed out\n");
 	kernel_halt();
 }
 
@@ -566,7 +566,7 @@ record_work_dispatch(void *argument)
 	    active_root() == probe->space.root_physical;
 	if (!address_space_activate(previous) || active_root() != previous->root_physical ||
 	    vmm_active_address_space() != previous) {
-		klog("OpenSillicon panic: SMP cannot restore kernel address space\n");
+		klog("panic: smp cannot restore kernel address space\n");
 		kernel_halt();
 	}
 	if (switched)
@@ -585,25 +585,25 @@ smp_verify_work_dispatch(void)
 			expected_mask |= UINT64_C(1) << i;
 	}
 	if (expected_mask == 0 || !address_space_create(&probe.space)) {
-		klog("OpenSillicon: could not create SMP dispatch probe address space\n");
+		klog("could not create smp dispatch probe address space\n");
 		return false;
 	}
 	bool ran = smp_run_on_all_cpus(record_work_dispatch, &probe);
 	if (!address_space_destroy(&probe.space)) {
-		klog("OpenSillicon panic: could not release SMP dispatch probe address space\n");
+		klog("panic: could not release smp dispatch probe address space\n");
 		kernel_halt();
 	}
 	if (!ran || __atomic_load_n(&probe.seen, __ATOMIC_RELAXED) != expected_mask) {
 		for (size_t i = 0; i < discovered_count; i++) {
 			if (((expected_mask & ~probe.seen) & (UINT64_C(1) << i)) == 0)
 				continue;
-			klog("OpenSillicon: SMP address-space probe failed on LAPIC ");
+			klog("smp address-space probe failed on lapic ");
 			klog_u64(cpus[i].apic_id);
 			klog("\n");
 		}
 		return false;
 	}
-	klog("OpenSillicon: SMP address-space switches verified on all online CPUs\n");
+	klog("smp address-space switches verified on all online cpus\n");
 	return true;
 }
 
@@ -661,7 +661,7 @@ run_user_entry_probe(void *argument)
 	gdt_restore_kernel_stack();
 	arch_fpu_restore_kernel_state();
 	if (!address_space_activate(previous)) {
-		klog("OpenSillicon panic: cannot restore AP kernel address space\n");
+		klog("panic: cannot restore ap kernel address space\n");
 		kernel_halt();
 	}
 	__asm__ volatile ("sti" : : : "memory");
@@ -706,7 +706,7 @@ out:
 	if (!address_space_destroy_with_pages(&probe.space))
 		result = false;
 	if (result)
-		klog("OpenSillicon: SMP ring 3 and syscall return verified on all online APs\n");
+		klog("smp ring 3 and syscall return verified on all online aps\n");
 	return result;
 }
 

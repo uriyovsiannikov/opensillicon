@@ -188,7 +188,7 @@ pci_mmio_map_with_flags(const struct pci_device_lease *device,
 			mapped--;
 			if (!vmm_unmap_page(vmm_kernel_address_space(),
 			    virtual_base + mapped * PCI_RESOURCE_PAGE_SIZE, &ignored)) {
-				klog("OpenSillicon panic: partial PCI MMIO map rollback failed\n");
+				klog("panic: partial pci mmio map rollback failed\n");
 				kernel_halt();
 			}
 		}

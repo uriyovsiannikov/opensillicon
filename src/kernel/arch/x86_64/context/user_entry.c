@@ -16,7 +16,7 @@ arch_user_context_save(uint64_t stack_pointer)
 {
 	uint64_t *slot = user_kernel_stack_slot();
 	if (stack_pointer == 0 || *slot != 0) {
-		klog("OpenSillicon panic: invalid or nested CPU-local user entry\n");
+		klog("panic: invalid or nested cpu-local user entry\n");
 		kernel_halt();
 	}
 	*slot = stack_pointer;
@@ -28,7 +28,7 @@ arch_user_context_return(uint64_t status)
 	uint64_t *slot = user_kernel_stack_slot();
 	struct user_kernel_return result = {*slot, status};
 	if (*slot == 0) {
-		klog("OpenSillicon panic: user return without CPU-local entry\n");
+		klog("panic: user return without cpu-local entry\n");
 		kernel_halt();
 	}
 	*slot = 0;

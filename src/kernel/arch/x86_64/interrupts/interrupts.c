@@ -126,7 +126,7 @@ interrupt_dispatch(struct interrupt_frame *frame)
 	interrupt_handler handler = NULL;
 
 	if (frame == NULL) {
-		klog("OpenSillicon panic: missing interrupt frame\n");
+		klog("panic: missing interrupt frame\n");
 		kernel_halt();
 	}
 	if (frame->vector < IDT_ENTRIES)
@@ -135,7 +135,7 @@ interrupt_dispatch(struct interrupt_frame *frame)
 		next = handler(frame);
 		if (next != NULL)
 			return next;
-		klog("OpenSillicon panic: NMI handler returned no frame\n");
+		klog("panic: NMI handler returned no frame\n");
 	} else if (frame->vector < 32) {
 		if ((frame->cs & 3U) == 3U)
 			return process_user_exception(frame);
@@ -189,9 +189,9 @@ interrupt_dispatch(struct interrupt_frame *frame)
 
 		if (next != NULL)
 			return next;
-		klog("OpenSillicon panic: interrupt handler returned no frame\n");
+		klog("panic: interrupt handler returned no frame\n");
 	} else {
-		klog("OpenSillicon panic: unexpected interrupt vector ");
+		klog("panic: unexpected interrupt vector ");
 		klog_u64(frame->vector);
 		klog("\n");
 	}

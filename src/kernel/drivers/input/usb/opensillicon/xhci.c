@@ -232,7 +232,7 @@ take_ownership(const struct xhci *xhci, uint32_t hcc)
 	while (offset != 0 && range_fits(xhci, offset, 4)) {
 		uint32_t cap = read32(xhci, offset);
 		if (cap == UINT32_MAX) {
-			klog("OpenSillicon: xHCI extended capability is unreadable\n");
+			klog("xhci extended capability is unreadable\n");
 			return false;
 		}
 		if ((cap & 0xffU) == 1U) {
@@ -242,12 +242,12 @@ take_ownership(const struct xhci *xhci, uint32_t hcc)
 			if (!wait_register(xhci, offset, XHCI_LEGACY_BIOS, 0)) {
 				cap = read32(xhci, offset);
 				if (cap == UINT32_MAX) {
-					klog("OpenSillicon: xHCI legacy capability became unreadable\n");
+					klog("xhci legacy capability became unreadable\n");
 					return false;
 				}
 				/* Some firmware leaves BIOS-owned set after ExitBootServices.
 				 * Reclaim it after the bounded cooperative handoff. */
-				klog("OpenSillicon: xHCI BIOS ownership timeout; reclaiming controller\n");
+				klog("xhci bios ownership timeout; reclaiming controller\n");
 				write32(xhci, offset, (cap | XHCI_LEGACY_OS) & ~XHCI_LEGACY_BIOS);
 			}
 			uint32_t legacy = read32(xhci, offset + 4);
@@ -257,7 +257,7 @@ take_ownership(const struct xhci *xhci, uint32_t hcc)
 			    (legacy & XHCI_LEGACY_PRESERVE) | XHCI_LEGACY_CLEAR_STATUS);
 			if (!wait_register(xhci, offset, XHCI_LEGACY_BIOS | XHCI_LEGACY_OS,
 			    XHCI_LEGACY_OS)) {
-				klog("OpenSillicon: xHCI ownership semaphore did not accept OS ownership\n");
+				klog("xhci ownership semaphore did not accept os ownership\n");
 				return false;
 			}
 			return true;
@@ -268,7 +268,7 @@ take_ownership(const struct xhci *xhci, uint32_t hcc)
 		offset += (size_t)next * 4;
 	}
 	if (offset != 0)
-		klog("OpenSillicon: xHCI extended capability points outside BAR0\n");
+		klog("xhci extended capability points outside bar0\n");
 	return offset == 0;
 }
 
@@ -426,7 +426,7 @@ release_endpoint(struct xhci_endpoint *endpoint)
 	if (endpoint->allocation.generation != 0) {
 		if (!dma_descriptor_ring_unpin(endpoint->allocation) ||
 		    !dma_free(endpoint->allocation)) {
-			klog("OpenSillicon panic: could not release xHCI endpoint DMA\n");
+			klog("panic: could not release xhci endpoint dma\n");
 			kernel_halt();
 		}
 	}
@@ -1117,11 +1117,11 @@ xhci_attach(const struct pci_device_info *device, unsigned int controller)
 	if (controller >= UX_MAX_HCD)
 		return false;
 	if (!dma_identity_addressing_available()) {
-		klog("OpenSillicon: xHCI DMA unavailable under current Limine boot contract\n");
+		klog("xhci dma unavailable under current limine boot contract\n");
 		return false;
 	}
 	if (!pci_device_claim(device, &claim)) {
-		klog("OpenSillicon: xHCI PCI claim failed\n");
+		klog("xhci pci claim failed\n");
 		return false;
 	}
 	if (!pci_bar_probe_size(&claim, 0, &bar) ||
@@ -1231,11 +1231,11 @@ xhci_attach(const struct pci_device_info *device, unsigned int controller)
 	stage = "USBX HCD registration";
 	if (ux_host_stack_hcd_register((UCHAR *)"xhci", register_hcd, controller, 0) != UX_SUCCESS)
 		goto done;
-	klog("OpenSillicon: xHCI command ring verified and attached to USBX\n");
+	klog("xhci command ring verified and attached to usbx\n");
 	return true;
 
 done:
-	klog("OpenSillicon: xHCI attach failed at ");
+	klog("xhci attach failed at ");
 	klog(stage);
 	klog(" (PCI ");
 	klog_u64(device->bus);
@@ -1249,7 +1249,7 @@ done:
 		bool stopped = reset_controller(&xhci, intel);
 		bool master_off = pci_command(device, memory_command);
 		if (!stopped || !master_off) {
-			klog("OpenSillicon: xHCI quiesce failed, resources retained\n");
+			klog("xHCI quiesce failed, resources retained\n");
 			return false;
 		}
 	}

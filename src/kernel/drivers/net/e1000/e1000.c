@@ -1017,7 +1017,7 @@ e1000_shutdown(void)
 	device.registers = NULL;
 	device.state = E1000_STATE_STOPPED;
 	device.network_device.state = NET_DEVICE_DOWN;
-	klog("OpenSillicon: e1000 DMA stopped, bus mastering disabled, rings released\n");
+	klog("e1000 dma stopped, bus mastering disabled, rings released\n");
 	return true;
 }
 

@@ -202,7 +202,7 @@ klog_flush_boot_log(void)
 	error = vfs_open("/tmp/btlog.log",
 	    VFS_O_WRONLY | VFS_O_CREAT | VFS_O_TRUNC, 0644, &file);
 	if (error != 0) {
-		klog("OpenSillicon: could not create /tmp/btlog.log\n");
+		klog("could not create /tmp/btlog.log\n");
 		return;
 	}
 	while (offset < length) {
@@ -210,14 +210,14 @@ klog_flush_boot_log(void)
 		error = fd_object_write(file, boot_log + offset,
 		    length - offset, &written);
 		if (error != 0 || written == 0) {
-			klog("OpenSillicon: writing /tmp/btlog.log failed\n");
+			klog("writing /tmp/btlog.log failed\n");
 			break;
 		}
 		offset += written;
 	}
 	fd_object_put(file);
 	if (overflow)
-		klog("OpenSillicon: boot log buffer full; /tmp/btlog.log is truncated\n");
+		klog("boot log buffer full; /tmp/btlog.log is truncated\n");
 }
 
 _Noreturn void

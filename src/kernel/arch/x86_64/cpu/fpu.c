@@ -75,7 +75,7 @@ arch_fpu_init(void)
 	fxsave(initial_state);
 	fxsave(kernel_state);
 	initialized = true;
-	klog("OpenSillicon: FXSAVE, SSE, and SSE2 enabled; AVX disabled\n");
+	klog("fxsave, sse, and sse2 enabled; avx disabled\n");
 	return true;
 }
 
@@ -93,7 +93,7 @@ void
 arch_fpu_save(void *state)
 {
 	if (!initialized || state == NULL || ((uintptr_t)state & 15U) != 0) {
-		klog("OpenSillicon panic: invalid FXSAVE destination\n");
+		klog("panic: invalid fxsave destination\n");
 		for (;;)
 			__asm__ volatile ("cli; hlt");
 	}
@@ -104,7 +104,7 @@ void
 arch_fpu_restore(const void *state)
 {
 	if (!initialized || state == NULL || ((uintptr_t)state & 15U) != 0) {
-		klog("OpenSillicon panic: invalid FXRSTOR source\n");
+		klog("panic: invalid fxrstor source\n");
 		for (;;)
 			__asm__ volatile ("cli; hlt");
 	}
@@ -119,7 +119,7 @@ arch_fpu_init_process_state(void *state)
 	size_t i;
 
 	if (!initialized || state == NULL || ((uintptr_t)state & 15U) != 0) {
-		klog("OpenSillicon panic: invalid initial FPU state destination\n");
+		klog("panic: invalid initial fpu state destination\n");
 		for (;;)
 			__asm__ volatile ("cli; hlt");
 	}

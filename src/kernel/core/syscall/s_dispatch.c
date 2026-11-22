@@ -238,7 +238,7 @@ void
 syscall_init(void)
 {
 	if (!interrupt_register_handler(SYSCALL_VECTOR, syscall_dispatch)) {
-		klog("OpenSillicon: syscall initialization failed\n");
+		klog("syscall initialization failed\n");
 		kernel_halt();
 	}
 }

@@ -111,7 +111,7 @@ mount_disk_root(void)
 		    silliconfs_mount(&root_adapter.filesystem, &root) != 0)
 			continue;
 		ahci_root_device = candidate;
-		klog("OpenSillicon: disk root selected: ");
+		klog("disk root selected: ");
 		klog(candidate->name);
 		klog("\n");
 		return root;
@@ -196,7 +196,7 @@ mount_system_root(const struct limine_file *live_root)
 	}
 	if (error != 0) {
 		klog_status("SilliconFS", false, "root mount failed");
-		klog("OpenSillicon: SilliconFS error ");
+		klog("silliconfs error ");
 		klog_u64((uint64_t)(-error));
 		klog("\n");
 		kernel_halt();
@@ -222,7 +222,7 @@ mount_system_root(const struct limine_file *live_root)
 	}
 	if (error != 0) {
 		klog_status("SilliconFS", false, "/tmp setup failed");
-		klog("OpenSillicon: SilliconFS /tmp error ");
+		klog("silliconfs /tmp error ");
 		klog_u64((uint64_t)(-error));
 		klog("\n");
 		kernel_halt();
@@ -450,7 +450,7 @@ report_smp_bootstrap(void)
 		klog_u64(smp_online_count());
 		klog("; secondary cpus ready\n");
 		if (!smp_tlb_shootdown_all()) {
-			klog("OpenSillicon panic: SMP TLB shootdown acknowledgement timed out\n");
+			klog("panic: smp tlb shootdown acknowledgement timed out\n");
 			kernel_halt();
 		}
 		if (smp_online_count() == smp_discovered_count())
@@ -493,13 +493,13 @@ _start(void)
 	loaded_base_revision = LIMINE_LOADED_BASE_REVISION(limine_base_revision);
 	revision_five_honored =
 	    LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision);
-	klog("OpenSillicon: Limine loaded base revision ");
+	klog("limine loaded base revision ");
 	klog_u64(loaded_base_revision);
 	klog(revision_five_honored ? " (requested revision honored)\n" :
 	    " (requested revision not honored)\n");
 	if (!LIMINE_LOADED_BASE_REVISION_VALID(limine_base_revision) ||
 	    loaded_base_revision < 4) {
-		klog("OpenSillicon: Limine base revision 4 or newer is required for boot memory and ACPI contracts\n");
+		klog("limine base revision 4 or newer is required for boot memory and ACPI contracts\n");
 		kernel_halt();
 	}
 	validated_dma_contract = (struct dma_boot_contract){
@@ -526,7 +526,7 @@ _start(void)
 	    memmap_request.response, framebuffer_request.response,
 	    module_request.response, rsdp_response, &info);
 	if (error != BOOT_INFO_OK) {
-		klog("OpenSillicon: invalid boot information, error ");
+		klog("invalid boot information, error ");
 		klog_u64((uint64_t)error);
 		klog("\n");
 		kernel_halt();
@@ -553,7 +553,7 @@ _start(void)
 	(void)entropy_value_count;
 	idt_init();
 	if (!arch_fpu_init()) {
-		klog("OpenSillicon: CPU lacks required FXSAVE/SSE/SSE2 support\n");
+		klog("cpu lacks required fxsave/sse/sse2 support\n");
 		kernel_halt();
 	}
 	if (kernel_random_init())
@@ -637,12 +637,12 @@ _start(void)
 	}
 	framebuffer_boot_splash(info.framebuffer, 3, "starting hardware");
 	if (!framebuffer_device_init(info.framebuffer))
-		klog("OpenSillicon: userspace framebuffer API unavailable\n");
+		klog("userspace framebuffer api unavailable\n");
 	klog_status("console", true, NULL);
 	if (!tty_framebuffer_available())
-		klog("OpenSillicon: framebuffer unavailable; serial console active\n");
+		klog("framebuffer unavailable; serial console active\n");
 	if (!tty_keyboard_available())
-		klog("OpenSillicon: PS/2 keyboard unavailable\n");
+		klog("ps/2 keyboard unavailable\n");
 	if (!acpi_init(info.rsdp_physical, &madt)) {
 		klog_status("ACPI", false, "initialization or MADT validation failed");
 		kernel_halt();
@@ -702,7 +702,7 @@ virtio_rng_probe_done:
 		if (result == KERNEL_ENTROPY_OK) {
 			klog_status("VirtIO RNG", true,
 			    "QEMU transitional legacy PCI I/O; manager returned host-provided candidate only");
-			klog("OpenSillicon: VirtIO RNG completion bytes ");
+			klog("virtio rng completion bytes ");
 			klog_u64(candidate.bytes_written);
 			klog("; bytes not credited as trusted entropy and not used for CSPRNG/ISN\n");
 		} else {
@@ -729,7 +729,6 @@ virtio_rng_probe_done:
 		enum kernel_module_error result = kernel_module_load_path(module, path);
 		klog_status(module, result == KERNEL_MODULE_OK, path);
 		if (result != KERNEL_MODULE_OK) {
-			klog("OpenSillicon: ");
 			klog(module);
 			klog(" module load error ");
 			klog_u64(result);
@@ -737,7 +736,7 @@ virtio_rng_probe_done:
 		}
 	}
 	if (info.live_root == NULL && block_flush(ahci_root_device) != 0) {
-		klog("OpenSillicon: root block flush failed\n");
+		klog("root block flush failed\n");
 		kernel_halt();
 	}
 	if (!scheduler_init()) {
@@ -747,22 +746,22 @@ virtio_rng_probe_done:
 	klog_status("scheduler", true, NULL);
 	__asm__ volatile ("sti" : : : "memory");
 	if (!scheduler_start_secondary_cpus()) {
-		klog("OpenSillicon panic: secondary CPU scheduler initialization failed\n");
+		klog("panic: secondary cpu scheduler initialization failed\n");
 		kernel_halt();
 	}
 	if (smp_current_cpu() != NULL && smp_online_count() > 1)
-		klog("OpenSillicon: AP cooperative kernel schedulers ready\n");
+		klog("ap cooperative kernel schedulers ready\n");
 	if (smp_current_cpu() != NULL) {
 		if (!smp_verify_ap_idle_timers()) {
-			klog("OpenSillicon panic: AP timer interrupt verification failed\n");
+			klog("ap timer interrupt verification failed\n");
 			kernel_halt();
 		}
 		if (!smp_verify_work_dispatch()) {
-			klog("OpenSillicon panic: SMP address-space dispatch verification failed\n");
+			klog("smp address-space dispatch verification failed\n");
 			kernel_halt();
 		}
 		if (!smp_verify_ap_user_entry()) {
-			klog("OpenSillicon panic: SMP AP user entry verification failed\n");
+			klog("smp ap user entry verification failed\n");
 			kernel_halt();
 		}
 	}
@@ -778,9 +777,9 @@ virtio_rng_probe_done:
 		uint64_t status = process_run_path("/sbin/init");
 
 		if (status == UINT64_MAX)
-			klog("OpenSillicon: /sbin/init missing or failed to load; halting\n");
+			klog("/sbin/init missing or failed to load; halting\n");
 		else {
-			klog("OpenSillicon: /sbin/init exited with status ");
+			klog("/sbin/init exited with status ");
 			klog_u64(status);
 			klog("; halting\n");
 		}

@@ -114,7 +114,7 @@ keyboard_change(ULONG event, UX_HOST_CLASS_HID_CLIENT *client)
 			ux_host_class_hid_keyboard_ioctl(instance,
 			    UX_HID_KEYBOARD_IOCTL_DISABLE_KEYS_DECODE, NULL);
 			keyboard->instance = instance;
-			klog("OpenSillicon: USBX keyboard ready\n");
+			klog("usbx keyboard ready\n");
 			return;
 		}
 		if (event == UX_HID_CLIENT_REMOVAL && keyboard->instance == instance) {
@@ -178,7 +178,7 @@ mouse_change(ULONG event, UX_HOST_CLASS_HID_CLIENT *client)
 		struct usb_mouse *mouse = &mice[i];
 		if (event == UX_HID_CLIENT_INSERTION && mouse->instance == NULL) {
 			*mouse = (struct usb_mouse){ .instance = instance };
-			klog("OpenSillicon: USBX mouse ready\n");
+			klog("usbx mouse ready\n");
 			return;
 		}
 		if (event == UX_HID_CLIENT_REMOVAL && mouse->instance == instance) {
@@ -219,12 +219,12 @@ device_change(ULONG event, UX_HOST_CLASS *class, VOID *instance)
 		keyboard_change(event, instance);
 		mouse_change(event, instance);
 	} else if (event == UX_DEVICE_DISCONNECTION) {
-		klog("OpenSillicon: USBX device disconnected\n");
+		klog("usbx device disconnected\n");
 	} else if (event == UX_DEVICE_CONNECTION) {
 		UX_DEVICE *device = instance;
 		if (device->ux_device_descriptor.bNumConfigurations != 0 &&
 		    device->ux_device_first_configuration != UX_NULL) {
-			klog("OpenSillicon: USBX enumerated VID ");
+			klog("usbx enumerated VID ");
 			klog_u64(device->ux_device_descriptor.idVendor);
 			klog(" PID ");
 			klog_u64(device->ux_device_descriptor.idProduct);
@@ -313,7 +313,7 @@ usb_host_input_diagnostics(void)
 	}
 	report_value("active USB host", active, false);
 	report_value(" ready USB keyboards", keyboard_count, true);
-	report_value("USBX last error context", last_error_context, false);
+	report_value("usbx last error context", last_error_context, false);
 	report_value(" code", last_error_code, true);
 }
 
@@ -410,7 +410,7 @@ usb_host_record_controller(const struct pci_device_info *device)
 	}
 
 	controller_count++;
-	klog("OpenSillicon: USB PCI host controller detected: ");
+	klog("usb pci host controller detected: ");
 	klog(kind);
 	klog("\n");
 }
@@ -442,7 +442,7 @@ usb_host_init(void)
 	if (initialized)
 		return true;
 	if (controller_count == 0) {
-		klog("OpenSillicon: no USB PCI host controller found\n");
+		klog("no usb pci host controller found\n");
 		return true;
 	}
 
@@ -474,7 +474,7 @@ usb_host_init(void)
 		    ux_host_class_storage_entry);
 
 	if (status != UX_SUCCESS) {
-		klog("OpenSillicon: USBX initialization status ");
+		klog("usbx initialization status ");
 		klog_u64(status);
 		klog("\n");
 		/* Registration only allocates from this pool. No HCD, worker,
@@ -486,11 +486,11 @@ usb_host_init(void)
 	}
 
 	initialized = true;
-	klog("OpenSillicon: USBX host core ready (Hub, HID, Storage)\n");
+	klog("usbx host core ready\n");
 	for (size_t i = 0; i < xhci_count; i++)
 		if (xhci_attach(&xhci_devices[i], (unsigned int)i))
 			active = true;
 	if (!active)
-		klog("OpenSillicon: USB has no active host controller\n");
+		klog("usb has no active host controller\n");
 	return true;
 }

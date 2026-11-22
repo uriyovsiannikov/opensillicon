@@ -229,7 +229,7 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	size_t count;
 
 	if (root_pointer == 0 || info == NULL || rsdp_physical != 0) {
-		klog("ACPI: invalid initialization: root ");
+		klog("acpi: invalid initialization: root ");
 		klog_u64(root_pointer);
 		klog(" previous root ");
 		klog_u64(rsdp_physical);
@@ -240,21 +240,21 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	acpi_map_next = vmm_vmalloc_start() + ACPI_MAP_BASE;
 	status = AcpiInitializeSubsystem();
 	if (ACPI_FAILURE(status)) {
-		klog("ACPI: AcpiInitializeSubsystem failed: ");
+		klog("acpi: AcpiInitializeSubsystem failed: ");
 		klog_u64(status);
 		klog("\n");
 		return false;
 	}
 	status = AcpiInitializeTables(NULL, 16, FALSE);
 	if (ACPI_FAILURE(status)) {
-		klog("ACPI: AcpiInitializeTables failed: ");
+		klog("acpi: AcpiInitializeTables failed: ");
 		klog_u64(status);
 		klog("\n");
 		return false;
 	}
 	status = AcpiLoadTables();
 	if (ACPI_FAILURE(status)) {
-		klog("ACPI: AcpiLoadTables failed: ");
+		klog("acpi: AcpiLoadTables failed: ");
 		klog_u64(status);
 		klog("\n");
 		return false;
@@ -262,7 +262,7 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	status = AcpiGetTable("APIC", 1, &table);
 	if (ACPI_FAILURE(status) || table == NULL ||
 	    acpi_parse_madt(table, table->Length, &parsed) != 0) {
-		klog("ACPI: APIC lookup/parse failed: ");
+		klog("acpi: APIC lookup/parse failed: ");
 		klog_u64(status);
 		klog("\n");
 		return false;
@@ -270,7 +270,7 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	if (AcpiGetTable("MCFG", 1, &table) == AE_OK && table != NULL) {
 		if (acpi_parse_mcfg(table, table->Length, mcfg_cache,
 		    ACPI_MCFG_MAX_REGIONS, &count) != 0) {
-			klog("ACPI: invalid MCFG\n");
+			klog("acpi: invalid MCFG\n");
 			return false;
 		}
 		mcfg_count = count;
@@ -290,7 +290,7 @@ acpi_poweroff(void)
 		return false;
 	status = AcpiEnterSleepStatePrep(ACPI_STATE_S5);
 	if (ACPI_FAILURE(status)) {
-		klog("ACPI: S5 preparation failed\n");
+		klog("acpi: S5 preparation failed\n");
 		return false;
 	}
 	/* ACPICA requires interrupts disabled for the final sleep transition. */
@@ -867,7 +867,7 @@ AcpiOsSignal(UINT32 function, void *info)
 {
 	(void)info;
 	if (function == ACPI_SIGNAL_FATAL)
-		klog("ACPICA fatal signal\n");
+		klog("acpica fatal signal\n");
 	return AE_SUPPORT;
 }
 
