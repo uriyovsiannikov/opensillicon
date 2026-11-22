@@ -329,7 +329,7 @@ publish_local_wait(struct process *process, bool from_ap)
 		process->state = PROCESS_READY;
 		if (from_ap && !reported_local_wait_race) {
 			reported_local_wait_race = true;
-			klog("OpenSillicon: SMP readiness raced with AP wait publication\n");
+			klog("SMP readiness raced with AP wait publication\n");
 		}
 		return false;
 	}
@@ -377,7 +377,7 @@ drain_remote_channel_wakes(void)
 	} while (process != process_head);
 	if (woke && !reported_remote_channel_wake) {
 		reported_remote_channel_wake = true;
-		klog("OpenSillicon: SMP channel waiter woken by AP\n");
+		klog("SMP channel waiter woken by AP\n");
 	}
 	return woke;
 }
@@ -523,7 +523,7 @@ release_loaded_image(struct elf_loaded_image *image)
 		return;
 	if (!address_space_destroy_with_pages(&image->address_space) ||
 	    !kheap_free(image->page_addresses) || !kheap_free(image)) {
-		klog("OpenSillicon panic: failed to release process image\n");
+		klog("panic: failed to release process image\n");
 		kernel_halt();
 	}
 }
@@ -537,12 +537,12 @@ release_process(struct process *process)
 	} else if (process->address_space != NULL) {
 		if (!address_space_destroy_with_pages(process->address_space) ||
 		    !kheap_free(process->address_space)) {
-			klog("OpenSillicon panic: failed to release process address space\n");
+			klog("panic: failed to release process address space\n");
 			kernel_halt();
 		}
 	}
 	if (!kheap_free(process->kernel_stack) || !kheap_free(process)) {
-		klog("OpenSillicon panic: failed to release process resources\n");
+		klog("panic: failed to release process resources\n");
 		kernel_halt();
 	}
 }
@@ -645,7 +645,7 @@ process_ap_run_assignment(void)
 	cpu->user_current_stolen = slot->stolen;
 	current_process = process;
 	if (!address_space_activate(process->address_space)) {
-		klog("OpenSillicon panic: AP cannot load process address space\n");
+		klog("panic: AP cannot load process address space\n");
 		kernel_halt();
 	}
 	gdt_set_kernel_stack(process_kernel_stack_top(process));
@@ -654,7 +654,7 @@ process_ap_run_assignment(void)
 	arch_fpu_restore_kernel_state();
 	gdt_restore_kernel_stack();
 	if (!address_space_activate(vmm_kernel_address_space())) {
-		klog("OpenSillicon panic: AP cannot restore kernel address space\n");
+		klog("panic: AP cannot restore kernel address space\n");
 		kernel_halt();
 	}
 	current_process = NULL;
@@ -676,7 +676,7 @@ process_ap_stop(struct interrupt_frame *frame, enum process_slice_stop reason)
 	struct process *process = current_process;
 
 	if (process == NULL || process->state != PROCESS_RUNNING) {
-		klog("OpenSillicon panic: AP released a context it does not own\n");
+		klog("panic: AP released a context it does not own\n");
 		kernel_halt();
 	}
 	process->saved_frame = frame;
@@ -695,14 +695,14 @@ collect_ap_processes(void)
 		if ((reported_ap_queue_rotation & (UINT64_C(1) << i)) == 0 &&
 		    __atomic_load_n(&cpu->user_queue_rotation, __ATOMIC_RELAXED)) {
 			reported_ap_queue_rotation |= UINT64_C(1) << i;
-			klog("OpenSillicon: SMP AP switched local user queue on CPU ");
+			klog("SMP AP switched local user queue on CPU ");
 			klog_u64(i);
 			klog("\n");
 		}
 		if ((reported_ap_stolen_run & (UINT64_C(1) << i)) == 0 &&
 		    __atomic_load_n(&cpu->user_stolen_run, __ATOMIC_RELAXED)) {
 			reported_ap_stolen_run |= UINT64_C(1) << i;
-			klog("OpenSillicon: SMP stolen user process resumed on AP ");
+			klog("SMP stolen user process resumed on AP ");
 			klog_u64(i);
 			klog("\n");
 		}
@@ -727,14 +727,14 @@ collect_ap_processes(void)
 			if (process->ap_stop_reason == PROCESS_SLICE_BLOCK &&
 			    publish_local_wait(process, true) && !reported_ap_local_wait) {
 				reported_ap_local_wait = true;
-				klog("OpenSillicon: SMP local channel wait published from AP\n");
+				klog("SMP local channel wait published from AP\n");
 			}
 
 			uint64_t cpu_bit = UINT64_C(1) << i;
 			if ((reported_ap_local_syscalls & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_local_syscalls, __ATOMIC_RELAXED) != 0) {
 				reported_ap_local_syscalls |= cpu_bit;
-				klog("OpenSillicon: SMP process-local syscall completed on AP ");
+				klog("SMP process-local syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
@@ -742,7 +742,7 @@ collect_ap_processes(void)
 			if ((reported_ap_private_memory & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_private_memory_calls, __ATOMIC_RELAXED)) {
 				reported_ap_private_memory |= cpu_bit;
-				klog("OpenSillicon: SMP private memory syscall completed on AP ");
+				klog("SMP private memory syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
@@ -750,61 +750,61 @@ collect_ap_processes(void)
 			if ((reported_ap_shared_memory & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_shared_memory_calls, __ATOMIC_RELAXED)) {
 				reported_ap_shared_memory |= cpu_bit;
-				klog("OpenSillicon: SMP shared memory syscall completed on AP ");
+				klog("SMP shared memory syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_signal_calls & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_calls, __ATOMIC_RELAXED)) {
 				reported_ap_signal_calls |= cpu_bit;
-				klog("OpenSillicon: SMP signal syscall completed on AP ");
+				klog("SMP signal syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_signal_delivery & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_delivery, __ATOMIC_RELAXED)) {
 				reported_ap_signal_delivery |= cpu_bit;
-				klog("OpenSillicon: SMP signal delivered on AP ");
+				klog("SMP signal delivered on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 			if ((reported_ap_signal_return & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_return, __ATOMIC_RELAXED)) {
 				reported_ap_signal_return |= cpu_bit;
-				klog("OpenSillicon: SMP signal returned on AP ");
+				klog("SMP signal returned on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_pipe_io & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_io, __ATOMIC_RELAXED)) {
 				reported_ap_pipe_io |= cpu_bit;
-				klog("OpenSillicon: SMP pipe I/O completed on AP ");
+				klog("SMP pipe I/O completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_pipe_vectors & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_vectors, __ATOMIC_RELAXED)) {
 				reported_ap_pipe_vectors |= cpu_bit;
-				klog("OpenSillicon: SMP pipe vector I/O completed on AP ");
+				klog("SMP pipe vector I/O completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_wait_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_local_wait_resume, __ATOMIC_RELAXED)) {
 				reported_ap_wait_resume |= cpu_bit;
-				klog("OpenSillicon: SMP blocked syscall resumed on AP ");
+				klog("SMP blocked syscall resumed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_timer_wait & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_wait, __ATOMIC_RELAXED)) {
 				reported_ap_timer_wait |= cpu_bit;
-				klog("OpenSillicon: SMP timer wait submitted on AP ");
+				klog("SMP timer wait submitted on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 			if ((reported_ap_timer_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_resume, __ATOMIC_RELAXED)) {
 				reported_ap_timer_resume |= cpu_bit;
-				klog("OpenSillicon: SMP timer wait resumed on AP ");
+				klog("SMP timer wait resumed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
@@ -820,7 +820,7 @@ collect_ap_processes(void)
 					[PROCESS_SLICE_SLEEP] = "sleep"
 				};
 				reported_ap_stops |= reason_bit;
-				klog("OpenSillicon: SMP user slice ended on AP ");
+				klog("smp user slice ended on AP ");
 				klog_u64(i);
 				klog(" via ");
 				klog(reasons[process->ap_stop_reason]);
@@ -921,7 +921,7 @@ steal_ap_process(bool need_work)
 			ap_steal_cpu_cursor = 1 + (i % (count - 1));
 			if (!reported_bsp_steal) {
 				reported_bsp_steal = true;
-				klog("OpenSillicon: SMP BSP stole a queued user process\n");
+				klog("smp bsp stole a queued user process\n");
 			}
 			return process;
 		}
@@ -972,7 +972,7 @@ schedule_from(struct process *after)
 			current_process = NULL;
 			arch_fpu_restore_kernel_state();
 			if (!address_space_activate(vmm_kernel_address_space())) {
-				klog("OpenSillicon panic: cannot restore kernel address space\n");
+				klog("panic: cannot restore kernel address space\n");
 				kernel_halt();
 			}
 			user_return_to_kernel(status);
@@ -1000,14 +1000,14 @@ schedule_from(struct process *after)
 				continue;
 			}
 		}
-		klog("OpenSillicon panic: no runnable process\n");
+		klog("panic: no runnable process\n");
 		kernel_halt();
 	}
 	current_process = next;
 	current_process->state = PROCESS_RUNNING;
 	if (current_process->saved_frame == NULL ||
 	    !address_space_activate(current_process->address_space)) {
-		klog("OpenSillicon panic: invalid process context\n");
+		klog("panic: invalid process context\n");
 		kernel_halt();
 	}
 	arch_fpu_restore(current_process->fpu_state);
@@ -1968,7 +1968,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	insert_process(root);
 	current_process = root;
 	if (!address_space_activate(root->address_space)) {
-		klog("OpenSillicon panic: failed to activate initial process\n");
+		klog("panic: failed to activate initial process\n");
 		kernel_halt();
 	}
 	gdt_set_kernel_stack(process_kernel_stack_top(root));
@@ -1977,7 +1977,7 @@ process_run_elf_internal(const void *image, size_t image_size,
 	arch_fpu_restore_kernel_state();
 	gdt_restore_kernel_stack();
 	if (!address_space_activate(vmm_kernel_address_space())) {
-		klog("OpenSillicon panic: failed to restore kernel mappings\n");
+		klog("panic: failed to restore kernel mappings\n");
 		kernel_halt();
 	}
 	while (process_head != NULL) {
@@ -2115,7 +2115,7 @@ process_reschedule_ipi(struct interrupt_frame *frame)
 				continue;
 			if (!reported_reschedule_ipi) {
 				reported_reschedule_ipi = true;
-				klog("OpenSillicon: SMP BSP preempted by AP completion IPI\n");
+				klog("smp bsp preempted by ap completion ipi\n");
 			}
 			return process_timer_preempt(frame);
 		}
@@ -2321,7 +2321,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	if (had_user_fs_base) {
 		if (process->user_fs_base != 0 || arch_fs_base_read() != 0)
 			kernel_halt();
-		klog("OpenSillicon test: successful exec reset FS base\n");
+		klog("test: successful exec reset fs base\n");
 	}
 #endif
 	if (old_image != NULL) {
@@ -2339,7 +2339,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 #endif
 		if (!address_space_destroy_with_pages(old_space) ||
 		    !kheap_free(old_space)) {
-			klog("OpenSillicon panic: exec could not release old address space\n");
+			klog("panic: exec could not release old address space\n");
 			kernel_halt();
 		}
 #ifdef KERNEL_TEST_SHM_LIFECYCLE
