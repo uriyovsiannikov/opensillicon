@@ -125,10 +125,10 @@ The adapter reports EINVAL for readlink on existing non-symlink nodes, while
 preserving native lookup and permission errors. This lets musl realpath work
 with the VFS, which currently has no symlinks. Canonicalization and missing/
 non-directory path errors are checked, including absolute command paths in doas.
-Read/write requests are capped at the kernel's 4096-byte staging limit.
-Vectored I/O uses a 64 KiB per-call work budget and returns short counts for
-larger buffers. This lets libc finish large fread/fwrite calls without private
-application chunking. Stream sendmsg/recvmsg use the same native vectored I/O;
+Scalar and vectored read/write use one kernel implementation and return short
+results after at most 64 KiB per call. libc does not truncate application requests.
+This lets libc finish large fread/fwrite calls without private application
+chunking. Stream sendmsg/recvmsg use the same native vectored I/O;
 UDP retains datagram gathering, scattering and truncation handling.
 Process support includes fork, execve (up to the kernel limit of 16 arguments),
 waitpid via native WAITPID, kill/raise, pipe, UID/GID queries and
@@ -152,8 +152,9 @@ dup, fork or exec. IPv4 sockaddr/port values are translated to native endpoint
 structures. socket/accept4 CLOEXEC and NONBLOCK use fcntl after creation;
 atomic flag installation is still required before enabling threads.
 Basic bind/connect/listen/accept/shutdown, getsockopt/setsockopt, IPv4 name
-queries, sendto/recvfrom, sendmsg/recvmsg, select and poll are available. Stream IO is capped at 4096
-bytes per syscall; UDP datagrams at 512 bytes. A short UDP receive buffer
+queries, sendto/recvfrom, sendmsg/recvmsg, select and poll are available.
+Stream I/O shares the 64 KiB per-call kernel budget with file I/O; UDP
+datagrams are limited to 512 bytes. A short UDP receive buffer
 truncates the datagram. Unsupported message flags return EOPNOTSUPP.
 Message IO supports up to 16 iovecs, with no ancillary-data transfer.
 UDP send accepts MSG_NOSIGNAL (datagrams cannot raise SIGPIPE); recvmsg reports

@@ -78,6 +78,34 @@ static int large_iovec_check(void)
  CHECK(__os_raw(SYSCALL_WRITEV,fd,1,1,0,0,0)==-EFAULT);
  CHECK(writev(fd,NULL,0)==0 && readv(fd,NULL,0)==0);
  CHECK(close(fd)==0);
+ fd=open("/musl-large-io",O_RDWR|O_TRUNC); CHECK(fd>=0);
+ for(int native=0;native<2;native++) {
+  CHECK(lseek(fd,0,SEEK_SET)==0);
+  done=0;
+  while(done<length) {
+   amount=native ? __os_raw(SYSCALL_WRITE,fd,(long)(data+done),length-done,0,0,0) :
+       write(fd,data+done,length-done);
+   CHECK(amount>0 && (size_t)amount<=length-done);
+   if(!done) CHECK(amount>4096 && (size_t)amount<length);
+   done+=(size_t)amount;
+  }
+  CHECK(lseek(fd,0,SEEK_SET)==0);
+  memset(result,0,length);
+  done=0;
+  while(done<length) {
+   amount=native ? __os_raw(SYSCALL_READ,fd,(long)(result+done),length-done,0,0,0) :
+       read(fd,result+done,length-done);
+   CHECK(amount>0 && (size_t)amount<=length-done);
+   if(!done) CHECK(amount>4096 && (size_t)amount<length);
+   done+=(size_t)amount;
+  }
+  CHECK(!memcmp(data,result,length));
+ }
+ CHECK(__os_raw(SYSCALL_READ,fd,1,4097,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_WRITE,fd,1,4097,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_READ,fd,(long)result,UINT64_MAX,0,0,0)==-EINVAL);
+ CHECK(__os_raw(SYSCALL_WRITE,fd,(long)data,UINT64_MAX,0,0,0)==-EINVAL);
+ CHECK(lseek(fd,0,SEEK_CUR)==(off_t)length && close(fd)==0);
  FILE *file=fopen("/musl-large-io","w+"); CHECK(file);
  CHECK(fwrite("prefix",1,6,file)==6);
  CHECK(fwrite(data,1,length,file)==length && fflush(file)==0);
@@ -926,6 +954,13 @@ static int network_check(void)
   struct iovec output[2]={{large,19},{large+19,sizeof large-19}};
   struct msghdr header={.msg_iov=output,.msg_iovlen=2};
   if(sendmsg(client,&header,0)!=sizeof large) _exit(95);
+  used=0;
+  while(used<sizeof large) {
+   ssize_t got=recv(client,large+used,sizeof large-used,0);
+   if(got<=0 || (size_t)got>sizeof large-used) _exit(98);
+   used+=(size_t)got;
+  }
+  if(send(client,large,sizeof large,0)!=sizeof large) _exit(99);
   close(client);
   _exit(0);
  }
@@ -958,13 +993,21 @@ static int network_check(void)
  struct msghdr stream_header={.msg_iov=stream_vectors,.msg_iovlen=2};
  CHECK(sendmsg(peer,&stream_header,0)==sizeof large_message);
  int status;
- CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
  stream_vectors[0]=(struct iovec){large_reply,31};
  stream_vectors[1]=(struct iovec){large_reply+31,sizeof large_reply-31};
  stream_header.msg_flags=123;
  CHECK(recvmsg(peer,&stream_header,0)==sizeof large_reply && stream_header.msg_flags==0 &&
      stream_header.msg_controllen==0 && !memcmp(large_message,large_reply,sizeof large_reply));
+ CHECK(send(peer,large_message,sizeof large_message,0)==sizeof large_message);
+ size_t scalar_received=0;
+ while(scalar_received<sizeof large_reply) {
+  ssize_t got=recv(peer,large_reply+scalar_received,sizeof large_reply-scalar_received,0);
+  CHECK(got>0 && (size_t)got<=sizeof large_reply-scalar_received);
+  scalar_received+=(size_t)got;
+ }
+ CHECK(!memcmp(large_message,large_reply,sizeof large_reply));
  CHECK(recv(peer,message,sizeof message,0)==0);
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
  CHECK(shutdown(peer,SHUT_RDWR)==0 && close(peer)==0 && close(server)==0);
  CHECK(unlink(address.sun_path)==0);
  unsigned char config[12];

@@ -15,7 +15,6 @@
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
 
-#define SYSCALL_MAX_IO 4096U
 #define SYSCALL_MAX_IOV 16U
 #define SYSCALL_MAX_IOV_BYTES (64U * 1024U)
 #define SYSCALL_IOV_CHUNK 512U
@@ -258,18 +257,32 @@ fail:
  return frame;
 }
 
+static bool
+scalar_io(const struct interrupt_frame *frame)
+{
+	return frame->rax == SYSCALL_READ || frame->rax == SYSCALL_WRITE;
+}
+
+static uint64_t
+io_vector_count(const struct interrupt_frame *frame)
+{
+	return scalar_io(frame) ? 1 : frame->rdx;
+}
+
 static int
 load_iovecs(struct interrupt_frame *frame, struct syscall_iovec *vectors,
 	uint64_t *total)
 {
 	struct address_space *space = vmm_active_address_space();
-	uint64_t count = frame->rdx;
+	uint64_t count = io_vector_count(frame);
 	uint64_t total_bytes = 0;
 	uint64_t i;
 
 	if (count > SYSCALL_MAX_IOV)
 		return -(int)EINVAL;
-	if (count != 0 && (frame->rsi > UINT64_MAX -
+	if (scalar_io(frame)) {
+		vectors[0] = (struct syscall_iovec){frame->rsi, frame->rdx};
+	} else if (count != 0 && (frame->rsi > UINT64_MAX -
 	    count * sizeof(*vectors) || !vmm_copy_from_user(space, vectors,
 	    frame->rsi, (size_t)(count * sizeof(*vectors)))))
 		return -(int)EFAULT;
@@ -329,11 +342,11 @@ validate_iovec_buffers(const struct syscall_iovec *vectors, uint64_t count,
 /* Keep a complete small writev indivisible, just like one scalar pipe write. */
 static struct interrupt_frame *
 syscall_pipe_writev(struct interrupt_frame *frame, struct fd_object *object,
-	const struct syscall_iovec *vectors, uint64_t total)
+	const struct syscall_iovec *vectors, uint64_t count, uint64_t total)
 {
 	char buffer[PIPE_CAPACITY];
 	size_t offset = 0, amount = 0;
-	for (uint64_t i = 0; i < frame->rdx; i++) {
+	for (uint64_t i = 0; i < count; i++) {
 		if (vectors[i].length != 0 && !vmm_copy_from_user(vmm_active_address_space(),
 		    buffer + offset, vectors[i].base, (size_t)vectors[i].length)) {
 			syscall_error(frame, EFAULT);
@@ -359,7 +372,7 @@ syscall_writev(struct interrupt_frame *frame)
 	char buffer[SYSCALL_IOV_CHUNK];
 	struct fd_table *table = current_fd_table();
 	struct fd_object *object = fd_object_for_descriptor(table, frame->rdi);
-	uint64_t count = frame->rdx;
+	uint64_t count = io_vector_count(frame);
 	uint64_t total = 0;
 	uint64_t written = 0;
 	uint64_t i;
@@ -382,7 +395,7 @@ syscall_writev(struct interrupt_frame *frame)
 		return frame;
 	}
 	if (pipe_is_write_endpoint(object) && total <= PIPE_CAPACITY)
-		return syscall_pipe_writev(frame, object, vectors, total);
+		return syscall_pipe_writev(frame, object, vectors, count, total);
 	for (i = 0; i < count; i++) {
 		uint64_t offset = 0;
 
@@ -461,7 +474,7 @@ syscall_readv(struct interrupt_frame *frame)
 	char buffer[SYSCALL_IOV_CHUNK];
 	struct fd_table *table = current_fd_table();
 	struct fd_object *object = fd_object_for_descriptor(table, frame->rdi);
-	uint64_t count = frame->rdx;
+	uint64_t count = io_vector_count(frame);
 	uint64_t total = 0;
 	uint64_t received = 0;
 	uint64_t i;
@@ -554,73 +567,30 @@ partial:
 	return frame;
 }
 
-/* Only pipe endpoints enter this path. Local waits keep the original frame
- * for a kernel continuation, rather than rewinding a user int instruction. */
-static bool
-syscall_pipe_io(struct interrupt_frame **result_frame)
-{
-	struct interrupt_frame *frame = *result_frame;
-	struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
-	bool reading = frame->rax == SYSCALL_READ;
-	if (reading ? !pipe_is_read_endpoint(object) : !pipe_is_write_endpoint(object))
-		return false;
-	if (frame->rdx > SYSCALL_MAX_IO) {
-		syscall_error(frame, EINVAL);
-		return true;
-	}
-	size_t amount = 0;
-	int result;
-	if (reading) {
-		result = pipe_read_to(object, (size_t)frame->rdx, pipe_copy_user,
-		    (void *)(uintptr_t)frame->rsi, &amount);
-	} else {
-		char buffer[SYSCALL_MAX_IO];
-		if (frame->rdx != 0 && !vmm_copy_from_user(vmm_active_address_space(),
-		    buffer, frame->rsi, (size_t)frame->rdx)) {
-			syscall_error(frame, EFAULT);
-			return true;
-		}
-		result = pipe_write_try(object, buffer, (size_t)frame->rdx, &amount);
-	}
-	if (result == -EAGAIN && !fd_object_nonblocking(object)) {
-		*result_frame = process_block_local_on_channel(frame,
-		    pipe_wait_channel(object, reading ? PIPE_READ_WAIT : PIPE_WRITE_WAIT));
-		return true;
-	}
-	if (result != 0) {
-		syscall_error(frame, errno_from_kernel(result));
-	} else {
-		frame->rax = amount;
-		struct smp_cpu *cpu = smp_current_cpu();
-		if (amount != 0 && cpu != NULL && !cpu->bsp)
-			__atomic_store_n(&cpu->user_pipe_io, true, __ATOMIC_RELAXED);
-	}
-	return true;
-}
-
 bool
 syscall_io_local(struct interrupt_frame **result_frame)
 {
 	struct interrupt_frame *frame = *result_frame;
 
 	switch (frame->rax) {
+	case SYSCALL_READ:
+	case SYSCALL_WRITE:
 	case SYSCALL_READV:
 	case SYSCALL_WRITEV:
 		{
 			struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
-			bool reading = frame->rax == SYSCALL_READV;
+			bool reading = frame->rax == SYSCALL_READV || frame->rax == SYSCALL_READ;
+			bool scalar = scalar_io(frame);
 			if (reading ? !pipe_is_read_endpoint(object) : !pipe_is_write_endpoint(object))
 				return false;
 			*result_frame = reading ? syscall_readv(frame) : syscall_writev(frame);
 			struct smp_cpu *cpu = smp_current_cpu();
 			if (cpu != NULL && !cpu->bsp && ((*result_frame)->rflags & 1U) == 0 &&
 			    (*result_frame)->rax != 0)
-				__atomic_store_n(&cpu->user_pipe_vectors, true, __ATOMIC_RELAXED);
+				__atomic_store_n(scalar ? &cpu->user_pipe_io :
+				    &cpu->user_pipe_vectors, true, __ATOMIC_RELAXED);
 		}
 		return true;
-	case SYSCALL_READ:
-	case SYSCALL_WRITE:
-		return syscall_pipe_io(result_frame);
 	case SYSCALL_CLOSE:
 		{
 			struct fd_table *table = current_fd_table();
@@ -684,77 +654,12 @@ struct interrupt_frame *
 syscall_io_bsp(struct interrupt_frame *frame)
 {
 	uint64_t number = frame->rax;
-	struct fd_table *table;
-	size_t amount;
 
 	switch (number) {
 	case SYSCALL_WRITE:
-		if (frame->rdx > SYSCALL_MAX_IO) {
-			syscall_error(frame, EINVAL);
-			break;
-		}
-		{
-			char buffer[SYSCALL_MAX_IO];
-			struct address_space *space = vmm_active_address_space();
-			struct fd_object *object;
-			struct os_credentials credentials;
-			int result;
-
-			if (frame->rdx != 0 &&
-			    !vmm_copy_from_user(space, buffer, frame->rsi,
-			    (size_t)frame->rdx)) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			table = current_fd_table();
-			object = fd_object_for_descriptor(table, frame->rdi);
-			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ESRCH);
-				break;
-			}
-			if (pipe_is_write_endpoint(object)) {
-				result = pipe_write_try(object, buffer,
-				    (size_t)frame->rdx, &amount);
-				if (result == -(int)EAGAIN &&
-				    fd_object_nonblocking(object)) {
-					syscall_error(frame, EAGAIN);
-					break;
-				}
-				if (result == -(int)EAGAIN)
-					return process_block_local_on_channel(frame,
-					    pipe_wait_channel(object, PIPE_WRITE_WAIT));
-				if (result != 0) {
-					syscall_error(frame, errno_from_kernel(result));
-					break;
-				}
-				frame->rax = amount;
-				break;
-			}
-			result = fd_write_as(table, frame->rdi, buffer,
-			    (size_t)frame->rdx, &amount, credentials.effective_uid);
-			if (result == -(int)EAGAIN &&
-			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object) || hda_audio_is_object(object)) &&
-			    fd_object_nonblocking(object)) {
-				syscall_error(frame, EAGAIN);
-				break;
-			}
-			if (result == -(int)EAGAIN &&
-			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object) || hda_audio_is_object(object)))
-				return process_block_on_channel(frame,
-				    unix_socket_is_object(object) ?
-				    unix_socket_wait_channel(object, false) :
-				    fd_readiness_wait_channel());
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			frame->rax = amount;
-		}
-		break;
 	case SYSCALL_WRITEV:
 		return syscall_writev(frame);
+	case SYSCALL_READ:
 	case SYSCALL_READV:
 		return syscall_readv(frame);
 	case SYSCALL_CLOSE:
@@ -851,75 +756,6 @@ syscall_io_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 			else
 				frame->rax = position;
-		}
-		break;
-	case SYSCALL_READ:
-		if (frame->rdx > SYSCALL_MAX_IO) {
-			syscall_error(frame, EINVAL);
-			break;
-		}
-		{
-			char buffer[SYSCALL_MAX_IO];
-			uint64_t old_offset = fd_get_offset(current_fd_table(), frame->rdi);
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-
-			/* Validate before a read can consume socket, terminal, or device
-			 * data. Restoring a file offset cannot undo those side effects. */
-			if (object != NULL &&
-			    !vmm_validate_user_write(vmm_active_address_space(),
-			    frame->rsi, (size_t)frame->rdx)) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-
-			if (pipe_is_read_endpoint(object)) {
-				result = pipe_read_to(object, (size_t)frame->rdx,
-				    pipe_copy_user, (void *)(uintptr_t)frame->rsi, &amount);
-				if (result == -(int)EAGAIN &&
-				    fd_object_nonblocking(object)) {
-					syscall_error(frame, EAGAIN);
-					break;
-				}
-				if (result == -(int)EAGAIN)
-					return process_block_local_on_channel(frame,
-					    pipe_wait_channel(object, PIPE_READ_WAIT));
-				if (result != 0) {
-					syscall_error(frame, errno_from_kernel(result));
-					break;
-				}
-				frame->rax = amount;
-				break;
-			}
-			result = fd_read(current_fd_table(), frame->rdi, buffer,
-			    (size_t)frame->rdx, &amount);
-			if (result == -(int)EAGAIN &&
-			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object) || hda_audio_is_object(object)) &&
-			    fd_object_nonblocking(object)) {
-				syscall_error(frame, EAGAIN);
-				break;
-			}
-			if (result == -(int)EAGAIN &&
-			    (unix_socket_is_object(object) || pty_is_object(object) ||
-			    tcp_socket_is_object(object) || hda_audio_is_object(object)))
-				return process_block_on_channel(frame,
-				    unix_socket_is_object(object) ?
-				    unix_socket_wait_channel(object, true) :
-				    fd_readiness_wait_channel());
-
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (amount != 0 && !vmm_copy_to_user(
-			    vmm_active_address_space(), frame->rsi, buffer, amount)) {
-				(void)fd_set_offset(current_fd_table(), frame->rdi, old_offset);
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = amount;
 		}
 		break;
 	case SYSCALL_POLL:

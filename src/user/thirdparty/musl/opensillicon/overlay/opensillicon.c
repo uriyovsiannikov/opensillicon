@@ -203,8 +203,8 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  case SYS_pipe2: s=SYSCALL_PIPE2; break;
  case SYS_pipe: return call(SYSCALL_PIPE2,a,0,0,0,0,0);
  case SYS_getppid: s=SYSCALL_GETPPID; break;
- case SYS_read: s=SYSCALL_READ; if(c>4096)c=4096; break;
- case SYS_write: s=SYSCALL_WRITE; if(c>4096)c=4096; break;
+ case SYS_read: s=SYSCALL_READ; break;
+ case SYS_write: s=SYSCALL_WRITE; break;
  case SYS_readv: s=SYSCALL_READV; break;
  case SYS_writev: s=SYSCALL_WRITEV; break;
  case SYS_open: return open_native(AT_FDCWD,a,b,c);

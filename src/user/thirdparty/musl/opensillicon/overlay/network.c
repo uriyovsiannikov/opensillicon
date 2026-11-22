@@ -177,7 +177,7 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   if(d) return -EOPNOTSUPP;
   if(unix_socket || tcp) {
    if(e) return -EISCONN;
-   return call(SYSCALL_WRITE,a,b,c>4096 ? 4096 : c,0,0,0);
+   return call(SYSCALL_WRITE,a,b,c,0,0,0);
   }
   if(!e) return call(SYSCALL_UDP_SEND,a,b,c,0,0,0);
   r=from_address(e,f,&ep); if(r<0)return r;
@@ -187,7 +187,7 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   if(d) return -EOPNOTSUPP;
   if(unix_socket || tcp) {
    if(e) return -EOPNOTSUPP;
-   return call(SYSCALL_READ,a,b,c>4096 ? 4096 : c,0,0,0);
+   return call(SYSCALL_READ,a,b,c,0,0,0);
   } else {
    unsigned char payload[512];
    if(e && !f) return -EFAULT;
