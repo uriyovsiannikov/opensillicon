@@ -13,12 +13,6 @@ pipe_buffer_init(struct pipe_buffer *buffer)
 }
 
 size_t
-pipe_buffer_count(const struct pipe_buffer *buffer)
-{
-	return buffer == NULL ? 0 : buffer->count;
-}
-
-size_t
 pipe_buffer_write(struct pipe_buffer *buffer, const void *source,
 	size_t length)
 {

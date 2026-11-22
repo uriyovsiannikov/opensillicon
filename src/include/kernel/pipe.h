@@ -18,7 +18,6 @@ struct pipe_buffer {
 };
 
 void pipe_buffer_init(struct pipe_buffer *buffer);
-size_t pipe_buffer_count(const struct pipe_buffer *buffer);
 size_t pipe_buffer_write(struct pipe_buffer *buffer, const void *source,
 	size_t length);
 size_t pipe_buffer_peek(const struct pipe_buffer *buffer, void *destination,

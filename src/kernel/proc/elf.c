@@ -521,37 +521,3 @@ fail:
 	reset_loaded_image(loaded);
 	return false;
 }
-
-bool
-elf_image_unload(struct elf_loaded_image *loaded)
-{
-	uint64_t page_index = 0;
-	size_t i;
-	bool success = true;
-
-	if (loaded == NULL || loaded->page_addresses == NULL ||
-	    loaded->page_count == 0 ||
-	    vmm_active_address_space() == &loaded->address_space)
-		return false;
-	for (i = 0; i < loaded->plan.segment_count; i++) {
-		const struct elf_segment_plan *segment = &loaded->plan.segments[i];
-		uint64_t j;
-
-		for (j = 0; j < segment->page_count; j++) {
-			uint64_t physical;
-
-			if (!vmm_unmap_page(&loaded->address_space,
-			    segment->page_start + j * ELF_PAGE_SIZE, &physical) ||
-			    physical != loaded->page_addresses[page_index] ||
-			    !pmm_free_page(physical))
-				success = false;
-			page_index++;
-		}
-	}
-	if (!success || !address_space_destroy(&loaded->address_space))
-		return false;
-	if (!kheap_free(loaded->page_addresses))
-		return false;
-	reset_loaded_image(loaded);
-	return true;
-}

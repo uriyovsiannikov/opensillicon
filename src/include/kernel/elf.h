@@ -47,6 +47,5 @@ bool elf_image_validate(const void *image, size_t image_size,
 	struct elf_load_plan *plan);
 bool elf_image_load(const void *image, size_t image_size,
 	struct elf_loaded_image *loaded);
-bool elf_image_unload(struct elf_loaded_image *loaded);
 
 #endif

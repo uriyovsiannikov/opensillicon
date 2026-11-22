@@ -287,18 +287,6 @@ thread_create_on_cpu(size_t logical_id, thread_entry entry, void *argument)
 	return true;
 }
 
-bool
-thread_create(thread_entry entry, void *argument)
-{
-	struct smp_cpu *cpu = smp_current_cpu();
-
-	if (!__atomic_load_n(&initialized, __ATOMIC_ACQUIRE) ||
-	    scheduler_cpu_current() == NULL)
-		return false;
-	return thread_create_on_cpu(cpu == NULL ? 0 : cpu->logical_id, entry,
-	    argument);
-}
-
 static void
 thread_remove(struct scheduler_cpu *cpu, struct thread *thread)
 {

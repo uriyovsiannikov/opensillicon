@@ -45,9 +45,6 @@ int block_partition_prepare(struct block_device *partition,
     struct block_device *parent, uint64_t first_sector, uint64_t sector_count,
     uint32_t number);
 bool block_raw_write_allowed(const struct block_device *device);
-int block_partition_register(struct block_device *partition,
-    struct block_device *parent, uint64_t first_sector, uint64_t sector_count,
-    uint32_t number);
 int block_device_register(struct block_device *device);
 size_t block_device_count(void);
 struct block_device *block_device_at(size_t index);

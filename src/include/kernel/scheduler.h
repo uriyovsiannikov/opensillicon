@@ -9,7 +9,6 @@ typedef void (*thread_entry)(void *argument);
 bool scheduler_init(void);
 /* Attach an initialized CPU-local kernel-thread queue to every online AP. */
 bool scheduler_start_secondary_cpus(void);
-bool thread_create(thread_entry entry, void *argument);
 /* Creates a pinned kernel thread. Remote queueing targets online APs; BSP
  * queueing is local and requires the caller to yield when appropriate. */
 bool thread_create_on_cpu(size_t logical_id, thread_entry entry,

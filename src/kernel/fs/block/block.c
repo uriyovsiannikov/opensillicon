@@ -182,16 +182,6 @@ block_raw_write_allowed(const struct block_device *device)
 	return true;
 }
 
-int
-block_partition_register(struct block_device *partition,
-    struct block_device *parent, uint64_t first_sector, uint64_t sector_count,
-    uint32_t number)
-{
-	int error = block_partition_prepare(
-	    partition, parent, first_sector, sector_count, number);
-	return error ? error : block_device_register(partition);
-}
-
 bool
 block_device_get(struct block_device *device)
 {
