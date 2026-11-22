@@ -25,19 +25,19 @@ kernel_driver_network_attach(struct net_device *device)
 		return false;
 	}
 	if (!cyclone_net_init(device)) {
-		klog("CycloneTCP initialization failed\n");
+		klog("ctcp initialization failed\n");
 		return false;
 	}
 	if (udp_socket_system_init(device) != 0) {
-		klog("Cyclone UDP socket adapter initialization failed\n");
+		klog("cudp socket adapter initialization failed\n");
 		return false;
 	}
 	if (tcp_socket_system_init() != 0) {
-		klog("Cyclone TCP socket adapter initialization failed\n");
+		klog("ctcp socket adapter initialization failed\n");
 		return false;
 	}
 	attached = true;
-	klog("module NIC attached; requesting IPv4 configuration via DHCP\n");
+	klog("module nic attached; requesting ipv4 configuration via dhcp\n");
 	return true;
 }
 

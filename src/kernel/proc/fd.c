@@ -116,7 +116,7 @@ fd_object_get(struct fd_object *object)
 	if (object == NULL || object->immortal)
 		return;
 	if (__atomic_add_fetch(&object->references, 1, __ATOMIC_RELAXED) == 0) {
-		klog("OpenSillicon panic: file reference count overflow\n");
+		klog("panic: file reference count overflow\n");
 		kernel_halt();
 	}
 }
@@ -129,7 +129,7 @@ fd_object_put(struct fd_object *object)
 	uint32_t previous = __atomic_fetch_sub(&object->references, 1,
 	    __ATOMIC_ACQ_REL);
 	if (previous == 0) {
-		klog("OpenSillicon panic: file reference count underflow\n");
+		klog("panic: file reference count underflow\n");
 		kernel_halt();
 	}
 	if (previous != 1)
@@ -137,7 +137,7 @@ fd_object_put(struct fd_object *object)
 	if (object->operations->close != NULL)
 		object->operations->close(object->context);
 	if (!kheap_free(object)) {
-		klog("OpenSillicon panic: cannot release file object\n");
+		klog("panic: cannot release file object\n");
 		kernel_halt();
 	}
 }
