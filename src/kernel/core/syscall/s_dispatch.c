@@ -141,15 +141,15 @@ copy_user_string(uint64_t address, char *destination, size_t capacity)
 	size_t i;
 
 	if (destination == NULL || capacity == 0)
-		return -ERRNO_EFAULT;
+		return -EFAULT;
 	for (i = 0; i < capacity; i++) {
 		if (address > UINT64_MAX - i ||
 		    !vmm_copy_from_user(space, &destination[i], address + i, 1))
-			return -ERRNO_EFAULT;
+			return -EFAULT;
 		if (destination[i] == '\0')
 			return 0;
 	}
-	return -(int)ERRNO_ENAMETOOLONG;
+	return -(int)ENAMETOOLONG;
 }
 
 void
@@ -217,11 +217,11 @@ syscall_dispatch(struct interrupt_frame *frame)
 			if (number == SYSCALL_EXIT)
 				user_return_to_kernel(frame->rdi);
 		}
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		return frame;
 	}
 	if ((frame->cs & 3U) != 3U || current_fd_table() == NULL) {
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		return frame;
 	}
 
@@ -237,7 +237,7 @@ syscall_dispatch(struct interrupt_frame *frame)
 		return frame;
 	if (route != NULL && route->bsp != NULL)
 		return route->bsp(frame);
-	syscall_error(frame, ERRNO_ENOSYS);
+	syscall_error(frame, ENOSYS);
 	return frame;
 }
 

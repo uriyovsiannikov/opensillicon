@@ -85,8 +85,6 @@ _Static_assert(offsetof(struct native_dirent_record, name) == 19,
 #define NATIVE_DT_CHR 2U
 #define NATIVE_DT_SOCK 12U
 #define SYSCALL_GETDENTS_MAX 4096U
-#define SYSCALL_EIO 5U
-#define SYSCALL_EBADF 9U
 
 static struct interrupt_frame *
 syscall_getdents(struct interrupt_frame *frame)
@@ -101,17 +99,17 @@ syscall_getdents(struct interrupt_frame *frame)
 	int result;
 
 	if (fd_object_for_descriptor(table, descriptor) == NULL) {
-		syscall_error(frame, SYSCALL_EBADF);
+		syscall_error(frame, EBADF);
 		return frame;
 	}
 	if (frame->rdx == 0 || frame->rdx > SYSCALL_GETDENTS_MAX) {
-		syscall_error(frame, ERRNO_EINVAL);
+		syscall_error(frame, EINVAL);
 		return frame;
 	}
 	capacity = (size_t)frame->rdx;
 	if (!vmm_validate_user_write(vmm_active_address_space(), frame->rsi,
 	    capacity)) {
-		syscall_error(frame, ERRNO_EFAULT);
+		syscall_error(frame, EFAULT);
 		return frame;
 	}
 	start_offset = fd_get_offset(table, descriptor);
@@ -143,7 +141,7 @@ syscall_getdents(struct interrupt_frame *frame)
 		    name_length == sizeof(entry.name)) {
 			(void)fd_set_offset(table, descriptor, before);
 			if (written == 0)
-				syscall_error(frame, SYSCALL_EIO);
+				syscall_error(frame, EIO);
 			break;
 		}
 		if (entry.type == VNODE_DIRECTORY)
@@ -157,7 +155,7 @@ syscall_getdents(struct interrupt_frame *frame)
 		else {
 			(void)fd_set_offset(table, descriptor, before);
 			if (written == 0)
-				syscall_error(frame, SYSCALL_EIO);
+				syscall_error(frame, EIO);
 			break;
 		}
 		record_length = (offsetof(struct native_dirent_record, name) +
@@ -166,7 +164,7 @@ syscall_getdents(struct interrupt_frame *frame)
 		if (record_length > UINT16_MAX || record_length > capacity - written) {
 			(void)fd_set_offset(table, descriptor, before);
 			if (written == 0)
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 			break;
 		}
 		for (index = 0; index < record_length; index++)
@@ -184,7 +182,7 @@ syscall_getdents(struct interrupt_frame *frame)
 	    frame->rsi, output, written)) {
 		/* The full range was validated above; retain position on any fault. */
 		(void)fd_set_offset(table, descriptor, start_offset);
-		syscall_error(frame, ERRNO_EFAULT);
+		syscall_error(frame, EFAULT);
 		return frame;
 	}
 	if ((frame->rflags & 1U) == 0)
@@ -264,7 +262,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct os_credentials credentials;
 			int result;
 			if (frame->rsi > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = copy_user_string(frame->rdi, path, sizeof(path));
@@ -272,7 +270,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				result = process_resolve_path(path, canonical,
 				    sizeof(canonical));
 			if (result == 0 && !process_current_credentials(&credentials))
-				result = -ERRNO_ESRCH;
+				result = -ESRCH;
 			if (result == 0)
 				result = vfs_chmod_as(canonical, (uint32_t)frame->rsi,
 				    credentials.effective_uid, credentials.effective_gid);
@@ -289,7 +287,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct vnode *created = NULL;
 			int result;
 			if (frame->rsi > 07777U) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = copy_user_string(frame->rdi, path, sizeof(path));
@@ -297,7 +295,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				result = process_resolve_path(path, canonical,
 				    sizeof(canonical));
 			if (result == 0 && !process_current_credentials(&credentials))
-				result = -ERRNO_ESRCH;
+				result = -ESRCH;
 			if (result == 0)
 				result = vfs_create_path_as(canonical, VNODE_DIRECTORY,
 				    (uint32_t)frame->rsi & ~process_get_umask(),
@@ -317,7 +315,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct os_credentials credentials;
 			int result;
 			if (frame->rsi > 1U) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = copy_user_string(frame->rdi, path, sizeof(path));
@@ -326,7 +324,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			if (result == 0) result = process_resolve_path(path, canonical,
 			    sizeof(canonical));
 			if (result == 0 && !process_current_credentials(&credentials))
-				result = -ERRNO_ESRCH;
+				result = -ESRCH;
 			if (result == 0) result = vfs_remove_path_as(canonical,
 			    frame->rsi != 0, credentials.effective_uid,
 			    credentials.effective_gid);
@@ -343,12 +341,12 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			unsigned int requested;
 			int result;
 			if (frame->rsi > 7U) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = copy_user_string(frame->rdi, path, sizeof(path));
 			if (result == 0 && !process_current_credentials(&credentials))
-				result = -ERRNO_ESRCH;
+				result = -ESRCH;
 			if (result == 0 && path[0] != '/') {
 				result = process_getcwd(base, sizeof(base));
 				if (result > 0)
@@ -382,7 +380,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct fd_object *object;
 			int result;
 			if (frame->rsi > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			object = fd_object_for_descriptor(current_fd_table(),
@@ -390,7 +388,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			result = object == NULL ? -EBADF :
 			    fd_object_stat(object, &metadata);
 			if (result == 0 && !process_current_credentials(&credentials))
-				result = -ERRNO_ESRCH;
+				result = -ESRCH;
 			if (result == 0) {
 				if (credentials.effective_uid != 0 &&
 				    credentials.effective_uid != metadata.uid)
@@ -415,11 +413,11 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct os_credentials credentials;
 			int result;
 			if (frame->rsi > UINT32_MAX || frame->rdx > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ERRNO_ESRCH);
+				syscall_error(frame, ESRCH);
 				break;
 			}
 			if (credentials.effective_uid != 0) {
@@ -467,7 +465,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			char path[VFS_PATH_MAX];
 			int length;
 			if (frame->rsi == 0) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			length = process_getcwd(path, frame->rsi > sizeof(path) ?
@@ -508,11 +506,11 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (flags > UINT32_MAX || mode > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ERRNO_ESRCH);
+				syscall_error(frame, ESRCH);
 				break;
 			}
 			/* The process owns its FD table throughout this syscall. Check
@@ -594,7 +592,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			int result;
 
 			if (frame->r10 > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			flags = (uint32_t)frame->r10;
@@ -602,7 +600,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			 * and ordinary lookup are equivalent. Keep all other
 			 * flags rejected. */
 			if ((flags & ~NATIVE_AT_SYMLINK_NOFOLLOW) != 0) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = copy_user_string(frame->rsi, path, sizeof(path));
@@ -625,7 +623,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				}
 			}
 			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ERRNO_ESRCH);
+				syscall_error(frame, ESRCH);
 				break;
 			}
 			if (directory != NULL)
@@ -684,7 +682,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (!process_current_credentials(&credentials)) {
-				syscall_error(frame, ERRNO_ESRCH);
+				syscall_error(frame, ESRCH);
 				break;
 			}
 			result = vfs_stat_path_as(canonical,
@@ -696,7 +694,7 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			}
 			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rsi,
 			    &status, sizeof(status))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = 0;
@@ -718,14 +716,14 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			    vmm_active_address_space(), frame->rsi, &entry,
 			    sizeof(entry))) {
 				(void)fd_set_offset(current_fd_table(), frame->rdi, old_offset);
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = (uint64_t)result;
 		}
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	return frame;

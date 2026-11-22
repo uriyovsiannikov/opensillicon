@@ -90,7 +90,7 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 			}
 			result = unix_socket_accept(current_fd_table(), object);
 			if (result == -EAGAIN && fd_object_nonblocking(object)) {
-				syscall_error(frame, ERRNO_EAGAIN);
+				syscall_error(frame, EAGAIN);
 				break;
 			}
 			if (result == -EAGAIN)
@@ -186,7 +186,7 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 		}
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	return frame;

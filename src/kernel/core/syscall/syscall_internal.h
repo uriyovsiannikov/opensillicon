@@ -8,21 +8,6 @@
 
 #define MONOTONIC_TICK_HZ 100U
 
-#define ERRNO_EFAULT 14U
-#define ERRNO_EIO 5U
-#define ERRNO_ESRCH 3U
-#define ERRNO_EINVAL 22U
-#define ERRNO_E2BIG 7U
-#define ERRNO_ENOSYS 78U
-#define ERRNO_ECHILD 10U
-#define ERRNO_EAGAIN 11U
-#define ERRNO_ENOMEM 12U
-#define ERRNO_ENAMETOOLONG 36U
-#define ERRNO_EPIPE 32U
-#define ERRNO_EMFILE 24U
-#define ERRNO_ENOTTY 25U
-#define ERRNO_ENODEV 19U
-
 int copy_user_string(uint64_t address, char *destination, size_t capacity);
 void syscall_error(struct interrupt_frame *frame, uint64_t error);
 
@@ -35,7 +20,7 @@ current_fd_table(void)
 static inline uint64_t
 errno_from_kernel(int error)
 {
-	return error < 0 ? (uint64_t)(-error) : ERRNO_EINVAL;
+	return error < 0 ? (uint64_t)(-error) : EINVAL;
 }
 
 /* Local handlers can run on APs. Returning false defers the call to the BSP

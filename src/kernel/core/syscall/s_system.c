@@ -24,7 +24,7 @@ errno_from_module(enum kernel_module_error error)
 	case KERNEL_MODULE_IO_ERROR: return 5U;
 	case KERNEL_MODULE_UNSUPPORTED:
 	case KERNEL_MODULE_UNSUPPORTED_RELOCATION: return 95U;
-	default: return ERRNO_EINVAL;
+	default: return EINVAL;
 	}
 }
 
@@ -80,7 +80,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 			__asm__ volatile ("outb %0, %1" : : "a" (reset),
 			    "Nd" ((uint16_t)0x0cf9));
 		} else {
-			syscall_error(frame, ERRNO_EINVAL);
+			syscall_error(frame, EINVAL);
 			break;
 		}
 		syscall_error(frame, EIO);
@@ -114,7 +114,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 			if (node->type != VNODE_REGULAR || node->size == 0 ||
 			    node->size > 8U * 1024U * 1024U || node->size > SIZE_MAX) {
 				vnode_put(node);
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			image_size = (size_t)node->size;
@@ -131,7 +131,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 				    canonical[begin + name_length - 1U] == 'o')
 					name_length -= 3U;
 				if (name_length == 0 || name_length > KERNEL_MODULE_NAME_MAX) {
-					syscall_error(frame, ERRNO_EINVAL);
+					syscall_error(frame, EINVAL);
 					break;
 				}
 				memcpy(name, canonical + begin, name_length);
@@ -145,7 +145,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 			image = kheap_alloc(image_size);
 			if (image == NULL) {
 				fd_object_put(file);
-				syscall_error(frame, ERRNO_ENOMEM);
+				syscall_error(frame, ENOMEM);
 				break;
 			}
 			while (offset < image_size) {
@@ -195,7 +195,7 @@ syscall_system_bsp(struct interrupt_frame *frame)
 		}
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	return frame;

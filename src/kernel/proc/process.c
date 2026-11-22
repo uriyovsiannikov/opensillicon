@@ -7,6 +7,7 @@
 #include "arch/x86_64/user.h"
 #include "kernel/credentials.h"
 #include "kernel/elf.h"
+#include "kernel/errno.h"
 #include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/network_service.h"
@@ -34,26 +35,6 @@
 #define AUXV_AT_BASE 7ULL
 #define AUXV_AT_ENTRY 9ULL
 #define PROCESS_WAIT_ANY UINT64_MAX
-#define PROCESS_ERROR_ECHILD 10U
-#define PROCESS_ERROR_EFAULT 14U
-#define PROCESS_ERROR_EFAULT 14U
-#define PROCESS_ERROR_EAGAIN 11U
-#define PROCESS_ERROR_ENOMEM 12U
-#define PROCESS_ERROR_EINVAL 22U
-#define PROCESS_ERROR_EOPNOTSUPP 95U
-#define PROCESS_ERROR_E2BIG 7U
-#define PROCESS_ERROR_EBUSY 16U
-#define PROCESS_ERROR_ESRCH 3U
-#define PROCESS_ERROR_EINTR 4U
-#define PROCESS_ERROR_EACCES 13U
-#define PROCESS_ERROR_EPERM 1U
-#define PROCESS_ERROR_ENOEXEC 8U
-#define PROCESS_ERROR_EIO 5U
-#define PROCESS_ERROR_ENOENT 2U
-#define PROCESS_ERROR_ENOTDIR 20U
-#define PROCESS_ERROR_ERANGE 34U
-#define PROCESS_ERROR_EINVAL 22U
-#define PROCESS_ERROR_EOPNOTSUPP 95U
 #define PROCESS_USER_BASE 0x10000ULL
 #define PROCESS_USER_END 0x00007ffffffff000ULL
 
@@ -305,11 +286,11 @@ process_set_interrupted_result(struct process *process)
 		if (!vmm_copy_to_user(process->address_space,
 		    process->nanosleep_remaining_address, &remaining,
 		    sizeof(remaining)))
-			process->saved_frame->rax = PROCESS_ERROR_EFAULT;
+			process->saved_frame->rax = EFAULT;
 		else
-			process->saved_frame->rax = PROCESS_ERROR_EINTR;
+			process->saved_frame->rax = EINTR;
 	} else {
-		process->saved_frame->rax = PROCESS_ERROR_EINTR;
+		process->saved_frame->rax = EINTR;
 	}
 	process->saved_frame->rflags |= 1U;
 	process->waiting_for = 0;
@@ -492,17 +473,17 @@ uint64_t
 process_set_fs_base(uint64_t base)
 {
 	if (current_process == NULL)
-		return PROCESS_ERROR_EINVAL;
+		return EINVAL;
 	if (base == 0) {
 		current_process->user_fs_base = 0;
 		return 0;
 	}
 	if (base < PROCESS_USER_BASE || base >= PROCESS_USER_END ||
 	    (base & (sizeof(uint64_t) - 1)) != 0)
-		return PROCESS_ERROR_EINVAL;
+		return EINVAL;
 	if (!vmm_validate_user_write(current_process->address_space, base,
 	    sizeof(uint64_t)))
-		return PROCESS_ERROR_EFAULT;
+		return EFAULT;
 	current_process->user_fs_base = base;
 	return 0;
 }
@@ -1296,15 +1277,15 @@ process_set_uid(uint32_t id, bool effective_only)
 	uint64_t flags;
 	bool allowed;
 	if (current_process == NULL)
-		return -PROCESS_ERROR_ESRCH;
+		return -ESRCH;
 	if (id == UINT32_MAX)
-		return -PROCESS_ERROR_EINVAL;
+		return -EINVAL;
 	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
 	allowed = credentials_set_uid(&current_process->credentials, id,
 	    effective_only);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
-	return allowed ? 0 : -(int)PROCESS_ERROR_EPERM;
+	return allowed ? 0 : -(int)EPERM;
 }
 
 int
@@ -1313,15 +1294,15 @@ process_set_gid(uint32_t id, bool effective_only)
 	uint64_t flags;
 	bool allowed;
 	if (current_process == NULL)
-		return -PROCESS_ERROR_ESRCH;
+		return -ESRCH;
 	if (id == UINT32_MAX)
-		return -PROCESS_ERROR_EINVAL;
+		return -EINVAL;
 	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
 	allowed = credentials_set_gid(&current_process->credentials, id,
 	    effective_only);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
-	return allowed ? 0 : -(int)PROCESS_ERROR_EPERM;
+	return allowed ? 0 : -(int)EPERM;
 }
 
 static int
@@ -1336,14 +1317,14 @@ process_set_res_ids(bool group, uint32_t real, uint32_t effective,
 	    real, effective, saved);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
-	return allowed ? 0 : -(int)PROCESS_ERROR_EPERM;
+	return allowed ? 0 : -(int)EPERM;
 }
 
 int
 process_set_res_uid(uint32_t real, uint32_t effective, uint32_t saved)
 {
 	if (current_process == NULL)
-		return -(int)PROCESS_ERROR_ESRCH;
+		return -(int)ESRCH;
 	return process_set_res_ids(false,
 	    real, effective, saved);
 }
@@ -1352,7 +1333,7 @@ int
 process_set_res_gid(uint32_t real, uint32_t effective, uint32_t saved)
 {
 	if (current_process == NULL)
-		return -(int)PROCESS_ERROR_ESRCH;
+		return -(int)ESRCH;
 	return process_set_res_ids(true,
 	    real, effective, saved);
 }
@@ -1395,9 +1376,9 @@ process_chdir(const char *path)
 	int error;
 
 	if (current_process == NULL || path == NULL)
-		return -PROCESS_ERROR_EINVAL;
+		return -EINVAL;
 	if (path[0] == '\0')
-		return -PROCESS_ERROR_ENOENT;
+		return -ENOENT;
 	credentials = current_process->credentials;
 	error = vfs_resolve_path_as(current_process->current_directory, path,
 	    canonical, sizeof(canonical), credentials.effective_uid,
@@ -1410,12 +1391,12 @@ process_chdir(const char *path)
 		return error;
 	if (directory->type != VNODE_DIRECTORY) {
 		vnode_put(directory);
-		return -PROCESS_ERROR_ENOTDIR;
+		return -ENOTDIR;
 	}
 	if (!vfs_access(directory, credentials.effective_uid,
 	    credentials.effective_gid, VFS_ACCESS_EXEC)) {
 		vnode_put(directory);
-		return -PROCESS_ERROR_EACCES;
+		return -EACCES;
 	}
 	vnode_put(directory);
 	size_t length = 0;
@@ -1463,12 +1444,12 @@ process_getcwd(char *buffer, size_t capacity)
 {
 	size_t length;
 	if (current_process == NULL || buffer == NULL)
-		return -PROCESS_ERROR_EINVAL;
+		return -EINVAL;
 	length = 0;
 	while (current_process->current_directory[length] != '\0')
 		length++;
 	if (length + 1U > capacity)
-		return -PROCESS_ERROR_ERANGE;
+		return -ERANGE;
 	for (size_t i = 0; i <= length; i++)
 		buffer[i] = current_process->current_directory[i];
 	return (int)(length + 1U);
@@ -1478,7 +1459,7 @@ int
 process_resolve_path(const char *path, char *output, size_t capacity)
 {
 	if (current_process == NULL)
-		return -PROCESS_ERROR_EINVAL;
+		return -EINVAL;
 	return vfs_resolve_path_as(current_process->current_directory, path,
 	    output, capacity, current_process->credentials.effective_uid,
 	    current_process->credentials.effective_gid);
@@ -1492,11 +1473,11 @@ process_current_snapshot(struct process_snapshot_entry *entry)
 	int result = 0;
 
 	if (entry == NULL)
-		return -(int)PROCESS_ERROR_EINVAL;
+		return -(int)EINVAL;
 	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
 	process = current_process;
 	if (process == NULL) {
-		result = -(int)PROCESS_ERROR_ESRCH;
+		result = -(int)ESRCH;
 	} else {
 		*entry = (struct process_snapshot_entry){
 			.pid = process->id,
@@ -1517,15 +1498,15 @@ process_snapshot(struct process_snapshot_entry *entries, size_t capacity)
 	struct process *process;
 	size_t count = 0;
 	if (!process_table_owned_here())
-		return -(int)PROCESS_ERROR_EBUSY;
+		return -(int)EBUSY;
 	if (entries == NULL || capacity == 0 || capacity > PROCESS_SNAPSHOT_MAX)
-		return -(int)PROCESS_ERROR_EINVAL;
+		return -(int)EINVAL;
 	if (process_head == NULL)
 		return 0;
 	process = process_head;
 	do {
 		if (count == capacity)
-			return -(int)PROCESS_ERROR_E2BIG;
+			return -(int)E2BIG;
 		entries[count].pid = process->id;
 		entries[count].parent_pid = process->parent == NULL ? 0 :
 		    process->parent->id;
@@ -1547,14 +1528,14 @@ process_info_snapshot(struct os_process_info *entries, size_t capacity)
 	size_t count = 0;
 
 	if (!process_table_owned_here())
-		return -(int)PROCESS_ERROR_EBUSY;
+		return -(int)EBUSY;
 	if (entries == NULL || capacity == 0 || capacity > OS_PROCESS_INFO_MAX)
-		return -(int)PROCESS_ERROR_EINVAL;
+		return -(int)EINVAL;
 	if (process == NULL)
 		return 0;
 	do {
 		if (count == capacity)
-			return -(int)PROCESS_ERROR_E2BIG;
+			return -(int)E2BIG;
 		struct os_process_info *entry = &entries[count++];
 		entry->pid = process->id;
 		entry->parent_pid = process->parent == NULL ? 0 : process->parent->id;
@@ -1608,15 +1589,15 @@ process_kill(uint64_t pid, unsigned int signo)
 	struct process *process;
 
 	if (!process_table_owned_here())
-		return PROCESS_ERROR_EBUSY;
+		return EBUSY;
 	if (pid == 0 || (int64_t)pid < 0)
-		return PROCESS_ERROR_EINVAL;
+		return EINVAL;
 	if (signo != 0 && !os_signal_valid(signo))
-		return PROCESS_ERROR_EINVAL;
+		return EINVAL;
 	{
 		struct os_credentials sender;
 		if (!process_current_credentials(&sender))
-			return PROCESS_ERROR_ESRCH;
+			return ESRCH;
 		process = process_head;
 		if (process != NULL) {
 			do {
@@ -1630,7 +1611,7 @@ process_kill(uint64_t pid, unsigned int signo)
 					    sender.effective_uid == target->real_uid ||
 					    sender.effective_uid == target->saved_uid;
 					if (!permitted)
-						return PROCESS_ERROR_EPERM;
+						return EPERM;
 					break;
 				}
 				process = process->next;
@@ -1638,7 +1619,7 @@ process_kill(uint64_t pid, unsigned int signo)
 		}
 	}
 	if (process_head == NULL)
-		return PROCESS_ERROR_ESRCH;
+		return ESRCH;
 	process = process_head;
 	do {
 		if (process->id == pid && process->state != PROCESS_ZOMBIE) {
@@ -1659,14 +1640,14 @@ process_kill(uint64_t pid, unsigned int signo)
 		}
 		process = process->next;
 	} while (process != process_head);
-	return PROCESS_ERROR_ESRCH;
+	return ESRCH;
 }
 
 int
 process_signal_mask(int how, const uint64_t *set, uint64_t *old_set)
 {
 	if (current_process == NULL || (set != NULL && (how < 0 || how > 2)))
-		return -(int)PROCESS_ERROR_EINVAL;
+		return -(int)EINVAL;
 	uint64_t flags = spinlock_lock_irqsave(&signal_lock);
 	if (old_set != NULL)
 		*old_set = current_process->signals.blocked;
@@ -1713,26 +1694,26 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 
 	if (process == NULL || !os_signal_valid(signo) ||
 	    (signo == OS_SIGKILL && new_address != 0)) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	if (old_address != 0 && !vmm_validate_user_write(process->address_space,
 	    old_address, sizeof(struct os_signal_action))) {
-		*error = PROCESS_ERROR_EFAULT;
+		*error = EFAULT;
 		return frame;
 	}
 	if (new_address != 0 && !vmm_copy_from_user(process->address_space,
 	    &new_action, new_address, sizeof(struct os_signal_action))) {
-		*error = PROCESS_ERROR_EFAULT;
+		*error = EFAULT;
 		return frame;
 	}
 	if (new_address != 0 && (new_action.flags & ~(OS_SA_RESETHAND | OS_SA_NODEFER)) != 0) {
-		*error = PROCESS_ERROR_EOPNOTSUPP;
+		*error = EOPNOTSUPP;
 		return frame;
 	}
 	new_action.mask &= ~((1ULL << OS_SIGKILL) | (1ULL << OS_SIGSTOP));
 	if (new_address != 0 && !os_signal_action_valid(signo, &new_action)) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	if (new_address != 0 && new_action.handler > OS_SIGNAL_IGNORE &&
@@ -1741,13 +1722,13 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 	    sizeof(restorer_bytes)) ||
 	    !vmm_copy_from_user(process->address_space, actual_restorer,
 	    new_action.restorer, sizeof(actual_restorer)))) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	if (new_address != 0 && new_action.handler > OS_SIGNAL_IGNORE) {
 		for (i = 0; i < sizeof(restorer_bytes); i++) {
 			if (actual_restorer[i] != restorer_bytes[i]) {
-				*error = PROCESS_ERROR_EINVAL;
+				*error = EINVAL;
 				return frame;
 			}
 		}
@@ -1757,7 +1738,7 @@ process_sigaction(struct interrupt_frame *frame, unsigned int signo,
 	if (old_address != 0 && !vmm_copy_to_user(process->address_space,
 	    old_address, &old_action, sizeof(struct os_signal_action))) {
 		spinlock_unlock_irqrestore(&signal_lock, flags);
-		*error = PROCESS_ERROR_EFAULT;
+		*error = EFAULT;
 		return frame;
 	}
 	if (new_address != 0)
@@ -1902,7 +1883,7 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 	/* Fatal validation can schedule another process on the BSP. */
 	*error = 0;
 	if (process == NULL || process->signal_depth == 0) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	struct process_signal_context *context =
@@ -2119,18 +2100,18 @@ read_executable_image(struct vnode *node, void **result, size_t *image_size)
 	size_t offset = 0;
 	void *image;
 	if (node->size == 0 || node->size > SIZE_MAX || node->operations->read == NULL)
-		return -(int)PROCESS_ERROR_ENOEXEC;
+		return -(int)ENOEXEC;
 	*image_size = (size_t)node->size;
 	image = kheap_alloc(*image_size);
 	if (image == NULL)
-		return -(int)PROCESS_ERROR_ENOMEM;
+		return -(int)ENOMEM;
 	while (offset < *image_size) {
 		size_t amount = 0;
 		int error = node->operations->read(node, offset,
 		    (uint8_t *)image + offset, *image_size - offset, &amount);
 		if (error != 0 || amount == 0 || amount > *image_size - offset) {
 			(void)kheap_free(image);
-			return error != 0 ? error : -(int)PROCESS_ERROR_EIO;
+			return error != 0 ? error : -(int)EIO;
 		}
 		offset += amount;
 	}
@@ -2219,12 +2200,12 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	size_t i;
 
 	if (current_process == NULL) {
-		*error = PROCESS_ERROR_ECHILD;
+		*error = ECHILD;
 		return frame;
 	}
 	child = kheap_alloc(sizeof(*child));
 	if (child == NULL) {
-		*error = PROCESS_ERROR_ENOMEM;
+		*error = ENOMEM;
 		return frame;
 	}
 	arch_fpu_save(current_process->fpu_state);
@@ -2244,7 +2225,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 		if (child->kernel_stack != NULL)
 			(void)kheap_free(child->kernel_stack);
 		(void)kheap_free(child);
-		*error = PROCESS_ERROR_EAGAIN;
+		*error = EAGAIN;
 		return frame;
 	}
 	child->id = next_process_id++;
@@ -2294,7 +2275,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 		(void)kheap_free(child->address_space);
 		(void)kheap_free(child->kernel_stack);
 		(void)kheap_free(child);
-		*error = PROCESS_ERROR_EAGAIN;
+		*error = EAGAIN;
 		return frame;
 	}
 	stack_top = process_kernel_stack_top(child);
@@ -2322,7 +2303,7 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 			(void)kheap_free(child->address_space);
 			(void)kheap_free(child->kernel_stack);
 			(void)kheap_free(child);
-			*error = PROCESS_ERROR_EAGAIN;
+			*error = EAGAIN;
 			return frame;
 		}
 		child->test_private_mapping_child = true;
@@ -2361,7 +2342,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 #endif
 
 	if (process == NULL || image == NULL || image_size == 0) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	replacement = kheap_alloc(sizeof(*replacement));
@@ -2374,7 +2355,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	}
 	if (!map_process_stack(replacement, true, &stack_top, argc, argv, envc, envp)) {
 		release_loaded_image(replacement);
-		*error = PROCESS_ERROR_ENOMEM;
+		*error = ENOMEM;
 		return frame;
 	}
 	new_entry = replacement->entry;
@@ -2385,7 +2366,7 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 #endif
 	if (!address_space_activate(&replacement->address_space)) {
 		release_loaded_image(replacement);
-		*error = PROCESS_ERROR_ENOMEM;
+		*error = ENOMEM;
 		return frame;
 	}
 	fd_table_close_on_exec(&process->descriptors);
@@ -2462,7 +2443,7 @@ process_exec_path_env(struct interrupt_frame *frame, const char *path,
 	int rc;
 
 	if (current_process == NULL || path == NULL) {
-		*error = PROCESS_ERROR_EFAULT;
+		*error = EFAULT;
 		return frame;
 	}
 	rc = process_resolve_path(path, canonical, sizeof(canonical));
@@ -2481,7 +2462,7 @@ process_exec_path_env(struct interrupt_frame *frame, const char *path,
 	    credentials.effective_uid, credentials.effective_gid,
 	    VFS_ACCESS_EXEC)) {
 		vnode_put(executable);
-		*error = PROCESS_ERROR_EACCES;
+		*error = EACCES;
 		return frame;
 	}
 	rc = read_executable_image(executable, &image, &image_size);
@@ -2497,7 +2478,7 @@ process_exec_path_env(struct interrupt_frame *frame, const char *path,
 		return frame;
 	}
 	result = replace_process_image(frame, image, image_size,
-	    PROCESS_ERROR_ENOEXEC, error, argc, argv, envc, envp, canonical, &credentials);
+	    ENOEXEC, error, argc, argv, envc, envp, canonical, &credentials);
 	(void)kheap_free(image);
 	return result;
 }
@@ -2533,7 +2514,7 @@ reap_child(struct process *parent, struct process *child,
 	    (int32_t)child->exit_status << 8;
 	if (status_address != 0 && !vmm_copy_to_user(parent->address_space,
 	    status_address, &status, sizeof(status))) {
-		*error = PROCESS_ERROR_EFAULT;
+		*error = EFAULT;
 		return false;
 	}
 #ifdef KERNEL_TEST_PRIVATE_MAPPING_LIFECYCLE
@@ -2577,19 +2558,19 @@ process_waitpid(struct interrupt_frame *frame, uint64_t *error)
 	struct process *child;
 
 	if ((options & ~((uint64_t)OS_WAIT_NOHANG)) != 0) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	if (parent == NULL || (pid != PROCESS_WAIT_ANY &&
 	    (int64_t)pid <= 0)) {
-		*error = PROCESS_ERROR_ECHILD;
+		*error = ECHILD;
 		return frame;
 	}
 	child = find_child(parent, pid, true);
 	if (child == NULL)
 		child = find_child(parent, pid, false);
 	if (child == NULL) {
-		*error = PROCESS_ERROR_ECHILD;
+		*error = ECHILD;
 		return frame;
 	}
 	if (child->state == PROCESS_ZOMBIE) {
@@ -2608,7 +2589,7 @@ process_waitpid(struct interrupt_frame *frame, uint64_t *error)
 		return frame;
 	}
 	if (process_has_pending_signal(parent)) {
-		frame->rax = PROCESS_ERROR_EINTR;
+		frame->rax = EINTR;
 		frame->rflags |= 1U;
 		parent->retry_in_progress = false;
 		*error = 0;
@@ -2657,7 +2638,7 @@ process_sleep_ticks(struct interrupt_frame *frame, uint64_t ticks,
 	uint64_t *error)
 {
 	if (current_process == NULL) {
-		*error = PROCESS_ERROR_ECHILD;
+		*error = ECHILD;
 		return frame;
 	}
 	if (ticks == 0) {
@@ -2668,7 +2649,7 @@ process_sleep_ticks(struct interrupt_frame *frame, uint64_t ticks,
 	}
 	uint64_t now = timer_ticks();
 	if (ticks > UINT64_MAX - now) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	current_process->nanosleep_active = false;
@@ -2682,7 +2663,7 @@ process_nanosleep(struct interrupt_frame *frame, uint64_t ticks,
 	uint64_t *error)
 {
 	if (current_process == NULL) {
-		*error = PROCESS_ERROR_ECHILD;
+		*error = ECHILD;
 		return frame;
 	}
 	if (ticks == 0) {
@@ -2693,7 +2674,7 @@ process_nanosleep(struct interrupt_frame *frame, uint64_t ticks,
 	}
 	uint64_t now = timer_ticks();
 	if (ticks > UINT64_MAX - now) {
-		*error = PROCESS_ERROR_EINVAL;
+		*error = EINVAL;
 		return frame;
 	}
 	current_process->nanosleep_start_tick = now;
@@ -2709,12 +2690,12 @@ process_block_local_on_channel(struct interrupt_frame *frame, void *channel)
 {
 	struct process *process = current_process;
 	if (process == NULL || channel == NULL) {
-		frame->rax = PROCESS_ERROR_EINVAL;
+		frame->rax = EINVAL;
 		frame->rflags |= 1U;
 		return frame;
 	}
 	if (process_has_pending_signal(process)) {
-		frame->rax = PROCESS_ERROR_EINTR;
+		frame->rax = EINTR;
 		frame->rflags |= 1U;
 		return frame;
 	}
@@ -2742,7 +2723,7 @@ process_block_on_channel_until(struct interrupt_frame *frame, void *channel,
 	uint64_t wake_tick)
 {
 	if (current_process == NULL || channel == NULL) {
-		frame->rax = PROCESS_ERROR_EINVAL;
+		frame->rax = EINVAL;
 		frame->rflags |= 1U;
 		return frame;
 	}
@@ -2751,7 +2732,7 @@ process_block_on_channel_until(struct interrupt_frame *frame, void *channel,
 	if (!process_table_owned_here())
 		process_ap_stop(frame, PROCESS_SLICE_SYSCALL);
 	if (process_has_pending_signal(current_process)) {
-		frame->rax = PROCESS_ERROR_EINTR;
+		frame->rax = EINTR;
 		frame->rflags |= 1U;
 		current_process->retry_in_progress = false;
 		current_process->select_deadline = 0;

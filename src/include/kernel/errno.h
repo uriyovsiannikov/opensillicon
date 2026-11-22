@@ -1,53 +1,52 @@
 #ifndef KERNEL_ERRNO_H
 #define KERNEL_ERRNO_H
 
-/* Linux/POSIX numeric errno values used by the current kernel interfaces. */
+/* Native kernel error numbers. Keep existing ABI assignments stable.
+ * ENOSYS is 78; libc adapters translate it to their public errno value. */
+#define EPERM 1
 #define ENOENT 2
 #define ESRCH 3
-#define EACCES 13
-#define EBUSY 16
-#define ENODEV 19
-#define ENAMETOOLONG 36
+#define EINTR 4
 #define EIO 5
 #define E2BIG 7
+#define ENOEXEC 8
 #define EBADF 9
-#define ENOTTY 25
-#define ENOMEM 12
-#define EFAULT 14
-#define EINVAL 22
-#define EISDIR 21
-#define EEXIST 17
+#define ECHILD 10
 #define EAGAIN 11
+#define ENOMEM 12
+#define EACCES 13
+#define EFAULT 14
+#define EBUSY 16
+#define EEXIST 17
+#define ENODEV 19
+#define ENOTDIR 20
+#define EISDIR 21
+#define EINVAL 22
 #define EMFILE 24
+#define ENOTTY 25
 #define ENOSPC 28
-#define EPIPE 32
 #define ESPIPE 29
+#define EPIPE 32
+#define ERANGE 34
+#define ENAMETOOLONG 36
 #define EOVERFLOW 75
-#define EOPNOTSUPP 95
-#define ETIMEDOUT 110
-#define EMSGSIZE 90
-#define EPROTONOSUPPORT 93
+#define ENOSYS 78
 #define ENOTSOCK 88
-#define EAFNOSUPPORT 97
-#define EADDRINUSE 98
-#define EADDRNOTAVAIL 99
-#define ECONNREFUSED 111
-#define ECONNRESET 104
-#define ENOTCONN 107
-#define EINPROGRESS 115
-#define EISCONN 106
-#define ENETDOWN 100
-#define ENOBUFS 105
-#define EHOSTUNREACH 113
 #define EDESTADDRREQ 89
+#define EMSGSIZE 90
 #define EPROTONOSUPPORT 93
+#define EOPNOTSUPP 95
 #define EAFNOSUPPORT 97
 #define EADDRINUSE 98
 #define EADDRNOTAVAIL 99
-#define EMSGSIZE 90
 #define ENETDOWN 100
+#define ECONNRESET 104
 #define ENOBUFS 105
-#define ENOTSOCK 88
+#define EISCONN 106
+#define ENOTCONN 107
+#define ETIMEDOUT 110
+#define ECONNREFUSED 111
 #define EHOSTUNREACH 113
+#define EINPROGRESS 115
 
 #endif

@@ -46,12 +46,12 @@ syscall_device_bsp(struct interrupt_frame *frame)
 			struct address_space *space = vmm_active_address_space();
 
 			if (!framebuffer_device_info(&info)) {
-				syscall_error(frame, ERRNO_ENODEV);
+				syscall_error(frame, ENODEV);
 				break;
 			}
 			if (!vmm_validate_user_write(space, frame->rdi, sizeof(info)) ||
 			    !vmm_copy_to_user(space, frame->rdi, &info, sizeof(info))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = 0;
@@ -99,11 +99,11 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (!vmm_validate_user_write(space, frame->rdi, sizeof(output))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			if (!tty_keyboard_available()) {
-				syscall_error(frame, ERRNO_ENODEV);
+				syscall_error(frame, ENODEV);
 				break;
 			}
 			if (!ps2_keyboard_event_poll(&event) && !usb_host_keyboard_poll(&event)) {
@@ -118,7 +118,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 			};
 			if (!vmm_copy_to_user(space, frame->rdi, &output,
 			    sizeof(output))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = 1;
@@ -143,7 +143,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (!ps2_mouse_available() && !usb_host_available()) {
-				syscall_error(frame, ERRNO_ENODEV);
+				syscall_error(frame, ENODEV);
 				break;
 			}
 			if (ps2_mouse_event_poll(&output)) {
@@ -172,7 +172,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 
 			if (!vmm_validate_user_write(vmm_active_address_space(),
 			    frame->rdi, sizeof(descriptors))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			table = current_fd_table();
@@ -187,7 +187,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 			    descriptors, sizeof(descriptors))) {
 				(void)fd_close(table, (uint64_t)read_descriptor);
 				(void)fd_close(table, (uint64_t)write_descriptor);
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = 0;
@@ -295,7 +295,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				int enabled;
 				if (!vmm_copy_from_user(vmm_active_address_space(),
 				    &enabled, frame->rdx, sizeof(enabled))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				if (enabled)
@@ -310,12 +310,12 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				size_t available;
 				int result;
 				if (!(unix_socket_is_object(object) || pty_is_object(object))) {
-					syscall_error(frame, ERRNO_ENOTTY);
+					syscall_error(frame, ENOTTY);
 					break;
 				}
 				if (!vmm_validate_user_write(vmm_active_address_space(),
 				    frame->rdx, sizeof(int))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				result = pty_is_object(object) ? pty_bytes_available(object, &available) :
@@ -327,7 +327,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				int value = (int)available;
 				if (!vmm_copy_to_user(vmm_active_address_space(),
 				    frame->rdx, &value, sizeof(value))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				frame->rax = 0;
@@ -337,16 +337,16 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				int acquire;
 
 				if (!fd_object_is_console(object)) {
-					syscall_error(frame, ERRNO_ENOTTY);
+					syscall_error(frame, ENOTTY);
 					break;
 				}
 				if (!vmm_copy_from_user(vmm_active_address_space(),
 				    &acquire, frame->rdx, sizeof(acquire))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				if (acquire != 0 && acquire != 1) {
-					syscall_error(frame, ERRNO_EINVAL);
+					syscall_error(frame, EINVAL);
 					break;
 				}
 				if (!tty_console_input_set(acquire != 0,
@@ -361,19 +361,19 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				int enabled;
 
 				if (!fd_object_is_console(object)) {
-					syscall_error(frame, ERRNO_ENOTTY);
+					syscall_error(frame, ENOTTY);
 					break;
 				}
 				if (!vmm_copy_from_user(vmm_active_address_space(), &enabled,
 				    frame->rdx, sizeof(enabled))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				if ((enabled != 0 && enabled != 1) ||
 				    !tty_console_framebuffer_set(enabled != 0,
 				    process_current_pid())) {
 					syscall_error(frame, enabled != 0 && enabled != 1 ?
-					    ERRNO_EINVAL : 1U);
+					    EINVAL : 1U);
 					break;
 				}
 				frame->rax = 0;
@@ -388,13 +388,13 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				    frame->rdx, sizeof(dimensions))) ||
 				    (!set && !vmm_validate_user_write(space, frame->rdx,
 				    sizeof(dimensions)))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				(void)pty_window(object, dimensions, set);
 				if (!set && !vmm_copy_to_user(space, frame->rdx,
 				    dimensions, sizeof(dimensions)))
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 				else
 					frame->rax = 0;
 				break;
@@ -424,7 +424,7 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				    frame->rdx, sizeof(attributes))) ||
 				    (!set && !vmm_validate_user_write(space, frame->rdx,
 				    sizeof(attributes)))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					break;
 				}
 				if (frame->rsi == 0x5404U) {
@@ -453,13 +453,13 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				}
 				if (!set && !vmm_copy_to_user(space, frame->rdx,
 				    &attributes, sizeof(attributes)))
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 				else
 					frame->rax = 0;
 				break;
 			}
 			if (!fd_object_is_terminal(object)) {
-				syscall_error(frame, ERRNO_ENOTTY);
+				syscall_error(frame, ENOTTY);
 				break;
 			}
 			if (frame->rsi == TIOCSRAW_REQUEST ||
@@ -478,25 +478,25 @@ syscall_device_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (frame->rsi != TIOCGWINSZ_REQUEST) {
-				syscall_error(frame, ERRNO_ENOTTY);
+				syscall_error(frame, ENOTTY);
 				break;
 			}
 			if (!vmm_validate_user_write(vmm_active_address_space(),
 			    frame->rdx, sizeof(window))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			if (!tty_dimensions(&window.rows, &window.columns) ||
 			    !vmm_copy_to_user(vmm_active_address_space(), frame->rdx,
 			    &window, sizeof(window))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = 0;
 		}
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	return frame;

@@ -496,7 +496,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (!cyclone_net_dns_server(address)) {
-				syscall_error(frame, ERRNO_EAGAIN);
+				syscall_error(frame, EAGAIN);
 				break;
 			}
 			if (!vmm_copy_to_user(space, frame->rdi, address,
@@ -518,7 +518,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			}
 			if (!cyclone_net_ipv4_config(config, config + 4,
 			    config + 8)) {
-				syscall_error(frame, ERRNO_EAGAIN);
+				syscall_error(frame, EAGAIN);
 				break;
 			}
 			if (!vmm_copy_to_user(space, frame->rdi, config,
@@ -563,7 +563,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		}
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	return frame;

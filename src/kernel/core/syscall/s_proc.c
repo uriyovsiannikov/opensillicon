@@ -18,14 +18,14 @@ copy_exec_vector(uint64_t vector, char *storage, size_t capacity,
 		if (vector > UINT64_MAX - *count * sizeof(address) ||
 		    !vmm_copy_from_user(vmm_active_address_space(), &address,
 		    vector + *count * sizeof(address), sizeof(address)))
-			return ERRNO_EFAULT;
+			return EFAULT;
 		if (address == 0)
 			return 0;
 		if (*count == limit || used == capacity)
-			return ERRNO_E2BIG;
+			return E2BIG;
 		int rc = copy_user_string(address, storage + used, capacity - used);
 		if (rc != 0)
-			return rc == -(int)ERRNO_ENAMETOOLONG ? ERRNO_E2BIG : (uint64_t)-rc;
+			return rc == -(int)ENAMETOOLONG ? E2BIG : (uint64_t)-rc;
 		items[(*count)++] = storage + used;
 		while (storage[used++] != '\0')
 			;
@@ -55,7 +55,7 @@ syscall_proc_local(struct interrupt_frame **result_frame)
 			    !process_current_credentials(&credentials) ||
 			    !vmm_copy_to_user(space, frame->rdi, &credentials,
 			    sizeof(credentials)))
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 			else
 				frame->rax = 0;
 		}
@@ -69,7 +69,7 @@ syscall_proc_local(struct interrupt_frame **result_frame)
 		return true;
 	case SYSCALL_SIGACTION:
 		if (frame->rdi > UINT32_MAX)
-			syscall_error(frame, ERRNO_EINVAL);
+			syscall_error(frame, EINVAL);
 		else {
 			(void)process_sigaction(frame, (unsigned int)frame->rdi,
 			    frame->rsi, frame->rdx, &error);
@@ -93,7 +93,7 @@ syscall_proc_local(struct interrupt_frame **result_frame)
 			if (frame->rsi != 0) {
 				if (!vmm_copy_from_user(space, &requested, frame->rsi,
 				    sizeof(requested))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					return true;
 				}
 				requested_pointer = &requested;
@@ -101,13 +101,13 @@ syscall_proc_local(struct interrupt_frame **result_frame)
 			if (frame->rdx != 0) {
 				if (!vmm_validate_user_write(space, frame->rdx,
 				    sizeof(previous))) {
-					syscall_error(frame, ERRNO_EFAULT);
+					syscall_error(frame, EFAULT);
 					return true;
 				}
 				previous_pointer = &previous;
 			}
 			if (frame->rdi > INT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				return true;
 			}
 			result = process_signal_mask((int)frame->rdi,
@@ -118,7 +118,7 @@ syscall_proc_local(struct interrupt_frame **result_frame)
 			}
 			if (previous_pointer != NULL && !vmm_copy_to_user(space,
 			    frame->rdx, &previous, sizeof(previous))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				return true;
 			}
 			frame->rax = 0;
@@ -146,7 +146,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 	case SYSCALL_SETGID:
 	case SYSCALL_SETEGID:
 		if (frame->rdi > UINT32_MAX) {
-			syscall_error(frame, ERRNO_EINVAL);
+			syscall_error(frame, EINVAL);
 		} else {
 			int result = number == SYSCALL_SETUID ?
 			    process_set_uid((uint32_t)frame->rdi, false) :
@@ -167,7 +167,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			int result;
 			if (frame->rdi > UINT32_MAX || frame->rsi > UINT32_MAX ||
 			    frame->rdx > UINT32_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			result = number == SYSCALL_SETRESUID ?
@@ -183,7 +183,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_UMASK:
 		if (frame->rdi > UINT32_MAX)
-			syscall_error(frame, ERRNO_EINVAL);
+			syscall_error(frame, EINVAL);
 		else
 			frame->rax = process_umask((uint32_t)frame->rdi);
 		break;
@@ -193,12 +193,12 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			uint64_t capacity = frame->rsi;
 			int count;
 			if (capacity == 0 || capacity > PROCESS_SNAPSHOT_MAX) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				break;
 			}
 			if (!vmm_validate_user_write(vmm_active_address_space(),
 			    frame->rdi, (size_t)capacity * sizeof(entries[0]))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			count = process_snapshot(entries, (size_t)capacity);
@@ -208,7 +208,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			}
 			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rdi,
 			    entries, (size_t)count * sizeof(entries[0]))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				break;
 			}
 			frame->rax = (uint64_t)count;
@@ -251,7 +251,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			if (frame->rsi == 0) {
-				error = ERRNO_EFAULT;
+				error = EFAULT;
 				break;
 			}
 			error = copy_exec_vector(frame->rsi, argument_storage,
@@ -259,12 +259,12 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			if (error != 0)
 				break;
 			if (argc == 0) {
-				error = ERRNO_E2BIG;
+				error = E2BIG;
 				break;
 			}
 			char *storage = kheap_alloc(PROCESS_EXEC_ENV_BYTES_MAX);
 			if (storage == NULL) {
-				error = ERRNO_ENOMEM;
+				error = ENOMEM;
 				break;
 			}
 			error = copy_exec_vector(frame->rdx, storage,
@@ -279,7 +279,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 		frame = process_waitpid(frame, &error);
 		break;
 	case SYSCALL_KILL:
-		error = frame->rsi > UINT32_MAX ? ERRNO_EINVAL :
+		error = frame->rsi > UINT32_MAX ? EINVAL :
 		    process_kill(frame->rdi, (unsigned int)frame->rsi);
 		if (error != 0)
 			syscall_error(frame, error);
@@ -287,7 +287,7 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 		break;
 	default:
-		syscall_error(frame, ERRNO_ENOSYS);
+		syscall_error(frame, ENOSYS);
 		break;
 	}
 	if (error != 0)

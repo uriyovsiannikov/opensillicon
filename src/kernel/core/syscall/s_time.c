@@ -32,22 +32,22 @@ syscall_time_local(struct interrupt_frame **result_frame)
 
 			if (!vmm_copy_from_user(space, &request, frame->rdi,
 			    sizeof(request))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				return true;
 			}
 			if (request.tv_sec < 0 || request.tv_nsec < 0 ||
 			    request.tv_nsec >= 1000000000LL) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				return true;
 			}
 			if (frame->rsi != 0 && !vmm_validate_user_write(space,
 			    frame->rsi, sizeof(request))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				return true;
 			}
 			if ((uint64_t)request.tv_sec >
 			    (UINT64_MAX - 1U) / MONOTONIC_TICK_HZ) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				return true;
 			}
 			ticks = (uint64_t)request.tv_sec * MONOTONIC_TICK_HZ;
@@ -56,14 +56,14 @@ syscall_time_local(struct interrupt_frame **result_frame)
 				    ((uint64_t)request.tv_nsec + MONOTONIC_TICK_NS - 1U) /
 				    MONOTONIC_TICK_NS;
 				if (ticks > UINT64_MAX - fractional_ticks - 1U) {
-					syscall_error(frame, ERRNO_EINVAL);
+					syscall_error(frame, EINVAL);
 					return true;
 				}
 				ticks += fractional_ticks;
 			}
 			if (ticks != 0) {
 				if (ticks == UINT64_MAX) {
-					syscall_error(frame, ERRNO_EINVAL);
+					syscall_error(frame, EINVAL);
 					return true;
 				}
 				/* One extra tick accounts for unknown phase within the
@@ -83,12 +83,12 @@ syscall_time_local(struct interrupt_frame **result_frame)
 			uint64_t ticks;
 
 			if (frame->rdi != CLOCK_MONOTONIC_ID && frame->rdi != 0) {
-				syscall_error(frame, ERRNO_EINVAL);
+				syscall_error(frame, EINVAL);
 				return true;
 			}
 			if (!vmm_validate_user_write(space, frame->rsi,
 			    sizeof(value))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				return true;
 			}
 			ticks = timer_ticks();
@@ -97,7 +97,7 @@ syscall_time_local(struct interrupt_frame **result_frame)
 				uint64_t epoch;
 				if (!timer_realtime_epoch(&epoch) ||
 				    epoch > INT64_MAX - (uint64_t)value.tv_sec) {
-					syscall_error(frame, ERRNO_EIO);
+					syscall_error(frame, EIO);
 					return true;
 				}
 				value.tv_sec += (int64_t)epoch;
@@ -106,7 +106,7 @@ syscall_time_local(struct interrupt_frame **result_frame)
 			    (1000000000U / MONOTONIC_TICK_HZ);
 			if (!vmm_copy_to_user(space, frame->rsi, &value,
 			    sizeof(value))) {
-				syscall_error(frame, ERRNO_EFAULT);
+				syscall_error(frame, EFAULT);
 				return true;
 			}
 			frame->rax = 0;
