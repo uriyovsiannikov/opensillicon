@@ -9,7 +9,6 @@
 
 #include "arch/x86_64/acpi.h"
 #include "kernel/block.h"
-#include "kernel/log.h"
 #include "kernel/module.h"
 #include "kernel/process.h"
 #include "kernel/vfs.h"
@@ -188,17 +187,6 @@ syscall_system_bsp(struct interrupt_frame *frame)
 	switch (number) {
 	case SYSCALL_SYSCTL:
 		return syscall_sysctl(frame);
-	case SYSCALL_KERNEL_CRASH:
-		{
-			struct os_credentials credentials;
-			if (!process_current_credentials(&credentials) ||
-			    credentials.effective_uid != 0) {
-				syscall_error(frame, 1U);
-				break;
-			}
-			klog("kernel crash requested by shell\n");
-			kernel_halt();
-		}
 	case SYSCALL_POWER_CONTROL:
 		{
 			struct os_credentials credentials;

@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v16.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v17.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -303,3 +303,7 @@ terminal attributes and restores them for external programs and on exit.
 Its editor disables input canonicalization and echo while preserving output
 newline processing. Terminal dimensions use libc's winsize/TIOCGWINSZ.
 The duplicate PTY raw-mode setter and legacy userspace ioctl wrapper are removed.
+
+ABI v17 retires the debug kernel-halt syscall (slot 101) and removes the
+hidden `!(crash)` shell command and its private runtime wrapper. Slot 101
+returns ENOSYS. Shutdown and reboot continue through the power-control API.

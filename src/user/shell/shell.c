@@ -711,11 +711,6 @@ run_command(char *line, int interactive)
 	}
 	if (count == 0)
 		return 1;
-	if (count == 1 && strcmp(arguments[0], "!(crash)") == 0) {
-		if (u_kernel_crash() < 0)
-			u_puts("sh: !(crash): permission denied\n");
-		return 1;
-	}
 	if (strcmp(arguments[count - 1], "&") == 0) {
 		arguments[--count] = NULL;
 		background = 1;

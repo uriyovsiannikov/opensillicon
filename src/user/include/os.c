@@ -20,8 +20,6 @@ long u_read(uint64_t fd, void *buffer, size_t length)
 { return syscall4(SYSCALL_READ, fd, (uintptr_t)buffer, length, 0); }
 long u_power_control(uint64_t command)
 { return syscall4(SYSCALL_POWER_CONTROL, command, 0, 0, 0); }
-long u_kernel_crash(void)
-{ return syscall4(SYSCALL_KERNEL_CRASH, 0, 0, 0, 0); }
 long u_kldload(const char *path)
 { return syscall4(SYSCALL_KLDLOAD, (uintptr_t)path, 0, 0, 0); }
 long u_kldunload(const char *name)

@@ -16,7 +16,6 @@
 long u_write(uint64_t fd, const void *buffer, size_t length);
 long u_read(uint64_t fd, void *buffer, size_t length);
 long u_power_control(uint64_t command);
-long u_kernel_crash(void);
 long u_kldload(const char *path);
 long u_kldunload(const char *name);
 long u_process_info(struct os_process_info *entries, size_t capacity);
