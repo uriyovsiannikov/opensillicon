@@ -100,8 +100,8 @@ void *fd_readiness_wait_channel(void);
 int fd_close(struct fd_table *table, uint64_t descriptor);
 int fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
 	uint32_t flags);
-int fd_dup(struct fd_table *table, uint64_t source);
-int fd_dup2(struct fd_table *table, uint64_t source, uint64_t destination);
+int fd_dup_to(struct fd_table *table, uint64_t source, uint64_t destination,
+	uint32_t flags);
 int fd_read(struct fd_table *table, uint64_t descriptor, void *buffer,
 	size_t length, size_t *read_length);
 int fd_write(struct fd_table *table, uint64_t descriptor, const void *buffer,

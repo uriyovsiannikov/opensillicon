@@ -56,8 +56,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_PIPE2] = { .local = syscall_io_local },
 	[SYSCALL_FCNTL] = { .bsp = syscall_io_bsp },
 	[SYSCALL_DUP3] = { .bsp = syscall_io_bsp },
-	[SYSCALL_DUP2] = { .bsp = syscall_io_bsp },
-	[SYSCALL_DUP] = { .bsp = syscall_io_bsp },
 	[SYSCALL_LSEEK] = { .bsp = syscall_io_bsp },
 	[SYSCALL_POLL] = { .bsp = syscall_io_bsp },
 	[SYSCALL_SELECT] = { .bsp = syscall_io_bsp },

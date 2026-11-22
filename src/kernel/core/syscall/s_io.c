@@ -826,37 +826,14 @@ syscall_io_bsp(struct interrupt_frame *frame)
 		}
 		break;
 	case SYSCALL_DUP3:
-	case SYSCALL_DUP2:
 		{
-			int result;
-			bool dup3 = frame->rax == SYSCALL_DUP3;
-			if (dup3 && (frame->rdi == frame->rsi ||
-			    (frame->rdx & ~(uint64_t)VFS_O_CLOEXEC))) {
+			if (frame->rdx & ~(uint64_t)VFS_O_CLOEXEC) {
 				syscall_error(frame, EINVAL);
 				break;
 			}
-			if (frame->rdi > UINT32_MAX || frame->rsi > UINT32_MAX) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			result = fd_dup2(current_fd_table(), frame->rdi, frame->rsi);
-			if (result < 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else {
-				if (dup3 && (frame->rdx & VFS_O_CLOEXEC))
-					(void)fd_set_descriptor_flags(current_fd_table(),result,FD_DESCRIPTOR_CLOEXEC);
-				frame->rax = (uint64_t)result;
-			}
-		}
-		break;
-	case SYSCALL_DUP:
-		{
-			int result;
-			if (frame->rdi > UINT32_MAX) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			result = fd_dup(current_fd_table(), frame->rdi);
+			int result = fd_dup_to(current_fd_table(), frame->rdi,
+			    frame->rsi, (frame->rdx & VFS_O_CLOEXEC) ?
+			    FD_DESCRIPTOR_CLOEXEC : 0);
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));
 			else

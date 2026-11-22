@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v4.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v5.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -182,7 +182,7 @@ Remaining migration stages:
 5. Move system programs and package builds onto the musl sysroot, rebuild every
    dependent library and verify boot/install/network/desktop.
 
-## ABI v4 cleanup
+## ABI v5 cleanup
 
 Only EXECVE, WAITPID with a 32-bit POSIX status, and full-structure SIGACTION
 remain. EXECVE accepts path/argv/envp directly, copying both vectors through
@@ -191,5 +191,10 @@ signal action ABI have been removed. All base programs and ports must be rebuilt
 Syscall assignments live in `src/include/abi/syscall_list.h`; retired slots are
 not reused. The musl adapter never falls back to older kernel ABIs.
 
-ABI v4 also removes the flagless native PIPE call. Both libc pipe and pipe2
+ABI v5 also removes the flagless native PIPE call. Both libc pipe and pipe2
 use PIPE2; pipe supplies zero flags. Slot 23 remains retired.
+
+ABI v5 removes native DUP and DUP2 (slots 58 and 53). libc dup uses fcntl
+F_DUPFD with minimum zero; dup2 uses DUP3 with zero flags and handles the
+identical-descriptor query through F_GETFD. DUP3 installs descriptor flags as
+part of the replacement, using one fd_dup_to helper.

@@ -1,4 +1,4 @@
-/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v4.
+/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v5.
  * Never forward unknown numbers: the two number spaces overlap. */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -169,9 +169,14 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  case SYS_open: return open_native(AT_FDCWD,a,b,c);
  case SYS_openat: return open_native(a,b,c,d);
  case SYS_fcntl: return fcntl_native(a,b,c);
- case SYS_dup: s=SYSCALL_DUP; break;
+ case SYS_dup: return call(SYSCALL_FCNTL,a,0,0,0,0,0);
  case SYS_dup3: s=SYSCALL_DUP3; break;
- case SYS_dup2: s=SYSCALL_DUP2; break;
+ case SYS_dup2:
+  if(a==b) {
+   long r=call(SYSCALL_FCNTL,a,1,0,0,0,0);
+   return r<0 ? r : a;
+  }
+  return call(SYSCALL_DUP3,a,b,0,0,0,0);
  case SYS_readlink: case SYS_readlinkat: {
   /* The VFS has no symbolic links. Existence/permissions must still be
    * checked so realpath can distinguish ordinary nodes from missing paths. */

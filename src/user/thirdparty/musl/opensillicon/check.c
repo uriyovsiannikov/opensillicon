@@ -208,8 +208,14 @@ static int duplication_check(void)
  CHECK(fcntl(plain,F_GETFD)==0);
  CHECK(dup3(source,plain,O_CLOEXEC)==plain && (fcntl(plain,F_GETFD)&FD_CLOEXEC));
  CHECK(dup3(-1,plain,0)==-1 && errno==EBADF);
+ CHECK(dup2(-1,-1)==-1 && errno==EBADF);
+ CHECK(dup3(-1,-1,0)==-1 && errno==EINVAL);
  CHECK(fcntl(plain,F_GETFD)&FD_CLOEXEC);
  CHECK(syscall(SYS_dup3,source,plain,0)==plain && fcntl(plain,F_GETFD)==0);
+ CHECK(dup2(source,flagged)==flagged && fcntl(flagged,F_GETFD)==0);
+ int lowest=dup(source); CHECK(lowest>=0 && fcntl(lowest,F_GETFD)==0);
+ CHECK(lseek(lowest,0,SEEK_SET)==0 && read(flagged,&value,1)==1 && value=='A');
+ CHECK(close(lowest)==0);
  CHECK(fcntl(source,F_DUPFD,-1)==-1 && errno==EINVAL);
  CHECK(fcntl(source,F_DUPFD_CLOEXEC,1000)==-1 && errno==EINVAL);
  CHECK(close(plain)==0 && close(flagged)==0);
@@ -704,7 +710,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,23,109};
+ const long retired[]={4,5,6,7,23,53,58,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);

@@ -382,28 +382,23 @@ fd_dup_from(struct fd_table *table, uint64_t source, uint64_t minimum,
 }
 
 int
-fd_dup(struct fd_table *table, uint64_t source)
-{
-	return fd_dup_from(table, source, 0, 0);
-}
-
-int
-fd_dup2(struct fd_table *table, uint64_t source, uint64_t destination)
+fd_dup_to(struct fd_table *table, uint64_t source, uint64_t destination,
+	uint32_t flags)
 {
 	struct fd_object *source_object;
 	struct fd_object *old_destination;
 
+	if (source == destination || (flags & ~FD_DESCRIPTOR_CLOEXEC) != 0)
+		return -FD_ERROR_EINVAL;
 	if (table == NULL || source >= FD_TABLE_CAPACITY ||
 	    destination >= FD_TABLE_CAPACITY ||
 	    table->entries[source] == NULL)
 		return -FD_ERROR_EBADF;
-	if (source == destination)
-		return (int)destination;
 	source_object = table->entries[source];
 	fd_object_get(source_object);
 	old_destination = table->entries[destination];
 	table->entries[destination] = source_object;
-	table->descriptor_flags[destination] = 0;
+	table->descriptor_flags[destination] = flags;
 	fd_object_put(old_destination);
 	return (int)destination;
 }
