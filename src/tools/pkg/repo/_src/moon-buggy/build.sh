@@ -9,7 +9,7 @@ cc=${CC:-gcc}
 mkdir -p "$out" "$stage/usr/bin" "$stage/usr/share/licenses/moon-buggy"
 sed -f "$src/text2c.sed" "$src/COPYING" > "$out/copying.h"
 sed -n -f "$src/img.sed" "$src/car.img" > "$out/buggy.h"
-cflags="-std=gnu11 -O2 -DNDEBUG -D_DEFAULT_SOURCE -D_POSIX_SAVED_IDS -DRETSIGTYPE=void -DHAVE_ERRNO_H=1 -DHAVE_SYS_SELECT_H=1 -DO_SHLOCK=0 -DO_EXLOCK=0 -DVERSION=\"1.1.0\" -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/nano/ncurses/include -I$out -I$src"
+cflags="-std=gnu11 -O2 -DNDEBUG -D_DEFAULT_SOURCE -D_POSIX_SAVED_IDS -DRETSIGTYPE=void -DHAVE_ERRNO_H=1 -DHAVE_SYS_SELECT_H=1 -DVERSION=\"1.1.0\" -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone -nostdinc -I$root/src/include -I$root/src/build/musl/sysroot/include -I$root/src/user/thirdparty/musl/opensillicon/overlay -I$root/src/build/nano/ncurses/include -I$out -I$src"
 files='main mode title pager game level ground buggy laser meteor highscore realname queue vclock date persona signal keyboard terminal cursor random error xmalloc xstrdup hpath'
 set --
 for file in $files; do

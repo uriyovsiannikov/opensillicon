@@ -18,6 +18,9 @@ binary = Path('src/build/moon-buggy/moon-buggy').resolve()
                            f'.incbin "{binary}"\ngame_end:\n.section .note.GNU-stack,"",@progbits\n')
 (out / 'init.c').write_text(r'''
 #include <stdio.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -28,12 +31,27 @@ int main(void) {
  if(!file) return 1;
  if(fwrite(game_start,1,length,file)!=length) return 1;
  if(fclose(file) || chmod("/tmp/moon-buggy",0755)) return 1;
- const char *options[]={"-V","-h"};
- for(int i=0;i<2;i++) {
+ const char *options[]={"-V","-h","-c","-s"};
+ for(int i=0;i<4;i++) {
   pid_t child=fork(); if(child<0) return 2;
   if(!child) { char *args[]={"moon-buggy",(char *)options[i],NULL}; execv("/tmp/moon-buggy",args); _exit(3); }
   int status; if(waitpid(child,&status,0)!=child || !WIFEXITED(status) || WEXITSTATUS(status)) return 4;
  }
+ struct stat st;
+ if(stat("/tmp/mbscore",&st) || !st.st_size) return 5;
+ int held=open("/tmp/mbscore",O_RDONLY|O_CLOEXEC);
+ if(held<0 || flock(held,LOCK_EX)) return 6;
+ pid_t child=fork(); if(child<0) return 7;
+ if(!child) {
+  close(held);
+  char *args[]={"moon-buggy","-c",NULL};
+  execv("/tmp/moon-buggy",args); _exit(127);
+ }
+ struct timespec delay={0,200000000}; nanosleep(&delay,NULL);
+ int status;
+ if(waitpid(child,&status,WNOHANG)!=0) return 8;
+ if(flock(held,LOCK_UN) || close(held)) return 9;
+ if(waitpid(child,&status,0)!=child || !WIFEXITED(status) || WEXITSTATUS(status)) return 10;
  puts("MOON_BUGGY_PASS"); return 0;
 }
 ''')
@@ -72,7 +90,7 @@ try:
         time.sleep(.2)
     assert 'MOON_BUGGY_PASS' in text and '/sbin/init exited with status 0' in text, text
     assert 'usage: moon-buggy' in text and '1.1.0' in text, text
-    print('MOON_BUGGY_PASS: native -V/-h after libc shim removal; gameplay not tested')
+    print('MOON_BUGGY_PASS: native -V/-h, score creation/display and exclusive lock contention; gameplay not tested')
 finally:
     guest.terminate()
     guest.wait(timeout=5)

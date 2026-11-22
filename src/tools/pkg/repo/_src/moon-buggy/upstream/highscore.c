@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <time.h>
 #include <pwd.h>
 #include <assert.h>
@@ -334,24 +335,7 @@ do_open (const char *name, int flags, int lock, int must_succeed)
  * Otherwise return -1 if the file cannot be accessed.  */
 {
   int  fd;
-  int  lock_done;
   mode_t  mode, mask;
-
-  lock_done = 1;
-  if (lock == 1) {
-#ifdef O_SHLOCK
-    flags |= O_SHLOCK;
-#else
-    lock_done = 0;
-#endif
-  }
-  if (lock == 2) {
-#ifdef O_EXLOCK
-    flags |= O_EXLOCK;
-#else
-    lock_done = 0;
-#endif
-  }
 
   mode = S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH;
   if ( is_setgid () )  mode |= S_IWGRP;
@@ -364,17 +348,10 @@ do_open (const char *name, int flags, int lock, int must_succeed)
   }
   umask (mask);
 
-  if (fd != -1 && ! lock_done) {
-    struct flock  l;
-    int  res;
-
-    l.l_type = (lock == 1) ? F_RDLCK : F_WRLCK;
-    l.l_whence = SEEK_SET;
-    l.l_start = 0;
-    l.l_len = 0;
-
+  if (fd != -1 && lock != 0) {
+    int res;
     do {
-      res = fcntl (fd, F_SETLKW, &l);
+      res = flock (fd, lock == 1 ? LOCK_SH : LOCK_EX);
     } while (res == -1 && errno == EINTR);
     if (res == -1) {
       fatal ("Cannot lock score file \"%s\": %s", name, strerror (errno));
