@@ -11,29 +11,31 @@
 
 
 static int
-stat_from_metadata(struct os_stat *value,
-	const struct fd_metadata *metadata)
+stat_to_user(const struct fd_metadata *metadata, uint64_t destination)
 {
-	if (value == NULL || metadata == NULL)
-		return -EINVAL;
+	struct os_stat value = {0};
+	struct address_space *space = vmm_active_address_space();
+
 	if (metadata->size > INT64_MAX)
 		return -EOVERFLOW;
-	*value = (struct os_stat){0};
-	value->st_ino = metadata->inode;
-	value->st_size = (int64_t)metadata->size;
-	value->st_mode = metadata->mode & 07777U;
-	value->st_uid = metadata->uid;
-	value->st_gid = metadata->gid;
+	value.st_ino = metadata->inode;
+	value.st_size = (int64_t)metadata->size;
+	value.st_mode = metadata->mode & 07777U;
+	value.st_uid = metadata->uid;
+	value.st_gid = metadata->gid;
 	if (metadata->type == VNODE_REGULAR)
-		value->st_mode |= OS_S_IFREG;
+		value.st_mode |= OS_S_IFREG;
 	else if (metadata->type == VNODE_DIRECTORY)
-		value->st_mode |= OS_S_IFDIR;
+		value.st_mode |= OS_S_IFDIR;
 	else if (metadata->type == VNODE_SOCKET)
-		value->st_mode |= OS_S_IFSOCK;
+		value.st_mode |= OS_S_IFSOCK;
 	else if (metadata->type == VNODE_DEVICE)
-		value->st_mode |= OS_S_IFCHR;
+		value.st_mode |= OS_S_IFCHR;
 	else
 		return -EOPNOTSUPP;
+	if (!vmm_validate_user_write(space, destination, sizeof(value)) ||
+	    !vmm_copy_to_user(space, destination, &value, sizeof(value)))
+		return -EFAULT;
 	return 0;
 }
 
@@ -501,30 +503,15 @@ syscall_file_bsp(struct interrupt_frame *frame)
 	case SYSCALL_FSTAT:
 		{
 			struct fd_metadata metadata;
-			struct os_stat value;
 			int result = fd_object_stat(fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi), &metadata);
 
-			if (result != 0) {
+			if (result == 0)
+				result = stat_to_user(&metadata, frame->rsi);
+			if (result != 0)
 				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			result = stat_from_metadata(&value, &metadata);
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (!vmm_validate_user_write(vmm_active_address_space(),
-			    frame->rsi, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rsi,
-			    &value, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
+			else
+				frame->rax = 0;
 		}
 		break;
 	case SYSCALL_FSTATAT:
@@ -534,7 +521,6 @@ syscall_file_bsp(struct interrupt_frame *frame)
 			struct fd_object *directory = NULL;
 			struct vnode *node = NULL;
 			struct fd_metadata metadata;
-			struct os_stat value;
 			struct os_credentials credentials;
 			int64_t directory_fd = (int64_t)frame->rdi;
 			uint32_t flags;
@@ -593,23 +579,12 @@ syscall_file_bsp(struct interrupt_frame *frame)
 				.uid = node->uid,
 				.gid = node->gid
 			};
-			result = stat_from_metadata(&value, &metadata);
 			vnode_put(node);
-			if (result != 0) {
+			result = stat_to_user(&metadata, frame->rdx);
+			if (result != 0)
 				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (!vmm_validate_user_write(vmm_active_address_space(),
-			    frame->rdx, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			if (!vmm_copy_to_user(vmm_active_address_space(), frame->rdx,
-			    &value, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
+			else
+				frame->rax = 0;
 		}
 		break;
 	case SYSCALL_GETDENTS:

@@ -11,6 +11,7 @@
 #include <sys/sysctl.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <signal.h>
@@ -59,6 +60,21 @@ static int files_check(void)
  CHECK(write(fd,"abc",3)==3);
  struct stat st;
  CHECK(fstat(fd,&st)==0 && S_ISREG(st.st_mode) && st.st_size==3);
+ struct { uint64_t before; struct stat value; uint64_t after; } guarded_stat={
+     .before=0x123456789abcdef0ULL,.after=0xfedcba9876543210ULL};
+ CHECK(fstatat(AT_FDCWD,"data",&guarded_stat.value,0)==0);
+ CHECK(!memcmp(&st,&guarded_stat.value,sizeof st) &&
+     guarded_stat.before==0x123456789abcdef0ULL && guarded_stat.after==0xfedcba9876543210ULL);
+ CHECK(__os_raw(SYSCALL_FSTAT,fd,1,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_FSTATAT,AT_FDCWD,(long)"data",1,0,0,0)==-EFAULT);
+ unsigned char *stat_pages=mmap(NULL,8192,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+ CHECK(stat_pages!=MAP_FAILED && mprotect(stat_pages+4096,4096,PROT_NONE)==0);
+ unsigned char *partial_stat=stat_pages+4096-80;
+ memset(partial_stat,0x5a,80);
+ CHECK(__os_raw(SYSCALL_FSTAT,fd,(long)partial_stat,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_FSTATAT,AT_FDCWD,(long)"data",(long)partial_stat,0,0,0)==-EFAULT);
+ for(size_t i=0;i<80;i++) CHECK(partial_stat[i]==0x5a);
+ CHECK(munmap(stat_pages,8192)==0);
  int copy=dup(fd);
  CHECK(copy>=0 && lseek(copy,0,SEEK_SET)==0);
  char buf[4]={0};
