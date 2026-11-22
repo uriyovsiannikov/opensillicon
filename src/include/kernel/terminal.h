@@ -37,7 +37,5 @@ bool terminal_raw_mode(void);
 void terminal_key_event(struct terminal_key_event event);
 bool terminal_switch(unsigned int terminal);
 unsigned int terminal_active(void);
-struct terminal_cell terminal_cell_at(unsigned int terminal,
-	unsigned int column, unsigned int row);
 
 #endif

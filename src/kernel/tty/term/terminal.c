@@ -732,13 +732,3 @@ terminal_active(void)
 {
 	return active_terminal;
 }
-
-struct terminal_cell
-terminal_cell_at(unsigned int terminal, unsigned int column,
-	unsigned int row)
-{
-	if (terminal >= TERMINAL_COUNT || column >= terminal_columns ||
-	    row >= terminal_rows)
-		return (struct terminal_cell){ 0 };
-	return terminals[terminal].cells[row][column];
-}

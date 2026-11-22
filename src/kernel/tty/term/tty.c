@@ -245,16 +245,3 @@ tty_raw_mode(void)
 {
 	return terminal_raw_mode();
 }
-
-_Noreturn void
-tty_console_loop(void)
-{
-	for (;;) {
-		struct terminal_key_event event;
-
-		if (console_keyboard_poll(&event))
-			terminal_key_event(event);
-		else
-			__asm__ volatile ("sti; hlt; cli" : : : "memory");
-	}
-}
