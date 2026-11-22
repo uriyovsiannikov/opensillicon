@@ -54,6 +54,15 @@ int clock_gettime(clockid_t clock, struct timespec *value)
 	*value = (struct timespec){.tv_sec = 3661, .tv_nsec = 500000000};
 	return 0;
 }
+int uname(struct utsname *value)
+{
+	if (failed_query == 8)
+		return -1;
+	*value = (struct utsname){0};
+	strcpy(value->sysname, "TestSystem");
+	strcpy(value->machine, "TestMachine");
+	return 0;
+}
 int main(void)
 {
 	assert(write_memory() && !strcmp(output, "12.0 / 16.0 MiB"));
@@ -65,6 +74,12 @@ int main(void)
 	assert(write_uptime() && !strcmp(output, "1h 1m 1s"));
 	failed_query = 7; used = 0;
 	assert(write_uptime() && !strcmp(output, "unavailable"));
+	failed_query = 0; used = 0;
+	assert(write_identity(0) && !strcmp(output, "TestSystem"));
+	used = 0;
+	assert(write_identity(1) && !strcmp(output, "TestMachine"));
+	failed_query = 8; used = 0;
+	assert(write_identity(0) && !strcmp(output, "unavailable"));
 	puts("fetch typed-query formatting and failure checks passed");
 	return 0;
 }

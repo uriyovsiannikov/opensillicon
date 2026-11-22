@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/sysctl.h>
+#include <sys/utsname.h>
 #include <time.h>
 #include "include/os.h"
 
@@ -27,10 +28,6 @@ static const char *const logo[] = {
 static const char *const information_labels[INFO_LINE_COUNT] = {
 	"OS: ", "Uptime: ", "Architecture: ", "Shell: ",
 	"Memory: ", "/bin entries: ", "Terminal: ", "PID: "
-};
-
-static const char *const information_values[4] = {
-	"OpenSillicon", "", "x86_64", "/bin/sh"
 };
 
 static const char *const logo_colors[] = {
@@ -136,12 +133,23 @@ write_memory(void)
 }
 
 static int
+write_identity(int machine)
+{
+	struct utsname identity;
+	if (uname(&identity) < 0)
+		return write_string("unavailable");
+	return write_string(machine ? identity.machine : identity.sysname);
+}
+
+static int
 write_dynamic_information(size_t row)
 {
 	if (row == 1)
 		return write_uptime();
-	if (row < 4)
-		return write_string(information_values[row]);
+	if (row == 0 || row == 2)
+		return write_identity(row == 2);
+	if (row == 3)
+		return write_string("/bin/sh");
 	if (row == 4)
 		return write_memory();
 	if (row == 5) {
