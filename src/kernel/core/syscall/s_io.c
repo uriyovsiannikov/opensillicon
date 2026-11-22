@@ -636,10 +636,9 @@ syscall_io_local(struct interrupt_frame **result_frame)
 		}
 		return true;
 	case SYSCALL_PIPE2:
-	case SYSCALL_PIPE:
 		{
 			uint32_t descriptors[2];
-			uint64_t flags = frame->rax == SYSCALL_PIPE2 ? frame->rsi : 0;
+			uint64_t flags = frame->rsi;
 			if (flags & ~(uint64_t)(VFS_O_CLOEXEC | VFS_O_NONBLOCK)) {
 				syscall_error(frame, EINVAL);
 				return true;

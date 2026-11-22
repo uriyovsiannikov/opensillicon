@@ -1,4 +1,4 @@
-/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v3.
+/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v4.
  * Never forward unknown numbers: the two number spaces overlap. */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -160,7 +160,7 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  case SYS_poll: s=SYSCALL_POLL; break;
  case SYS_select: s=SYSCALL_SELECT; break;
  case SYS_pipe2: s=SYSCALL_PIPE2; break;
- case SYS_pipe: s=SYSCALL_PIPE; break;
+ case SYS_pipe: return call(SYSCALL_PIPE2,a,0,0,0,0,0);
  case SYS_getppid: s=SYSCALL_GETPPID; break;
  case SYS_read: s=SYSCALL_READ; if(c>4096)c=4096; break;
  case SYS_write: s=SYSCALL_WRITE; if(c>4096)c=4096; break;
