@@ -20,8 +20,6 @@ long u_read(uint64_t fd, void *buffer, size_t length)
 { return syscall4(SYSCALL_READ, fd, (uintptr_t)buffer, length, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)
 { return syscall4(SYSCALL_IOCTL, fd, request, (uintptr_t)argument, 0); }
-long u_icmp_echo(struct u_icmp_echo_request *request)
-{ return syscall4(SYSCALL_ICMP_ECHO, (uintptr_t)request, 0, sizeof(*request), 0); }
 long u_power_control(uint64_t command)
 { return syscall4(SYSCALL_POWER_CONTROL, command, 0, 0, 0); }
 long u_kernel_crash(void)

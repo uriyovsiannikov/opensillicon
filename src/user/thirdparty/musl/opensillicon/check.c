@@ -37,6 +37,7 @@
 #include "abi/inet.h"
 #include "abi/socket.h"
 #include "abi/unix_socket.h"
+#include <sys/icmp.h>
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -1033,6 +1034,34 @@ static int network_check(void)
   struct timespec pause={0,100000000}; nanosleep(&pause,NULL);
  }
  CHECK(configured);
+ struct { struct os_icmp_echo_request value; uint64_t guard; } echo={.guard=0xabcd0123456789efULL};
+ memcpy(echo.value.destination,config+8,4);
+ echo.value.identifier=(uint16_t)getpid(); echo.value.sequence=7;
+ echo.value.payload_length=OS_ICMP_ECHO_PAYLOAD_MAX;
+ for(size_t i=0;i<sizeof echo.value.payload;i++) echo.value.payload[i]=(unsigned char)(i*13+5);
+ CHECK(__os_raw(SYSCALL_ICMP_ECHO,(long)&echo.value,0,sizeof echo.value-1,0,0,0)==-EINVAL);
+ CHECK(__os_raw(SYSCALL_ICMP_ECHO,1,0,sizeof echo.value,0,0,0)==-EFAULT);
+ echo.value.reserved=1;
+ CHECK(__os_raw(SYSCALL_ICMP_ECHO,(long)&echo.value,0,sizeof echo.value,0,0,0)==-EINVAL);
+ echo.value.reserved=0; echo.value.payload_length=OS_ICMP_ECHO_PAYLOAD_MAX+1;
+ CHECK(__os_raw(SYSCALL_ICMP_ECHO,(long)&echo.value,0,sizeof echo.value,0,0,0)==-EINVAL);
+ echo.value.payload_length=OS_ICMP_ECHO_PAYLOAD_MAX;
+ struct timespec echo_before,echo_after;
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&echo_before)==0);
+ CHECK(__os_raw(SYSCALL_ICMP_ECHO,(long)&echo.value,0,sizeof echo.value,0,0,0)==0);
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&echo_after)==0);
+ uint64_t elapsed=(echo_after.tv_sec-echo_before.tv_sec)*1000000000ULL+
+     echo_after.tv_nsec-echo_before.tv_nsec;
+ CHECK(!memcmp(echo.value.destination,echo.value.reply_source,4) && echo.value.elapsed_ns>0 &&
+     echo.value.elapsed_ns<=elapsed+10000000 && echo.guard==0xabcd0123456789efULL);
+ CHECK(os_icmp_echo(NULL)==-1 && errno==EFAULT);
+ echo.value.reserved=1;
+ CHECK(os_icmp_echo(&echo.value)==-1 && errno==EINVAL);
+ echo.value.reserved=0; echo.value.sequence++; echo.value.payload_length=0;
+ CHECK(os_icmp_echo(&echo.value)==0 && echo.value.elapsed_ns>0 &&
+     !memcmp(echo.value.destination,echo.value.reply_source,4));
+
+
  int udp=socket(AF_INET,SOCK_DGRAM|SOCK_NONBLOCK,0);
  CHECK(udp>=0);
  struct sockaddr_in local={.sin_family=AF_INET};

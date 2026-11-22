@@ -423,17 +423,17 @@ cyclone_net_is_local(const uint8_t address[4])
 int
 cyclone_net_icmp_echo(const uint8_t destination[4], uint16_t identifier,
 	uint16_t sequence, const uint8_t *payload, size_t length,
-	uint8_t reply_source[4], uint64_t *elapsed_ticks, uint64_t timeout_ticks)
+	uint8_t reply_source[4], uint64_t *elapsed_ns, uint64_t timeout_ticks)
 {
 	Socket *socket;
 	IpAddr target = { .length = sizeof(Ipv4Addr) };
 	IcmpEchoMessage request;
-	uint8_t packet[sizeof(IcmpEchoMessage) + ICMP_ECHO_PAYLOAD_LIMIT];
+	uint8_t packet[sizeof(IcmpEchoMessage) + OS_ICMP_ECHO_PAYLOAD_MAX];
 	uint64_t start;
 	size_t written = 0;
 	error_t error;
 	if (!cyclone_net_can_route(destination) || reply_source == NULL ||
-	    elapsed_ticks == NULL || length > ICMP_ECHO_PAYLOAD_LIMIT ||
+	    elapsed_ns == NULL || length > OS_ICMP_ECHO_PAYLOAD_MAX ||
 	    (length != 0 && payload == NULL))
 		return -1;
 	target.ipv4Addr = IPV4_ADDR(destination[0], destination[1],
@@ -452,6 +452,7 @@ cyclone_net_icmp_echo(const uint8_t destination[4], uint16_t identifier,
 	    SOCKET_IP_PROTO_ICMP);
 	if (socket == NULL)
 		return -1;
+	uint64_t start_ns = timer_monotonic_ns();
 	error = socketSendTo(socket, &target, 0, packet,
 	    sizeof(request) + length, &written, 0);
 	if (error != NO_ERROR || written != sizeof(request) + length) {
@@ -461,7 +462,7 @@ cyclone_net_icmp_echo(const uint8_t destination[4], uint16_t identifier,
 	start = timer_ticks();
 	for (;;) {
 		SocketMsg message = SOCKET_DEFAULT_MSG;
-		uint8_t response[sizeof(IcmpEchoMessage) + ICMP_ECHO_PAYLOAD_LIMIT];
+		uint8_t response[sizeof(IcmpEchoMessage) + OS_ICMP_ECHO_PAYLOAD_MAX];
 		message.data = response;
 		message.size = sizeof(response);
 		error = socketReceiveMsg(socket, &message, SOCKET_FLAG_DONT_WAIT);
@@ -478,7 +479,7 @@ cyclone_net_icmp_echo(const uint8_t destination[4], uint16_t identifier,
 				for (size_t i = 0; i < 4; i++)
 					reply_source[i] = (uint8_t)(message.srcIpAddr.ipv4Addr >>
 					    (i * 8));
-				*elapsed_ticks = timer_ticks() - start;
+				*elapsed_ns = timer_monotonic_ns() - start_ns;
 				socketClose(socket);
 				return 0;
 			}

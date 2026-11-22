@@ -442,12 +442,12 @@ udp_socket_poll(void)
 }
 
 int
-network_icmp_echo(struct icmp_echo_request *request)
+network_icmp_echo(struct os_icmp_echo_request *request)
 {
 	uint64_t flags;
 	int result;
 	if (request == NULL || request->reserved != 0 ||
-	    request->payload_length > ICMP_ECHO_PAYLOAD_LIMIT)
+	    request->payload_length > OS_ICMP_ECHO_PAYLOAD_MAX)
 		return -EINVAL;
 	flags = state_guard_enter();
 	if (!system_ready || system_stopping || network_device == NULL ||
@@ -464,7 +464,7 @@ network_icmp_echo(struct icmp_echo_request *request)
 	result = cyclone_net_icmp_echo(request->destination,
 	    request->identifier, request->sequence, request->payload,
 	    request->payload_length, request->reply_source,
-	    &request->elapsed_ticks, ICMP_ECHO_TIMEOUT_TICKS);
+	    &request->elapsed_ns, 5U * TIMER_TICK_HZ);
 	flags = state_guard_enter();
 	echo_call_active = false;
 	state_guard_leave(flags);

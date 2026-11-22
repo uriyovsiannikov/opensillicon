@@ -30,6 +30,6 @@ bool cyclone_net_can_route(const uint8_t destination[4]);
 bool cyclone_net_is_local(const uint8_t address[4]);
 int cyclone_net_icmp_echo(const uint8_t destination[4], uint16_t identifier,
 	uint16_t sequence, const uint8_t *payload, size_t length,
-	uint8_t reply_source[4], uint64_t *elapsed_ticks, uint64_t timeout_ticks);
+	uint8_t reply_source[4], uint64_t *elapsed_ns, uint64_t timeout_ticks);
 
 #endif

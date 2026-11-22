@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v14.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v15.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -289,3 +289,10 @@ BSD routing or interface tree. ifconfig and libc's resolver use this shared
 interface. Rebuild static applications for ABI v14.
 The unused `/proc/netif` export and the private userspace network wrappers
 are removed. Static network configuration retrieval no longer requires procfs.
+
+ABI v15 gives ICMP Echo one shared `os_icmp_echo_request` in `abi/icmp.h`.
+The returned duration is nanoseconds, rather than scheduler ticks; the size
+remains 56 bytes. Rebuild ping and other native ICMP callers for ABI v15.
+The native `os_icmp_echo` libc extension in `sys/icmp.h` returns -1 and sets
+errno on failure. ping uses libc address parsing and formatting and no longer
+links the legacy userspace runtime. Its bounded count remains 1–4 requests.

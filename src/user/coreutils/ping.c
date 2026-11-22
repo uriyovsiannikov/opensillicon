@@ -1,176 +1,77 @@
-#include "../include/os.h"
-#include <stdbool.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/icmp.h>
+#include <unistd.h>
 
-#define PING_ETIMEDOUT 110
-#define PING_EHOSTUNREACH 113
-#define PING_EAGAIN 11
-
-static const uint8_t ping_payload[] = "OS-PHASE15.3A-ECHO";
-
-static bool
-parse_ipv4(const char *text, uint8_t address[4])
-{
-	const char *cursor = text;
-	if (cursor == NULL || address == NULL)
-		return false;
-	for (size_t part = 0; part < 4; part++) {
-		unsigned int value = 0;
-		size_t digits = 0;
-		while (*cursor >= '0' && *cursor <= '9') {
-			unsigned int digit = (unsigned int)(*cursor++ - '0');
-			if (value > (255U - digit) / 10U)
-				return false;
-			value = value * 10U + digit;
-			digits++;
-		}
-		if (digits == 0 || (part < 3 && *cursor++ != '.') ||
-		    (part == 3 && *cursor != '\0'))
-			return false;
-		address[part] = (uint8_t)value;
-	}
-	return true;
-}
-
-static bool
-parse_count(const char *text, uint16_t *port)
-{
-	unsigned int value = 0;
-	if (text == NULL || port == NULL || *text == '\0')
-		return false;
-	for (const char *cursor = text; *cursor != '\0'; cursor++) {
-		unsigned int digit;
-
-		if (*cursor < '0' || *cursor > '9')
-			return false;
-		digit = (unsigned int)(*cursor - '0');
-		if (value > (UINT16_MAX - digit) / 10U)
-			return false;
-		value = value * 10U + digit;
-	}
-	if (value == 0)
-		return false;
-	*port = (uint16_t)value;
-	return true;
-}
-
-static bool
-parse_ping_command(size_t argc, const char *const argv[],
-	uint8_t address[4], uint16_t *count)
-{
-	uint16_t parsed_count = 1;
-	if (argv == NULL || address == NULL || count == NULL ||
-	    (argc != 2 && argc != 3) || argv[1] == NULL ||
-	    !parse_ipv4(argv[1], address))
-		return false;
-	if (argc == 3 && !parse_count(argv[2], &parsed_count))
-		return false;
-	if (parsed_count > 4)
-		return false;
-	*count = parsed_count;
-	return true;
-}
-
-static int
-is_help(const char *text)
-{
-	static const char expected[] = "help";
-	size_t i;
-	if (text == NULL)
-		return 0;
-	for (i = 0; expected[i] != '\0' && text[i] == expected[i]; i++)
-		;
-	return expected[i] == '\0' && text[i] == '\0';
-}
-
-static void
-print_ipv4(const uint8_t address[4])
-{
-	for (size_t i = 0; i < 4; i++) {
-		if (i != 0)
-			u_puts(".");
-		u_put_u64(address[i]);
-	}
-}
+static const uint8_t ping_payload[] = "OpenSillicon ICMP Echo";
 
 static int
 ping_one(const uint8_t destination[4], uint16_t sequence)
 {
-	struct u_icmp_echo_request request = {0};
-	long result;
-	for (size_t i = 0; i < 4; i++)
-		request.destination[i] = destination[i];
-	request.identifier = 0x153a;
+	struct os_icmp_echo_request request = {0};
+	memcpy(request.destination, destination, sizeof(request.destination));
+	request.identifier = (uint16_t)getpid();
 	request.sequence = sequence;
 	request.payload_length = sizeof(ping_payload) - 1;
-	for (size_t i = 0; i < request.payload_length; i++)
-		request.payload[i] = ping_payload[i];
-	result = u_icmp_echo(&request);
-	if (result == -PING_ETIMEDOUT) {
-		u_puts("ping: request timed out (500 ticks, 5 seconds)\n");
+	memcpy(request.payload, ping_payload, request.payload_length);
+	if (os_icmp_echo(&request) < 0) {
+		if (errno == ETIMEDOUT)
+			fputs("ping: request timed out\n", stderr);
+		else if (errno == EHOSTUNREACH)
+			fputs("ping: no IPv4 route (DHCP lease or gateway unavailable)\n", stderr);
+		else if (errno == EAGAIN)
+			fputs("ping: another ICMP Echo request is already active\n", stderr);
+		else
+			fprintf(stderr, "ping: %s\n", strerror(errno));
 		return 1;
 	}
-	if (result == -PING_EHOSTUNREACH) {
-		u_puts("ping: no IPv4 route (DHCP lease or gateway unavailable)\n");
+	if (memcmp(request.reply_source, destination, sizeof(request.reply_source))) {
+		fputs("ping: kernel returned an unexpected reply source\n", stderr);
 		return 1;
 	}
-	if (result == -PING_EAGAIN) {
-		u_puts("ping: another ICMP Echo request is already active\n");
+	char address[INET_ADDRSTRLEN];
+	if (!inet_ntop(AF_INET, request.reply_source, address, sizeof(address))) {
+		perror("ping: reply address");
 		return 1;
 	}
-	if (result < 0) {
-		u_puts("ping: ICMP Echo syscall failed (errno ");
-		u_put_u64((uint64_t)-result);
-		u_puts(")\n");
-		return 1;
-	}
-	for (size_t i = 0; i < 4; i++)
-		if (request.reply_source[i] != destination[i]) {
-			u_puts("ping: kernel returned an unexpected reply source\n");
-			return 1;
-		}
-	u_puts("ping: reply from ");
-	print_ipv4(request.reply_source);
-	u_puts(" sequence=");
-	u_put_u64(sequence);
-	u_puts(" elapsed=");
-	u_put_u64(request.elapsed_ticks);
-	u_puts(" ticks\n");
-	return 0;
-}
-
-static void
-print_help(void)
-{
-	u_puts("usage: ping help | ping <IPv4> [count 1-4]\n");
+	return printf("ping: reply from %s sequence=%u elapsed=%" PRIu64 ".%03" PRIu64 " ms\n",
+	    address, (unsigned)sequence, request.elapsed_ns / 1000000U,
+	    request.elapsed_ns / 1000U % 1000U) < 0;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	uint8_t destination[4];
-	uint16_t count;
+	unsigned long count = 1;
 	int failures = 0;
-#ifdef PING_QEMU_TEST
-	if (argc == 0) {
-		static const uint8_t peer[4] = {10, 15, 3, 2};
-		return ping_one(peer, 1);
+
+	if (argc == 2 && !strcmp(argv[1], "help")) {
+		puts("usage: ping help | ping <IPv4> [count 1-4]");
+		return fflush(stdout) == EOF;
 	}
-#endif
-	if (argc == 2 && argv != NULL && is_help(argv[1])) {
-		print_help();
-		return 0;
-	}
-	if (!parse_ping_command((size_t)argc,
-	    (const char *const *)argv, destination, &count)) {
-		print_help();
-		return 2;
+	if ((argc != 2 && argc != 3) || inet_pton(AF_INET, argv[1], destination) != 1)
+		goto usage;
+	if (argc == 3) {
+		char *end;
+		if (argv[2][0] < '0' || argv[2][0] > '9')
+			goto usage;
+		errno = 0;
+		count = strtoul(argv[2], &end, 10);
+		if (errno != 0 || *end != '\0' || count < 1 || count > 4)
+			goto usage;
 	}
 	for (uint16_t sequence = 1; sequence <= count; sequence++)
 		failures += ping_one(destination, sequence);
-	u_puts("ping: ");
-	u_put_u64(count - (uint16_t)failures);
-	u_puts(" replies, ");
-	u_put_u64((uint16_t)failures);
-	u_puts(" failures\n");
-	return failures == 0 ? 0 : 1;
+	if (printf("ping: %lu replies, %u failures\n", count - (unsigned)failures,
+	    (unsigned)failures) < 0 || fflush(stdout) == EOF)
+		return 1;
+	return failures != 0;
+usage:
+	fputs("usage: ping help | ping <IPv4> [count 1-4]\n", stderr);
+	return 2;
 }

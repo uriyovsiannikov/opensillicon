@@ -426,7 +426,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_ICMP_ECHO:
 		{
-			struct icmp_echo_request request;
+			struct os_icmp_echo_request request;
 			struct address_space *space = vmm_active_address_space();
 			int result;
 			if (frame->rdx != sizeof(request)) {
@@ -443,7 +443,7 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			}
 			for (size_t i = 0; i < sizeof(request.reply_source); i++)
 				request.reply_source[i] = 0;
-			request.elapsed_ticks = 0;
+			request.elapsed_ns = 0;
 			result = network_icmp_echo(&request);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
