@@ -329,7 +329,7 @@ publish_local_wait(struct process *process, bool from_ap)
 		process->state = PROCESS_READY;
 		if (from_ap && !reported_local_wait_race) {
 			reported_local_wait_race = true;
-			klog("SMP readiness raced with AP wait publication\n");
+			klog("smp readiness raced with AP wait publication\n");
 		}
 		return false;
 	}
@@ -377,7 +377,7 @@ drain_remote_channel_wakes(void)
 	} while (process != process_head);
 	if (woke && !reported_remote_channel_wake) {
 		reported_remote_channel_wake = true;
-		klog("SMP channel waiter woken by AP\n");
+		klog("smp channel waiter woken by AP\n");
 	}
 	return woke;
 }
@@ -695,14 +695,14 @@ collect_ap_processes(void)
 		if ((reported_ap_queue_rotation & (UINT64_C(1) << i)) == 0 &&
 		    __atomic_load_n(&cpu->user_queue_rotation, __ATOMIC_RELAXED)) {
 			reported_ap_queue_rotation |= UINT64_C(1) << i;
-			klog("SMP AP switched local user queue on CPU ");
+			klog("smp AP switched local user queue on CPU ");
 			klog_u64(i);
 			klog("\n");
 		}
 		if ((reported_ap_stolen_run & (UINT64_C(1) << i)) == 0 &&
 		    __atomic_load_n(&cpu->user_stolen_run, __ATOMIC_RELAXED)) {
 			reported_ap_stolen_run |= UINT64_C(1) << i;
-			klog("SMP stolen user process resumed on AP ");
+			klog("smp stolen user process resumed on AP ");
 			klog_u64(i);
 			klog("\n");
 		}
@@ -727,14 +727,14 @@ collect_ap_processes(void)
 			if (process->ap_stop_reason == PROCESS_SLICE_BLOCK &&
 			    publish_local_wait(process, true) && !reported_ap_local_wait) {
 				reported_ap_local_wait = true;
-				klog("SMP local channel wait published from AP\n");
+				klog("smp local channel wait published from AP\n");
 			}
 
 			uint64_t cpu_bit = UINT64_C(1) << i;
 			if ((reported_ap_local_syscalls & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_local_syscalls, __ATOMIC_RELAXED) != 0) {
 				reported_ap_local_syscalls |= cpu_bit;
-				klog("SMP process-local syscall completed on AP ");
+				klog("smp process-local syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
@@ -742,7 +742,7 @@ collect_ap_processes(void)
 			if ((reported_ap_private_memory & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_private_memory_calls, __ATOMIC_RELAXED)) {
 				reported_ap_private_memory |= cpu_bit;
-				klog("SMP private memory syscall completed on AP ");
+				klog("smp private memory syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
@@ -750,61 +750,61 @@ collect_ap_processes(void)
 			if ((reported_ap_shared_memory & cpu_bit) == 0 &&
 			    __atomic_load_n(&cpu->user_shared_memory_calls, __ATOMIC_RELAXED)) {
 				reported_ap_shared_memory |= cpu_bit;
-				klog("SMP shared memory syscall completed on AP ");
+				klog("smp shared memory syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_signal_calls & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_calls, __ATOMIC_RELAXED)) {
 				reported_ap_signal_calls |= cpu_bit;
-				klog("SMP signal syscall completed on AP ");
+				klog("smp signal syscall completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_signal_delivery & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_delivery, __ATOMIC_RELAXED)) {
 				reported_ap_signal_delivery |= cpu_bit;
-				klog("SMP signal delivered on AP ");
+				klog("smp signal delivered on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 			if ((reported_ap_signal_return & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_return, __ATOMIC_RELAXED)) {
 				reported_ap_signal_return |= cpu_bit;
-				klog("SMP signal returned on AP ");
+				klog("smp signal returned on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_pipe_io & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_io, __ATOMIC_RELAXED)) {
 				reported_ap_pipe_io |= cpu_bit;
-				klog("SMP pipe I/O completed on AP ");
+				klog("smp pipe I/O completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_pipe_vectors & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_vectors, __ATOMIC_RELAXED)) {
 				reported_ap_pipe_vectors |= cpu_bit;
-				klog("SMP pipe vector I/O completed on AP ");
+				klog("smp pipe vector I/O completed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_wait_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_local_wait_resume, __ATOMIC_RELAXED)) {
 				reported_ap_wait_resume |= cpu_bit;
-				klog("SMP blocked syscall resumed on AP ");
+				klog("smp blocked syscall resumed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 
 			if ((reported_ap_timer_wait & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_wait, __ATOMIC_RELAXED)) {
 				reported_ap_timer_wait |= cpu_bit;
-				klog("SMP timer wait submitted on AP ");
+				klog("smp timer wait submitted on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
 			if ((reported_ap_timer_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_resume, __ATOMIC_RELAXED)) {
 				reported_ap_timer_resume |= cpu_bit;
-				klog("SMP timer wait resumed on AP ");
+				klog("smp timer wait resumed on AP ");
 				klog_u64(i);
 				klog("\n");
 			}
