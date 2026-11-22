@@ -54,3 +54,4 @@ install -D -m 644 "$root/src/include/abi/socket.h" "$build/sysroot/include/abi/s
 install -D -m 644 "$root/src/include/abi/unix_socket.h" "$build/sysroot/include/abi/unix_socket.h"
 install -D -m 644 "$root/src/include/abi/icmp.h" "$build/sysroot/include/abi/icmp.h"
 install -D -m 644 "$root/src/include/abi/ioctl.h" "$build/sysroot/include/abi/ioctl.h"
+install -D -m 644 "$root/src/include/abi/exec.h" "$build/sysroot/include/abi/exec.h"

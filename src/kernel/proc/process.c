@@ -1039,7 +1039,7 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 	volatile uint64_t *stack;
 	volatile uint8_t *stack_bytes;
 	uint64_t top = PROCESS_STACK_TOP;
-	uint64_t words[PROCESS_EXEC_ARG_MAX + PROCESS_EXEC_ENV_MAX + 17U];
+	uint64_t words[OS_EXEC_ARG_MAX + OS_EXEC_ENV_MAX + 17U];
 	uint64_t byte_count;
 	uint64_t rsp;
 	uint64_t offset;
@@ -1048,8 +1048,8 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 	uint64_t hhdm = vmm_hhdm_offset();
 	uint64_t i;
 
-	if (image == NULL || stack_pointer == NULL || argc > PROCESS_EXEC_ARG_MAX ||
-	    (argc != 0 && argv == NULL) || envc > PROCESS_EXEC_ENV_MAX ||
+	if (image == NULL || stack_pointer == NULL || argc > OS_EXEC_ARG_MAX ||
+	    (argc != 0 && argv == NULL) || envc > OS_EXEC_ENV_MAX ||
         (envc != 0 && envp == NULL) ||
 	    image->plan.program_header_address == 0 ||
 	    image->plan.program_header_entry_size != 56 ||
@@ -1060,19 +1060,19 @@ build_initial_stack(const struct elf_loaded_image *image, uint64_t physical,
 		uint64_t length = 0;
 		if (argv[i] == NULL)
 			return false;
-		while (length <= PROCESS_EXEC_ARG_BYTES_MAX && argv[i][length] != '\0')
+		while (length <= OS_EXEC_ARG_BYTES_MAX && argv[i][length] != '\0')
 			length++;
-		if (length >= PROCESS_EXEC_ARG_BYTES_MAX ||
-		    string_bytes > PROCESS_EXEC_ARG_BYTES_MAX - length - 1)
+		if (length >= OS_EXEC_ARG_BYTES_MAX ||
+		    string_bytes > OS_EXEC_ARG_BYTES_MAX - length - 1)
 			return false;
 		string_bytes += length + 1;
 	}
     for(i=0;i<envc;i++) {
         size_t length=0;
         if(!envp[i])return false;
-        while(length<PROCESS_EXEC_ENV_BYTES_MAX && envp[i][length])length++;
-        if(length==PROCESS_EXEC_ENV_BYTES_MAX ||
-            string_bytes+length+1>PROCESS_EXEC_ARG_BYTES_MAX+PROCESS_EXEC_ENV_BYTES_MAX)return false;
+        while(length<OS_EXEC_ENV_BYTES_MAX && envp[i][length])length++;
+        if(length==OS_EXEC_ENV_BYTES_MAX ||
+            string_bytes+length+1>OS_EXEC_ARG_BYTES_MAX+OS_EXEC_ENV_BYTES_MAX)return false;
         string_bytes+=length+1;
     }
 	byte_count = (argc + envc + 17U) * sizeof(uint64_t);

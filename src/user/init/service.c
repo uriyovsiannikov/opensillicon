@@ -18,6 +18,7 @@
 
 #include "include/os.h"
 #include "service.h"
+#include "abi/exec.h"
 
 #define SERVICE_DIR "/etc/service.d"
 #define LOG_DIR "/var/log/services"
@@ -163,7 +164,7 @@ parse_command(struct service *service, const char *value)
 	if (*value != '/' || strlen(value) >= sizeof(service->command))
 		return false;
 	while (*value != '\0') {
-		if (++service->argc > U_EXEC_ARG_MAX)
+		if (++service->argc > OS_EXEC_ARG_MAX)
 			return false;
 		while (*value != '\0' && *value != ' ' && *value != '\t')
 			*p++ = *value++;
@@ -487,7 +488,7 @@ start_service(struct service *service, uint64_t now)
 		return;
 	}
 	if (pid == 0) {
-		const char *argv[U_EXEC_ARG_MAX + 1];
+		const char *argv[OS_EXEC_ARG_MAX + 1];
 		const char *argument = service->command;
 
 		if (listener >= 0)

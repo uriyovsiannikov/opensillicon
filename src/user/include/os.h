@@ -9,7 +9,6 @@
 #include "abi/credentials.h"
 #include "abi/process_info.h"
 
-#define U_EXEC_ARG_MAX 16U
 #define U_POWER_CONTROL_POWEROFF 1U
 #define U_POWER_CONTROL_REBOOT 2U
 

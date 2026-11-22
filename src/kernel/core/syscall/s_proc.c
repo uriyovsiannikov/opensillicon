@@ -213,9 +213,9 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 	case SYSCALL_EXECVE:
 		{
 			char path[VFS_PATH_MAX];
-			char argument_storage[2048];
-			const char *arguments[16];
-			const char *environment[PROCESS_EXEC_ENV_MAX];
+			char argument_storage[OS_EXEC_ARG_BYTES_MAX];
+			const char *arguments[OS_EXEC_ARG_MAX];
+			const char *environment[OS_EXEC_ENV_MAX];
 			size_t argc, envc;
 			int rc = copy_user_string(frame->rdi, path, sizeof(path));
 
@@ -228,20 +228,20 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 				break;
 			}
 			error = copy_exec_vector(frame->rsi, argument_storage,
-			    sizeof(argument_storage), arguments, 16, &argc);
+			    sizeof(argument_storage), arguments, OS_EXEC_ARG_MAX, &argc);
 			if (error != 0)
 				break;
 			if (argc == 0) {
 				error = E2BIG;
 				break;
 			}
-			char *storage = kheap_alloc(PROCESS_EXEC_ENV_BYTES_MAX);
+			char *storage = kheap_alloc(OS_EXEC_ENV_BYTES_MAX);
 			if (storage == NULL) {
 				error = ENOMEM;
 				break;
 			}
 			error = copy_exec_vector(frame->rdx, storage,
-			    PROCESS_EXEC_ENV_BYTES_MAX, environment, PROCESS_EXEC_ENV_MAX, &envc);
+			    OS_EXEC_ENV_BYTES_MAX, environment, OS_EXEC_ENV_MAX, &envc);
 			if (error == 0)
 				frame = process_exec_path_env(frame, path, argc, arguments,
 				    envc, environment, &error);

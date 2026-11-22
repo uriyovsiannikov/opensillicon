@@ -10,11 +10,7 @@
 #include "kernel/signal_state.h"
 #include "abi/credentials.h"
 #include "abi/process_info.h"
-
-#define PROCESS_EXEC_ARG_MAX 16U
-#define PROCESS_EXEC_ENV_MAX 64U
-#define PROCESS_EXEC_ENV_BYTES_MAX 8192U
-#define PROCESS_EXEC_ARG_BYTES_MAX 2048U
+#include "abi/exec.h"
 
 enum process_state {
 	PROCESS_READY = OS_PROCESS_READY,

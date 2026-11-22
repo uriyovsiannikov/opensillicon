@@ -12,10 +12,11 @@
 #include <unistd.h>
 #include <stdbool.h>
 
-#include "include/os.h"
+#include "abi/exec.h"
+#include <stdint.h>
 
 #define LINE_CAPACITY 256U
-#define ARGUMENT_CAPACITY U_EXEC_ARG_MAX
+#define ARGUMENT_CAPACITY OS_EXEC_ARG_MAX
 #define PATH_CAPACITY 256U
 #define HELP_COMMAND_LIMIT 128U
 #define HELP_NAME_CAPACITY 256U

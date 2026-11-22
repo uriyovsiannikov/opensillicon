@@ -1,5 +1,6 @@
 #include "abi/signal.h"
 #include "abi/process_info.h"
+#include "abi/exec.h"
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -605,6 +606,42 @@ static int module_file_check(void)
  }
  int status;
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ return 0;
+}
+
+static int exec_limits_check(void)
+{
+ char argument[OS_EXEC_ARG_BYTES_MAX+1], environment[OS_EXEC_ENV_BYTES_MAX+1];
+ char *args[OS_EXEC_ARG_MAX+2], *env[OS_EXEC_ENV_MAX+2];
+ args[0]="exec-limits"; args[1]="--exec-limits-check";
+ size_t used=strlen(args[0])+strlen(args[1])+2;
+ for(size_t i=2;i<OS_EXEC_ARG_MAX-1;i++) { args[i]=""; used++; }
+ size_t argument_length=OS_EXEC_ARG_BYTES_MAX-used-1;
+ memset(argument,'a',argument_length); argument[argument_length]=0;
+ args[OS_EXEC_ARG_MAX-1]=argument;
+ args[OS_EXEC_ARG_MAX]=NULL; args[OS_EXEC_ARG_MAX+1]=NULL;
+ for(size_t i=0;i<OS_EXEC_ENV_MAX-1;i++) env[i]="K=";
+ size_t environment_length=OS_EXEC_ENV_BYTES_MAX-3*(OS_EXEC_ENV_MAX-1)-1;
+ memset(environment,'x',environment_length); memcpy(environment,"LONG=",5);
+ environment[environment_length]=0;
+ env[OS_EXEC_ENV_MAX-1]=environment;
+ env[OS_EXEC_ENV_MAX]=NULL; env[OS_EXEC_ENV_MAX+1]=NULL;
+ args[OS_EXEC_ARG_MAX]="";
+ CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",(long)args,(long)env,0,0,0)==-E2BIG);
+ args[OS_EXEC_ARG_MAX]=NULL;
+ env[OS_EXEC_ENV_MAX]="EXTRA=x";
+ CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",(long)args,(long)env,0,0,0)==-E2BIG);
+ env[OS_EXEC_ENV_MAX]=NULL;
+ argument[argument_length]='a'; argument[argument_length+1]=0;
+ CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",(long)args,(long)env,0,0,0)==-E2BIG);
+ argument[argument_length]=0;
+ environment[environment_length]='x'; environment[environment_length+1]=0;
+ CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",(long)args,(long)env,0,0,0)==-E2BIG);
+ environment[environment_length]=0;
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) { execve("/sbin/init",args,env); _exit(124); }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==28);
  return 0;
 }
 
@@ -1394,6 +1431,14 @@ static int sysctl_check(void)
 }
 int main(int argc, char **argv)
 {
+ if(argc>=2 && !strcmp(argv[1],"--exec-limits-check")) {
+  size_t arg_bytes=0, env_bytes=0, env_count=0;
+  for(int i=0;i<argc;i++) arg_bytes+=strlen(argv[i])+1;
+  while(environ[env_count]) env_bytes+=strlen(environ[env_count++])+1;
+  return argc==OS_EXEC_ARG_MAX && arg_bytes==OS_EXEC_ARG_BYTES_MAX &&
+      env_count==OS_EXEC_ENV_MAX && env_bytes==OS_EXEC_ENV_BYTES_MAX &&
+      constructed==42 && tls==123 ? 28 : 125;
+ }
  if(argc==2 && !strcmp(argv[1],"--shell-tty-check")) {
   struct termios attributes;
   if(tcgetattr(0,&attributes) || !(attributes.c_lflag&ICANON) ||
@@ -1462,6 +1507,8 @@ int main(int argc, char **argv)
  if(nested_result) return nested_result;
  int module_result=module_file_check();
  if(module_result) return module_result;
+ int exec_result=exec_limits_check();
+ if(exec_result) return exec_result;
  int process_result=process_check();
  if(process_result) return process_result;
  int shell_result=shell_path_check();

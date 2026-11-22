@@ -10,7 +10,7 @@ $(BUILD_DIR)/user_init.o: src/user/init/init.c src/include/common/logo_pixels.h 
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/service.o: src/user/init/service.c src/user/init/service.h \
-		src/user/include/os.h src/include/abi/syscall.h | $(BUILD_DIR)
+		src/user/include/os.h src/include/abi/syscall.h src/include/abi/exec.h | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/doas.o: src/user/doas/doas.c | $(BUILD_DIR)
@@ -45,7 +45,7 @@ $(BUILD_DIR)/coreutils/svctl.elf: $(BUILD_DIR)/svctl.o $(LIBC_BUILD_DIR)/crt1.o 
 	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o \
 		$(BUILD_DIR)/svctl.o $(LIBC_ARCHIVE) -o $@
 
-$(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h $(LIBC_ARCHIVE) | $(BUILD_DIR)
+$(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/include/abi/exec.h $(LIBC_ARCHIVE) | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 # Utilities using the public POSIX runtime need libc startup and headers.
