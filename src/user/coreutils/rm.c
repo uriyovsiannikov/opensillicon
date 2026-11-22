@@ -1,64 +1,102 @@
-#include "../include/os.h"
-
-#define PATH_SIZE 256U
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int
 remove_path(const char *path, int recursive, int force)
 {
-	struct os_stat status;
-	if (u_stat_path(path, &status) < 0) {
-		if (force) return 0;
-		u_puts("rm: cannot access: "); u_puts(path); u_puts("\n");
+	struct stat status;
+	if (lstat(path, &status) < 0) {
+		if (force && errno == ENOENT)
+			return 0;
+		perror(path);
 		return 1;
 	}
-	if (OS_S_ISDIR(status.st_mode) && recursive) {
-		struct u_dirent entry;
-		long fd = u_open(path, U_O_RDONLY | U_O_DIRECTORY);
-		int failed = 0;
-		if (fd < 0) {
-			u_puts("rm: cannot open directory: "); u_puts(path); u_puts("\n");
+	if (S_ISDIR(status.st_mode)) {
+		if (!recursive) {
+			fprintf(stderr, "rm: %s: is a directory\n", path);
 			return 1;
 		}
-		long read_result;
-		while ((read_result = u_readdir((uint64_t)fd, &entry)) > 0) {
-			char child[PATH_SIZE];
-			size_t p = u_strlen(path), n = u_strlen(entry.name), j;
-			if (u_streq(entry.name, ".") || u_streq(entry.name, "..")) continue;
-			if (p + n + 2 > sizeof(child)) { failed = 1; continue; }
-			for (j = 0; j < p; j++) child[j] = path[j];
-			if (p != 0 && child[p - 1] != '/') child[p++] = '/';
-			for (j = 0; j < n; j++) child[p + j] = entry.name[j];
-			child[p + n] = '\0';
-			if (remove_path(child, recursive, force)) failed = 1;
+		const char *end = path + strlen(path);
+		while (end > path && end[-1] == '/')
+			end--;
+		const char *base = end;
+		while (base > path && base[-1] != '/')
+			base--;
+		size_t length = (size_t)(end - base);
+		if (end == path || (length == 1 && base[0] == '.') ||
+		    (length == 2 && base[0] == '.' && base[1] == '.')) {
+			fprintf(stderr, "rm: refusing to remove root, . or ..: %s\n", path);
+			return 1;
 		}
-		if (read_result < 0) failed = 1;
-		if (u_close((uint64_t)fd) < 0) failed = 1;
-		if (failed) return 1;
+		DIR *directory = opendir(path);
+		if (directory == NULL) {
+			perror(path);
+			return 1;
+		}
+		int failed = 0;
+		for (;;) {
+			errno = 0;
+			struct dirent *entry = readdir(directory);
+			if (entry == NULL) {
+				if (errno != 0) {
+					perror(path);
+					failed = 1;
+				}
+				break;
+			}
+			if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+				continue;
+			size_t size = strlen(path) + strlen(entry->d_name) + 2;
+			char *child = malloc(size);
+			if (child == NULL) {
+				perror("rm: allocate path");
+				failed = 1;
+				break;
+			}
+			snprintf(child, size, "%s/%s", path, entry->d_name);
+			if (remove_path(child, recursive, force))
+				failed = 1;
+			free(child);
+		}
+		if (closedir(directory) < 0) {
+			perror(path);
+			failed = 1;
+		}
+		if (failed)
+			return 1;
 	}
-	if (u_unlink(path, OS_S_ISDIR(status.st_mode)) < 0) {
-		u_puts("rm: cannot remove: "); u_puts(path); u_puts("\n");
+	int result = S_ISDIR(status.st_mode) ? rmdir(path) : unlink(path);
+	if (result < 0) {
+		if (force && errno == ENOENT)
+			return 0;
+		perror(path);
 		return 1;
 	}
 	return 0;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t i = 1;
-	int recursive = 0, force = 0, failed = 0;
+	int i = 1, recursive = 0, force = 0, failed = 0;
 	while (i < argc && argv[i][0] == '-' && argv[i][1] != '\0') {
-		if (u_streq(argv[i], "--")) { i++; break; }
+		if (!strcmp(argv[i], "--")) { i++; break; }
 		for (size_t j = 1; argv[i][j] != '\0'; j++) {
 			if (argv[i][j] == 'r' || argv[i][j] == 'R') recursive = 1;
 			else if (argv[i][j] == 'f') force = 1;
-			else { u_puts("usage: rm [-rf] [--] path ...\n"); return 1; }
+			else { fputs("usage: rm [-rf] [--] path ...\n", stderr); return 2; }
 		}
 		i++;
 	}
 	if (i == argc) {
 		if (force) return 0;
-		u_puts("usage: rm [-rf] [--] path ...\n"); return 1;
+		fputs("usage: rm [-rf] [--] path ...\n", stderr);
+		return 2;
 	}
 	for (; i < argc; i++)
 		if (remove_path(argv[i], recursive, force)) failed = 1;

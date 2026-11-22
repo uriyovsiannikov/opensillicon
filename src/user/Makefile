@@ -51,6 +51,15 @@ $(BUILD_DIR)/coreutils/svctl.elf: $(BUILD_DIR)/svctl.o $(LIBC_BUILD_DIR)/crt1.o 
 $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/user/include/os.h $(LIBC_ARCHIVE) | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
+# Utilities using the public POSIX runtime need libc startup and headers.
+POSIX_COREUTILS := ls rm
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(POSIX_COREUTILS))): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c $(LIBC_ARCHIVE) src/user/Makefile
+	mkdir -p $(@D)
+	$(CC) $(LIBC_CFLAGS) -c $< -o $@
+
+$(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,$(POSIX_COREUTILS))): $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/coreutils/%.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
+	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $< $(LIBC_ARCHIVE) -lgcc -o $@
+
 $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/include/os.h \
 		src/user/coreutils/deviceconf.h | $(BUILD_DIR)
 	mkdir -p $(@D)

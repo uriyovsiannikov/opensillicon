@@ -1,76 +1,57 @@
-#include "../include/os.h"
-
-#define PATH_SIZE 256U
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
 
 static int
-list_path(const char *argument)
+list_path(const char *path)
 {
-	char path[PATH_SIZE];
-	struct os_stat status;
-	struct u_dirent entry;
-	long descriptor;
-	long result;
-	long close_result;
-
-	if (u_strlen(argument) >= sizeof(path)) {
-		u_puts("ls: path too long: ");
-		u_puts(argument);
-		u_puts("\n");
+	struct stat status;
+	if (stat(path, &status) < 0) {
+		perror(path);
 		return 1;
 	}
-	for (size_t i = 0; argument[i] != '\0'; i++)
-		path[i] = argument[i];
-	path[u_strlen(argument)] = '\0';
-	if (u_stat_path(path, &status) < 0) {
-		u_puts("ls: cannot access: ");
-		u_puts(argument);
-		u_puts("\n");
+	if (!S_ISDIR(status.st_mode))
+		return puts(path) == EOF;
+	DIR *directory = opendir(path);
+	if (directory == NULL) {
+		perror(path);
 		return 1;
 	}
-	if (!OS_S_ISDIR(status.st_mode)) {
-		u_puts(argument);
-		u_puts("\n");
-		return 0;
-	}
-	descriptor = u_open(path, U_O_RDONLY | U_O_DIRECTORY);
-	if (descriptor < 0) {
-		u_puts("ls: cannot open directory: ");
-		u_puts(argument);
-		u_puts("\n");
-		return 1;
-	}
-	while ((result = u_readdir((uint64_t)descriptor, &entry)) > 0) {
-		if (u_streq(entry.name, ".") || u_streq(entry.name, ".."))
+	int failed = 0;
+	for (;;) {
+		errno = 0;
+		struct dirent *entry = readdir(directory);
+		if (entry == NULL) {
+			if (errno != 0) {
+				perror(path);
+				failed = 1;
+			}
+			break;
+		}
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
 			continue;
-		u_puts(entry.name);
-		u_puts("\n");
+		if (puts(entry->d_name) == EOF) {
+			failed = 1;
+			break;
+		}
 	}
-	close_result = u_close((uint64_t)descriptor);
-	if (result < 0) {
-		u_puts("ls: directory read failed: ");
-		u_puts(argument);
-		u_puts("\n");
-		return 1;
+	if (closedir(directory) < 0) {
+		perror(path);
+		failed = 1;
 	}
-	if (close_result < 0) {
-		u_puts("ls: close failed: ");
-		u_puts(argument);
-		u_puts("\n");
-		return 1;
-	}
-	return 0;
+	return failed;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t index;
-	int failed = 0;
-
 	if (argc == 1)
 		return list_path(".");
-	for (index = 1; index < argc; index++)
-		if (list_path(argv[index]))
+	int failed = 0;
+	for (int i = 1; i < argc; i++)
+		if (list_path(argv[i]))
 			failed = 1;
 	return failed;
 }

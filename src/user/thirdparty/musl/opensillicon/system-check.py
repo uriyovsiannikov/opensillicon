@@ -26,8 +26,9 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             text = log.read_text(errors='replace') if log.exists() else ''
-            if expected in text[offset:]:
-                return len(text)
+            found = text.find(expected, offset)
+            if found >= 0:
+                return found + len(expected)
             if q.poll() is not None or '/sbin/init exited' in text:
                 raise AssertionError(text)
             time.sleep(.1)
@@ -56,6 +57,14 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('touch /tmp/native-openat-check', None),
                 ('stat /tmp/native-openat-check', '  Mode: 644'),
                 ('rm /tmp/native-openat-check', None),
+                ('mkdir /tmp/dir-check', None),
+                ('touch /tmp/dir-check/entry', None),
+                ('ls /tmp/dir-check', 'entry\n'),
+                ('rm /tmp/dir-check', 'is a directory'),
+                ('ls /tmp/dir-check', 'entry\n'),
+                ('rm -r /tmp/dir-check', None),
+                ('stat /tmp/dir-check', 'stat: cannot stat:'),
+                ('rm -f /tmp/dir-check', None),
                 ('doas /bin/pkg list -i', 'Installed packages (0)'),
                 ('doas /bin/pkg repo https://127.0.0.1:1', 'Repository saved in /etc/pkg.conf'),
                 ('doas /bin/sysupgrade check', 'sysupgrade: unable to fetch a verified release'),
@@ -66,7 +75,12 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                     command('human-monitor-command', {'command-line': 'sendkey ' + key + ' 1'})
                     time.sleep(.03)
                 end = wait_for(expected, offset) if expected is not None else offset
-                wait_for('/% ', end)
+                # Kernel diagnostics can appear between the cwd and prompt writes.
+                prompt = wait_for('# ', end)
+                finished = wait_for('/% ', prompt)
+                if expected is None:
+                    output = log.read_text(errors='replace')[offset:finished]
+                    assert 'sh: command exited status' not in output, output
             command('screendump', {'filename': str(out / 'console.png'), 'format': 'png'})
         print('MUSL_SYSTEM_PASS: init, console, svctl, host, pkg, doas and native openat')
     finally:
