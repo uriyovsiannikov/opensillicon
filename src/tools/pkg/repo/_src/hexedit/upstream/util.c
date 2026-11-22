@@ -8,9 +8,6 @@
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
-#ifdef OPEN_SILLICON
-#define strtoimax strtol
-#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

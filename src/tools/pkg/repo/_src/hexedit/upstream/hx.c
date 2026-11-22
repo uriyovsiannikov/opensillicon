@@ -76,25 +76,6 @@ static void print_version() {
 	printf("hx version %s (git: %s)\n", HX_VERSION, HX_GIT_HASH);
 }
 
-#if 0
-#include <unistd.h>
-#include <ctype.h>
-void debug_keypress() {
-	char c;
-	ssize_t nread;
-	// check == 0 to see if EOF.
-	while ((nread = read(STDIN_FILENO, &c, 1))) {
-		if (c == 'q') { exit(1); };
-		if (c == '\r' || c == '\n') { printf("\r\n"); continue; }
-		if (isprint(c)) {
-			printf("%c = %02x, ", c, c);
-		} else {
-			printf(". = %02x, ", c);
-		}
-		fflush(stdout);
-	}
-}
-#endif
 
 
 /*
