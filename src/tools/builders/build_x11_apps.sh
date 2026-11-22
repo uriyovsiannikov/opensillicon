@@ -109,8 +109,8 @@ else
 fi
 build_component "PKG twm" meson compile -C "$root/src/build/x11/twm"
 
-# xterm keeps its POSIX termios/openpty path; networking and termcap selection
-# are limited to the implemented local xterm subset.
+# Use POSIX termios. Disable session accounting: the target libc provides
+# utmp declarations and stubs, but the OS has no utmp or lastlog service.
 mkdir -p "$root/src/build/x11/xterm"
 cd "$root/src/build/x11/xterm"
 xterm_cpp="-DOPEN_SILLICON -D_POSIX_C_SOURCE=200809L -DUSE_TERMIOS -DUSE_POSIX_TERMIOS -DUSE_POSIX_WAIT -DDISABLE_SETUID -nostdinc -I$gcc_include -I$root/src/build/musl/sysroot/include -I$root/src/tools/pkg/repo/_src/twm/xterm -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libX11/include -I$root/src/build/x11/libX11/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxtrans -idirafter /usr/include"
@@ -118,6 +118,7 @@ xterm_ld="-nostdlib -static -no-pie -L$prefix/lib -Wl,--build-id=none -Wl,-z,noe
 CPPFLAGS="$xterm_cpp" CFLAGS="$common_c" LDFLAGS="$xterm_ld" \
 	LIBS="-lXaw -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm" \
 	ac_cv_header_curses_h=no ac_cv_header_ncurses_h=no ac_cv_header_termcap_h=no \
+	cf_cv_have_utmp=no cf_cv_path_lastlog=no \
 	build_component "PKG xterm configure" "$root/src/tools/pkg/repo/_src/twm/xterm/configure" --build="$build_triplet" --host=x86_64-elf --prefix="$prefix" \
 	--disable-imake --disable-man-pages --disable-setuid --disable-luit \
 	--disable-tek4014 --disable-wide-chars --disable-openpty --disable-regex \
