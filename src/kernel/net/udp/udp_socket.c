@@ -7,7 +7,6 @@
 #include "kernel/icmp_echo.h"
 #include "kernel/netbuf.h"
 #include "kernel/netdev.h"
-#include "kernel/network_service.h"
 #include "kernel/process.h"
 #include "kernel/timer.h"
 #include "kernel/udp_socket.h"
@@ -35,7 +34,6 @@ struct udp_socket_state {
 static struct udp_socket_state sockets[UDP_SOCKET_LIMIT];
 static struct net_device *network_device;
 static bool system_ready;
-static bool system_stopping;
 static bool receive_poll_active;
 static bool echo_call_active;
 static uint16_t next_ephemeral = UDP_SOCKET_EPHEMERAL_FIRST;
@@ -119,7 +117,7 @@ udp_poll_op(void *context, uint32_t events)
  uint64_t flags = state_guard_enter();
  uint32_t ready = 0;
  if (state->queue_count != 0) ready |= FD_POLL_READ;
- if (system_ready && !system_stopping) ready |= FD_POLL_WRITE;
+ if (system_ready) ready |= FD_POLL_WRITE;
  else ready |= FD_POLL_ERROR;
  state_guard_leave(flags);
  return ready & events;
@@ -198,7 +196,7 @@ int
 udp_socket_system_init(struct net_device *device)
 {
 	uint64_t flags = state_guard_enter();
-	if (system_ready || system_stopping || device == NULL ||
+	if (system_ready || device == NULL ||
 	    device->state != NET_DEVICE_UP ||
 	    !cyclone_net_ready()) {
 		state_guard_leave(flags);
@@ -223,13 +221,13 @@ udp_socket_create_fd(struct fd_table *table)
 	size_t slot;
 	int descriptor;
 	uint64_t flags = state_guard_enter();
-	if (!system_ready || system_stopping || table == NULL) {
+	if (!system_ready || table == NULL) {
 		state_guard_leave(flags);
 		return -ENETDOWN;
 	}
 	state_guard_leave(flags);
 	flags = state_guard_enter();
-	if (!system_ready || system_stopping) {
+	if (!system_ready) {
 		state_guard_leave(flags);
 		return -ENETDOWN;
 	}
@@ -426,7 +424,7 @@ udp_socket_poll(void)
 		state_guard_leave(flags);
 		return -EAGAIN;
 	}
-	if (!system_ready || system_stopping || network_device == NULL ||
+	if (!system_ready || network_device == NULL ||
 	    !cyclone_net_ready()) {
 		state_guard_leave(flags);
 		return -ENETDOWN;
@@ -450,7 +448,7 @@ network_icmp_echo(struct os_icmp_echo_request *request)
 	    request->payload_length > OS_ICMP_ECHO_PAYLOAD_MAX)
 		return -EINVAL;
 	flags = state_guard_enter();
-	if (!system_ready || system_stopping || network_device == NULL ||
+	if (!system_ready || network_device == NULL ||
 	    !cyclone_net_ready()) {
 		state_guard_leave(flags);
 		return -ENETDOWN;
@@ -636,40 +634,4 @@ udp_socket_peer_endpoint(struct fd_object *object,
 	*endpoint = state->remote;
 	state_guard_leave(flags);
 	return 0;
-}
-
-bool
-udp_socket_system_shutdown(void)
-{
-	uint64_t flags = state_guard_enter();
-	struct net_device *device;
-	if (!network_service_quiescent()) {
-		state_guard_leave(flags);
-		return false;
-	}
-	if (!system_ready) {
-		state_guard_leave(flags);
-		return true;
-	}
-	if (echo_call_active) {
-		state_guard_leave(flags);
-		return false;
-	}
-	for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++)
-		if (sockets[i].allocated) {
-			state_guard_leave(flags);
-			return false;
-		}
-	system_stopping = true;
-	device = network_device;
-	state_guard_leave(flags);
-	net_device_stop(device);
-	if (device->state != NET_DEVICE_DOWN)
-		return false;
-	flags = state_guard_enter();
-	network_device = NULL;
-	system_ready = false;
-	system_stopping = false;
-	state_guard_leave(flags);
-	return true;
 }

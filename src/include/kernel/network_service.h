@@ -22,6 +22,5 @@ struct network_service_result {
 bool network_service_init(void);
 bool network_service_request(enum network_service_event event);
 bool network_service_run(size_t budget, struct network_service_result *result);
-bool network_service_quiescent(void);
 
 #endif

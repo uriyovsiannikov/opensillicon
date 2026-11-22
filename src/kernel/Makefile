@@ -387,7 +387,7 @@ $(BUILD_DIR)/udp_socket.o: src/kernel/net/udp/udp_socket.c \
 		src/include/kernel/cyclone_net.h \
 		src/include/kernel/netdev.h src/include/kernel/netbuf.h \
 		src/include/kernel/fd.h src/include/kernel/timer.h src/include/kernel/errno.h \
-		src/include/kernel/network_service.h src/include/kernel/icmp_echo.h | $(BUILD_DIR)
+		src/include/kernel/icmp_echo.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/tcp_socket.o: src/kernel/net/tcp/tcp_socket.c \

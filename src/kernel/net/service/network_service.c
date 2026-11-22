@@ -130,12 +130,3 @@ network_service_run(size_t budget, struct network_service_result *result)
 		*result = local;
 	return true;
 }
-
-bool
-network_service_quiescent(void)
-{
-	uint64_t flags = service_guard_enter();
-	bool result = !service_running && event_count == 0;
-	service_guard_leave(flags);
-	return result;
-}

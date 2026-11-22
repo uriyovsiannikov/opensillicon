@@ -41,6 +41,5 @@ int udp_socket_peer_endpoint(struct fd_object *object,
 	struct os_ipv4_endpoint *endpoint);
 int udp_socket_poll(void);
 bool udp_socket_is_object(const struct fd_object *object);
-bool udp_socket_system_shutdown(void);
 
 #endif
