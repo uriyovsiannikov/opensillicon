@@ -66,19 +66,6 @@ in this Software without prior written authorization from The Open Group.
 #include <string.h>
 #include <assert.h>
 
-#ifndef HAVE_STRLCAT
-#define strlcat(dst, src, len) do {              \
-    strncat(dst, src, len - strlen(dst) - 1);    \
-    dst[len] = '\0';                             \
-} while(0)
-#endif
-#ifndef HAVE_STRLCPY
-#define strlcpy(dst, src, len) do {              \
-    strncpy(dst, src, len - 1);                  \
-    dst[len] = '\0';                             \
-} while(0)
-#endif
-
 /* Global vars*/
 const char *ProgramName;    /* program name (from argv[0]) */
 
