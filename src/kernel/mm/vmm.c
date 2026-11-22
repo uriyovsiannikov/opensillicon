@@ -2047,7 +2047,7 @@ clone_user_tables(const struct address_space *source, uint64_t table_physical,
 				    test_private_fork_page_count >=
 				    test_private_fork_fail_after) {
 					test_private_fork_fail_after = 0;
-					klog("OpenSillicon test: injected private fork failure\n");
+					klog("test: injected private fork failure\n");
 					return false;
 				}
 #endif
@@ -2128,7 +2128,7 @@ clone_shared_map_page(void *context, uint64_t virtual_address,
 	if (test_shm_fork_failure_armed) {
 		if (test_shm_fork_mapped_pages++ == 1) {
 			test_shm_fork_failure_armed = false;
-			klog("OpenSillicon test: injected shared fork mapping failure\n");
+			klog("test: injected shared fork mapping failure\n");
 			return false;
 		}
 	}

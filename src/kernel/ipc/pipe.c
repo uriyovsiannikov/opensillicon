@@ -38,7 +38,7 @@ static void
 pipe_free(void *allocation)
 {
 	if (!kheap_free(allocation)) {
-		klog("OpenSillicon panic: cannot release pipe allocation\n");
+		klog("panic: cannot release pipe allocation\n");
 		kernel_halt();
 	}
 }

@@ -21,23 +21,23 @@ kernel_driver_network_attach(struct net_device *device)
 	if (attached || device == NULL || device->state != NET_DEVICE_UP)
 		return false;
 	if (!network_service_init()) {
-		klog("OpenSillicon: deferred network service unavailable\n");
+		klog("deferred network service unavailable\n");
 		return false;
 	}
 	if (!cyclone_net_init(device)) {
-		klog("OpenSillicon: CycloneTCP initialization failed\n");
+		klog("CycloneTCP initialization failed\n");
 		return false;
 	}
 	if (udp_socket_system_init(device) != 0) {
-		klog("OpenSillicon: Cyclone UDP socket adapter initialization failed\n");
+		klog("Cyclone UDP socket adapter initialization failed\n");
 		return false;
 	}
 	if (tcp_socket_system_init() != 0) {
-		klog("OpenSillicon: Cyclone TCP socket adapter initialization failed\n");
+		klog("Cyclone TCP socket adapter initialization failed\n");
 		return false;
 	}
 	attached = true;
-	klog("OpenSillicon: module NIC attached; requesting IPv4 configuration via DHCP\n");
+	klog("module NIC attached; requesting IPv4 configuration via DHCP\n");
 	return true;
 }
 

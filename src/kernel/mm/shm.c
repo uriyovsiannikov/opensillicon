@@ -79,7 +79,7 @@ shm_object_create(size_t page_count, struct shm_object **object_out)
 #ifdef KERNEL_TEST_SHM_ALLOC_FAILURE
 		if (fail_shared_allocation_once && allocated == 1) {
 			fail_shared_allocation_once = false;
-			klog("OpenSillicon test: injected shared backing allocation failure\n");
+			klog("test: injected shared backing allocation failure\n");
 			goto fail;
 		}
 #endif
@@ -88,7 +88,7 @@ shm_object_create(size_t page_count, struct shm_object **object_out)
 		if (!zero_physical_page(object->pages[allocated])) {
 			if (!pmm_free_page(object->pages[allocated]))
 				shm_invariant_failure(
-				    "OpenSillicon panic: failed to roll back shared page\n");
+				    "panic: failed to roll back shared page\n");
 			goto fail;
 		}
 		allocated++;
