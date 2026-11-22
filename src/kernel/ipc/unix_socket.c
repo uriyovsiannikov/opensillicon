@@ -10,6 +10,7 @@
 #include "kernel/unix_socket.h"
 #include "kernel/vfs.h"
 #include "abi/unix_socket.h"
+#include "abi/socket.h"
 
 #define UNIX_SOCKET_LIMIT 32U
 #define UNIX_SOCKET_BACKLOG 8U
@@ -277,15 +278,11 @@ static const struct fd_operations socket_operations = {
 };
 
 int
-unix_socket_create(struct fd_table *table, int domain, int type, int protocol)
+unix_socket_create(struct fd_table *table)
 {
 	struct os_credentials credentials;
 	if (table == NULL)
 		return -EINVAL;
-	if (domain != (int)UNIX_SOCKET_AF_UNIX)
-		return -EAFNOSUPPORT;
-	if (type != (int)UNIX_SOCKET_STREAM || protocol != 0)
-		return -EPROTONOSUPPORT;
 	if (!process_current_credentials(&credentials))
 		return -ESRCH;
 	uint64_t flags = state_guard_enter();
@@ -319,7 +316,7 @@ resolve_address(const struct unix_socket_address *address, size_t length,
     size_t *name_length, char canonical[VFS_PATH_MAX])
 {
 	char path[UNIX_SOCKET_PATH_MAX + 1];
-	if (address == NULL || address->family != UNIX_SOCKET_AF_UNIX ||
+	if (address == NULL || address->family != OS_AF_UNIX ||
 	    length < sizeof(address->family) + 1 || length > sizeof(*address))
 		return -EINVAL;
 	*name_length = length - sizeof(address->family);

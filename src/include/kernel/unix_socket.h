@@ -7,8 +7,6 @@
 
 #include "kernel/fd.h"
 
-#define UNIX_SOCKET_AF_UNIX 1U
-#define UNIX_SOCKET_STREAM 1U
 #define UNIX_SOCKET_PATH_MAX 108U
 #define UNIX_SOCKET_SOL_SOCKET 1
 #define UNIX_SOCKET_SO_REUSEADDR 2
@@ -27,8 +25,7 @@ struct unix_socket_address {
 	uint8_t path[UNIX_SOCKET_PATH_MAX];
 };
 
-int unix_socket_create(struct fd_table *table, int domain, int type,
-	int protocol);
+int unix_socket_create(struct fd_table *table);
 int unix_socket_bind(struct fd_object *object,
 	const struct unix_socket_address *address, size_t length);
 int unix_socket_listen(struct fd_object *object, int backlog);

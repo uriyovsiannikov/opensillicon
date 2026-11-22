@@ -8,9 +8,6 @@
 #include "abi/inet.h"
 #include "kernel/fd.h"
 
-#define TCP_SOCKET_AF_INET 2U
-#define TCP_SOCKET_SOCK_STREAM 1U
-#define TCP_SOCKET_PROTOCOL 6U
 #define TCP_SOCKET_SOL_SOCKET 1U
 #define TCP_SOCKET_SO_ERROR 4U
 #define TCP_SOCKET_SO_SNDBUF 7U
@@ -21,8 +18,7 @@
 #define TCP_SOCKET_TCP_NODELAY 1U
 
 int tcp_socket_system_init(void);
-int tcp_socket_create_fd(struct fd_table *table, uint64_t family,
-	uint64_t type, uint64_t protocol);
+int tcp_socket_create_fd(struct fd_table *table);
 bool tcp_socket_is_object(const struct fd_object *object);
 int tcp_socket_bind(struct fd_object *object,
 	const struct os_ipv4_endpoint *endpoint);

@@ -33,6 +33,7 @@
 #include "abi/fcntl.h"
 #include "abi/dirent.h"
 #include "abi/inet.h"
+#include "abi/socket.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -736,6 +737,33 @@ static int dns_check(void)
 }
 static int network_check(void)
 {
+ const long socket_cases[][4]={
+  {OS_AF_UNIX,OS_SOCK_STREAM,0,OS_SOCKET_KIND_UNIX},
+  {OS_AF_INET,OS_SOCK_STREAM,0,OS_SOCKET_KIND_TCP},
+  {OS_AF_INET,OS_SOCK_STREAM,OS_IPPROTO_TCP,OS_SOCKET_KIND_TCP},
+  {OS_AF_INET,OS_SOCK_DGRAM,0,OS_SOCKET_KIND_UDP},
+  {OS_AF_INET,OS_SOCK_DGRAM,OS_IPPROTO_UDP,OS_SOCKET_KIND_UDP}
+ };
+ for(size_t i=0;i<sizeof socket_cases/sizeof socket_cases[0];i++) {
+  const long *item=socket_cases[i];
+  long fd=__os_raw(SYSCALL_SOCKET,item[0],item[1],item[2],0,0,0);
+  CHECK(fd>=0 && __os_raw(SYSCALL_SOCKET_KIND,fd,0,0,0,0,0)==item[3]);
+  CHECK(close(fd)==0);
+ }
+ const long invalid_sockets[][4]={
+  {0,OS_SOCK_STREAM,0,EAFNOSUPPORT},
+  {0x100000001L,OS_SOCK_STREAM,0,EAFNOSUPPORT},
+  {OS_AF_UNIX,0x100000001L,0,EPROTONOSUPPORT},
+  {OS_AF_UNIX,OS_SOCK_DGRAM,0,EPROTONOSUPPORT},
+  {OS_AF_UNIX,OS_SOCK_STREAM,OS_IPPROTO_TCP,EPROTONOSUPPORT},
+  {OS_AF_INET,0,0,EPROTONOSUPPORT},
+  {OS_AF_INET,OS_SOCK_STREAM,OS_IPPROTO_UDP,EPROTONOSUPPORT},
+  {OS_AF_INET,OS_SOCK_DGRAM,OS_IPPROTO_TCP,EPROTONOSUPPORT}
+ };
+ for(size_t i=0;i<sizeof invalid_sockets/sizeof invalid_sockets[0];i++) {
+  const long *item=invalid_sockets[i];
+  CHECK(__os_raw(SYSCALL_SOCKET,item[0],item[1],item[2],0,0,0)==-item[3]);
+ }
  const long address_calls[]={SYSCALL_BIND,SYSCALL_CONNECT};
  int sockets[]={socket(AF_UNIX,SOCK_STREAM,0),socket(AF_INET,SOCK_STREAM,0),
      socket(AF_INET,SOCK_DGRAM,0)};
@@ -1053,7 +1081,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,34,44,46,53,58,63,82,84,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,43,44,46,53,58,63,81,82,84,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);

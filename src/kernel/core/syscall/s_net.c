@@ -1,4 +1,5 @@
 #include "syscall_internal.h"
+#include "abi/socket.h"
 
 #include "kernel/cyclone_net.h"
 #include "kernel/icmp_echo.h"
@@ -31,10 +32,27 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, ENOTSOCK);
 		}
 		break;
-	case SYSCALL_UDP_SOCKET:
+	case SYSCALL_SOCKET:
 		{
-			int result = udp_socket_create_fd(current_fd_table(),
-			    frame->rdi, frame->rsi, frame->rdx);
+			uint64_t family = frame->rdi, type = frame->rsi;
+			uint64_t protocol = frame->rdx;
+			struct fd_table *table = current_fd_table();
+			int result;
+
+			if (family == OS_AF_UNIX) {
+				result = type == OS_SOCK_STREAM && protocol == 0 ?
+				    unix_socket_create(table) : -EPROTONOSUPPORT;
+			} else if (family != OS_AF_INET) {
+				result = -EAFNOSUPPORT;
+			} else if (type == OS_SOCK_STREAM &&
+			    (protocol == 0 || protocol == OS_IPPROTO_TCP)) {
+				result = tcp_socket_create_fd(table);
+			} else if (type == OS_SOCK_DGRAM &&
+			    (protocol == 0 || protocol == OS_IPPROTO_UDP)) {
+				result = udp_socket_create_fd(table);
+			} else {
+				result = -EPROTONOSUPPORT;
+			}
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));
 			else
@@ -157,16 +175,6 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 			else
 				frame->rax = datagram.length;
-		}
-		break;
-	case SYSCALL_TCP_SOCKET:
-		{
-			int result = tcp_socket_create_fd(current_fd_table(),
-			    frame->rdi, frame->rsi, frame->rdx);
-			if (result < 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = (uint64_t)result;
 		}
 		break;
 	case SYSCALL_BIND:

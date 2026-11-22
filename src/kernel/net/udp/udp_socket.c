@@ -12,9 +12,6 @@
 #include "kernel/timer.h"
 #include "kernel/udp_socket.h"
 
-#define UDP_AF_INET 2U
-#define UDP_SOCK_DGRAM 2U
-#define UDP_PROTOCOL 17U
 
 struct udp_queue_entry {
 	struct os_ipv4_endpoint source;
@@ -220,8 +217,7 @@ udp_socket_system_init(struct net_device *device)
 }
 
 int
-udp_socket_create_fd(struct fd_table *table, uint64_t family,
-	uint64_t type, uint64_t protocol)
+udp_socket_create_fd(struct fd_table *table)
 {
 	struct fd_object *object;
 	size_t slot;
@@ -232,11 +228,6 @@ udp_socket_create_fd(struct fd_table *table, uint64_t family,
 		return -ENETDOWN;
 	}
 	state_guard_leave(flags);
-	if (family != UDP_AF_INET)
-		return -EAFNOSUPPORT;
-	if (type != UDP_SOCK_DGRAM ||
-	    (protocol != 0 && protocol != UDP_PROTOCOL))
-		return -EPROTONOSUPPORT;
 	flags = state_guard_enter();
 	if (!system_ready || system_stopping) {
 		state_guard_leave(flags);

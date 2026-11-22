@@ -22,8 +22,7 @@ struct udp_socket_datagram {
 };
 
 int udp_socket_system_init(struct net_device *device);
-int udp_socket_create_fd(struct fd_table *table, uint64_t family,
-	uint64_t type, uint64_t protocol);
+int udp_socket_create_fd(struct fd_table *table);
 int udp_socket_bind(struct fd_object *object,
 	const struct os_ipv4_endpoint *endpoint);
 int udp_socket_connect(struct fd_object *object,

@@ -63,14 +63,13 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_SHM_CREATE] = { .local = syscall_memory_local },
 	[SYSCALL_SHM_DETACH] = { .local = syscall_memory_local },
 	/* Sockets and network configuration */
+	[SYSCALL_SOCKET] = { .bsp = syscall_net_bsp },
 	[SYSCALL_SOCKET_KIND] = { .bsp = syscall_net_bsp },
 	[SYSCALL_BIND] = { .bsp = syscall_net_bsp },
 	[SYSCALL_CONNECT] = { .bsp = syscall_net_bsp },
-	[SYSCALL_UDP_SOCKET] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_SEND] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_SENDTO] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_RECVFROM] = { .bsp = syscall_net_bsp },
-	[SYSCALL_TCP_SOCKET] = { .bsp = syscall_net_bsp },
 	[SYSCALL_TCP_LISTEN] = { .bsp = syscall_net_bsp },
 	[SYSCALL_TCP_ACCEPT] = { .bsp = syscall_net_bsp },
 	[SYSCALL_TCP_SHUTDOWN] = { .bsp = syscall_net_bsp },
@@ -115,7 +114,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_NANOSLEEP] = { .local = syscall_time_local },
 	[SYSCALL_CLOCK_GETTIME] = { .local = syscall_time_local },
 	/* Unix */
-	[SYSCALL_UNIX_SOCKET] = { .bsp = syscall_unix_bsp },
 	[SYSCALL_UNIX_LISTEN] = { .bsp = syscall_unix_bsp },
 	[SYSCALL_UNIX_ACCEPT] = { .bsp = syscall_unix_bsp },
 	[SYSCALL_UNIX_SHUTDOWN] = { .bsp = syscall_unix_bsp },

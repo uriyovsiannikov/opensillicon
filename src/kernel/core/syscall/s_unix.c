@@ -1,4 +1,5 @@
 #include "syscall_internal.h"
+#include "abi/socket.h"
 
 #include "kernel/process.h"
 #include "kernel/pty.h"
@@ -11,16 +12,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
-	case SYSCALL_UNIX_SOCKET:
-		{
-			int result = unix_socket_create(current_fd_table(),
-			    (int)frame->rdi, (int)frame->rsi, (int)frame->rdx);
-			if (result < 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = (uint64_t)result;
-		}
-		break;
 	case SYSCALL_UNIX_LISTEN:
 		{
 			struct fd_object *object = fd_object_for_descriptor(
@@ -39,7 +30,7 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 			    current_fd_table(), frame->rdi);
 			uint32_t capacity;
 			uint32_t actual = sizeof(uint16_t);
-			uint16_t family = UNIX_SOCKET_AF_UNIX;
+			uint16_t family = OS_AF_UNIX;
 			int result;
 			if (object == NULL) {
 				syscall_error(frame, EBADF);

@@ -8,6 +8,11 @@
 #include <string.h>
 #include "abi/syscall.h"
 #include "abi/inet.h"
+#include "abi/socket.h"
+
+_Static_assert(AF_UNIX == OS_AF_UNIX && AF_INET == OS_AF_INET, "socket families");
+_Static_assert(SOCK_STREAM == OS_SOCK_STREAM && SOCK_DGRAM == OS_SOCK_DGRAM, "socket types");
+_Static_assert(IPPROTO_TCP == OS_IPPROTO_TCP && IPPROTO_UDP == OS_IPPROTO_UDP, "socket protocols");
 long __os_native_call(long,long,long,long,long,long,long);
 #define call __os_native_call
 static long from_address(long address,long size,struct os_ipv4_endpoint *ep)
@@ -96,12 +101,8 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   return c & MSG_TRUNC ? got : (long)size;
  }
  if(n==SYS_socket) {
-  long type=b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK), op;
-  if(a==AF_UNIX) op=SYSCALL_UNIX_SOCKET;
-  else if(a==AF_INET && type==SOCK_STREAM) op=SYSCALL_TCP_SOCKET;
-  else if(a==AF_INET && type==SOCK_DGRAM) op=SYSCALL_UDP_SOCKET;
-  else return a==AF_INET ? -EPROTONOSUPPORT : -EAFNOSUPPORT;
-  return set_flags(call(op,a,type,c,0,0,0),b);
+  long type=b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK);
+  return set_flags(call(SYSCALL_SOCKET,a,type,c,0,0,0),b);
  }
  switch(n) {
  case SYS_bind: case SYS_connect: case SYS_listen: case SYS_accept:

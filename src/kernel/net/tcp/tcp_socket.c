@@ -225,19 +225,13 @@ tcp_socket_system_init(void)
 }
 
 int
-tcp_socket_create_fd(struct fd_table *table, uint64_t family, uint64_t type,
-	uint64_t protocol)
+tcp_socket_create_fd(struct fd_table *table)
 {
 	struct tcp_socket_state *state = NULL;
 	struct fd_object *object;
 	Socket *socket;
 	int descriptor;
 	uint64_t flags;
-	if (family != TCP_SOCKET_AF_INET)
-		return -EAFNOSUPPORT;
-	if (type != TCP_SOCKET_SOCK_STREAM ||
-	    (protocol != 0 && protocol != TCP_SOCKET_PROTOCOL))
-		return -EPROTONOSUPPORT;
 	if (!tcp_sockets_ready || table == NULL)
 		return -ENETDOWN;
 	flags = state_guard_enter();
