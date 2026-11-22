@@ -124,7 +124,7 @@ $(LIBZ_BUILD_DIR):
 	mkdir -p $@
 
 $(LIBZ_BUILD_DIR)/%.o: src/tools/pkg/repo/_src/twm/deps/libz/%.c $(wildcard src/tools/pkg/repo/_src/twm/deps/libz/*.h) \
-		$(wildcard src/build/musl/sysroot/include/* src/build/musl/sysroot/include/sys/*) | $(LIBZ_BUILD_DIR)
+		$(wildcard src/build/musl/sysroot/include/*.h src/build/musl/sysroot/include/sys/*.h) | $(LIBZ_BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -DDYNAMIC_CRC_TABLE -DNO_GZCOMPRESS -DZ_HAVE_UNISTD_H \
 		-Isrc/tools/pkg/repo/_src/twm/deps/libz -c $< -o $@
 
