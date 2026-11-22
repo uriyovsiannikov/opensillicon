@@ -1,57 +1,56 @@
-#include "../include/os.h"
-
-#define PATH_SIZE 256U
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static const char *
-type_name(uint32_t mode)
+type_name(mode_t mode)
 {
-	if (OS_S_ISREG(mode))
-		return "regular file";
-	if (OS_S_ISDIR(mode))
-		return "directory";
+	if (S_ISREG(mode)) return "regular file";
+	if (S_ISDIR(mode)) return "directory";
+	if (S_ISLNK(mode)) return "symbolic link";
+	if (S_ISCHR(mode)) return "character device";
+	if (S_ISBLK(mode)) return "block device";
+	if (S_ISFIFO(mode)) return "fifo";
+	if (S_ISSOCK(mode)) return "socket";
 	return "unknown";
 }
 
-static void
-print_octal(uint32_t value)
-{
-	char digits[11];
-	size_t count = 0;
-	do {
-		digits[count++] = (char)('0' + (value & 7U));
-		value >>= 3;
-	} while (value != 0 && count < sizeof(digits));
-	while (count != 0)
-		u_putn(&digits[--count], 1);
-}
-
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t i;
-	int failed = 0;
-	if (argc == 1) {
-		u_puts("usage: stat file ...\n");
-		return 1;
+	int follow = 0, option, failed = 0;
+
+	opterr = 0;
+	while ((option = getopt(argc, argv, "L")) != -1) {
+		if (option != 'L')
+			goto usage;
+		follow = 1;
 	}
-	for (i = 1; i < argc; i++) {
-		struct os_stat status;
-		if (u_stat_path(argv[i], &status) < 0) {
-			u_puts("stat: cannot stat: ");
-			u_puts(argv[i]);
-			u_puts("\n");
+	if (optind == argc)
+		goto usage;
+	for (int i = optind; i < argc; i++) {
+		struct stat status;
+		int result = follow ? stat(argv[i], &status) : lstat(argv[i], &status);
+
+		if (result < 0) {
+			fprintf(stderr, "stat: cannot stat: %s: %s\n", argv[i],
+			    strerror(errno));
 			failed = 1;
 			continue;
 		}
-		u_puts("  File: ");
-		u_puts(argv[i]);
-		u_puts("\n  Type: ");
-		u_puts(type_name(status.st_mode));
-		u_puts("\n  Size: ");
-		u_put_u64(status.st_size);
-		u_puts(" bytes\n  Mode: ");
-		print_octal(status.st_mode & 07777U);
-		u_puts("\n");
+		printf("  File: %s\n  Type: %s\n  Size: %" PRIdMAX
+		    " bytes\n  Mode: %o\n", argv[i], type_name(status.st_mode),
+		    (intmax_t)status.st_size, (unsigned)(status.st_mode & 07777));
+	}
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("stat: stdout");
+		failed = 1;
 	}
 	return failed;
+usage:
+	fputs("usage: stat [-L] file ...\n", stderr);
+	return 2;
 }

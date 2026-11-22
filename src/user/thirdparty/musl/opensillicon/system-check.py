@@ -76,6 +76,7 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('wc -l /etc/hosts', '1 /etc/hosts'),
                 ('wc -z', 'usage: wc'),
                 ('stat /tmp/native-openat-check', '  Mode: 644'),
+                ('stat -L /tmp/native-openat-check', '  Type: regular file'),
                 ('rm /tmp/native-openat-check', None),
                 ('mkdir /tmp/dir-check', None),
                 ('touch /tmp/dir-check/entry', None),
