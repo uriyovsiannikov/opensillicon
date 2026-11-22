@@ -229,12 +229,6 @@ process_has_pending_signal(const struct process *process)
 	return pending;
 }
 
-bool
-process_current_signal_pending(void)
-{
-	return current_process != NULL && process_has_pending_signal(current_process);
-}
-
 static void
 complete_timer_wait(struct process *process)
 {

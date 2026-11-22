@@ -103,8 +103,6 @@ int fd_dup_to(struct fd_table *table, uint64_t source, uint64_t destination,
 	uint32_t flags);
 int fd_read(struct fd_table *table, uint64_t descriptor, void *buffer,
 	size_t length, size_t *read_length);
-int fd_write(struct fd_table *table, uint64_t descriptor, const void *buffer,
-	size_t length, size_t *write_length);
 int fd_write_as(struct fd_table *table, uint64_t descriptor, const void *buffer,
 	size_t length, size_t *write_length, uint32_t uid);
 int fd_readdir(struct fd_table *table, uint64_t descriptor,

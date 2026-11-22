@@ -485,14 +485,6 @@ fd_object_write_as(struct fd_object *object, const void *buffer, size_t length,
 }
 
 int
-fd_write(struct fd_table *table, uint64_t descriptor, const void *buffer,
-	size_t length, size_t *write_length)
-{
-	return fd_object_write(get_object(table, descriptor), buffer, length,
-	    write_length);
-}
-
-int
 fd_write_as(struct fd_table *table, uint64_t descriptor, const void *buffer,
 	size_t length, size_t *write_length, uint32_t uid)
 {

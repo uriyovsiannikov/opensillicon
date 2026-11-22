@@ -45,7 +45,6 @@ struct fd_table *process_current_fd_table(void);
 uint64_t process_current_pid(void);
 uint64_t process_current_ppid(void);
 bool process_current_credentials(struct os_credentials *credentials);
-bool process_current_signal_pending(void);
 int process_set_uid(uint32_t id, bool effective_only);
 int process_set_gid(uint32_t id, bool effective_only);
 int process_set_res_uid(uint32_t real, uint32_t effective, uint32_t saved);

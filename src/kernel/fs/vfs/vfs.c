@@ -591,12 +591,6 @@ fail:
 }
 
 int
-vfs_lookup_at(const char *base_path, const char *path, struct vnode **result)
-{
-	return vfs_lookup_at_as(base_path, path, 0, 0, result);
-}
-
-int
 vfs_create_path_as(const char *path, enum vnode_type type, uint32_t mode,
 	uint32_t uid, uint32_t gid, struct vnode **result)
 {
