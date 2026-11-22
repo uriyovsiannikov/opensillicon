@@ -485,13 +485,17 @@ $(BUILD_DIR)/acpica/%.o: $(ACPICA_ROOT)/%.c \
 	mkdir -p $(dir $@)
 	$(CC) $(ACPICA_CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/reset.o: src/kernel/arch/x86_64/cpu/reset.c \
+		src/include/arch/x86_64/reset.h src/include/arch/x86_64/acpi.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
 KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entropy.o $(BUILD_DIR)/entropy.o $(BUILD_DIR)/random.o $(BUILD_DIR)/rdseed.o $(BUILD_DIR)/pmm.o \
 	$(BUILD_DIR)/virtio_rng.o \
 	$(BUILD_DIR)/vmm.o $(BUILD_DIR)/shm.o $(BUILD_DIR)/heap.o $(BUILD_DIR)/log.o \
 	$(BUILD_DIR)/gdt.o $(BUILD_DIR)/smp.o $(BUILD_DIR)/smp_topology.o \
 	$(BUILD_DIR)/smp_asm.o \
 	$(BUILD_DIR)/fpu.o $(BUILD_DIR)/lapic.o $(BUILD_DIR)/acpi.o \
-	$(BUILD_DIR)/ioapic.o $(BUILD_DIR)/ahci.o $(BUILD_DIR)/block.o \
+	$(BUILD_DIR)/ioapic.o $(BUILD_DIR)/reset.o $(BUILD_DIR)/ahci.o $(BUILD_DIR)/block.o \
 	$(BUILD_DIR)/block_silliconfs.o $(BUILD_DIR)/gpt.o $(BUILD_DIR)/root_device.o $(BUILD_DIR)/mount.o \
 	$(BUILD_DIR)/pci.o $(BUILD_DIR)/pci_resource.o $(BUILD_DIR)/dma.o \
 	$(BUILD_DIR)/nouveau_device.o $(BUILD_DIR)/nouveau_pci.o \

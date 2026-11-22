@@ -279,19 +279,23 @@ acpi_init(uint64_t root_pointer, struct acpi_madt_info *info)
 	return true;
 }
 
-bool
+void
 acpi_poweroff(void)
 {
 	ACPI_STATUS status;
 	if (rsdp_physical == 0)
-		return false;
+		return;
 	status = AcpiEnable();
-	if (ACPI_FAILURE(status))
-		return false;
+	if (ACPI_FAILURE(status)) {
+		klog("acpi: mode enable failed: ");
+		klog_u64(status);
+		klog("\n");
+		return;
+	}
 	status = AcpiEnterSleepStatePrep(ACPI_STATE_S5);
 	if (ACPI_FAILURE(status)) {
 		klog("acpi: S5 preparation failed\n");
-		return false;
+		return;
 	}
 	/* ACPICA requires interrupts disabled for the final sleep transition. */
 	uint64_t flags;
@@ -299,8 +303,18 @@ acpi_poweroff(void)
 	status = AcpiEnterSleepState(ACPI_STATE_S5);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
-	(void)status;
-	return false; /* Returning means the firmware did not power off. */
+	klog("acpi: S5 transition returned: ");
+	klog_u64(status);
+	klog("\n");
+}
+
+void
+acpi_reboot(void)
+{
+	if (rsdp_physical == 0 || ACPI_FAILURE(AcpiReset()))
+		return;
+	/* Give the FADT reset register time to take effect before reporting failure. */
+	AcpiOsStall(100000);
 }
 
 ACPI_STATUS
@@ -877,7 +891,8 @@ AcpiOsEnterSleep(UINT8 state, UINT32 reg_a, UINT32 reg_b)
 	(void)state;
 	(void)reg_a;
 	(void)reg_b;
-	return AE_SUPPORT;
+	/* No OS override: let ACPICA write the firmware sleep registers. */
+	return AE_OK;
 }
 
 void

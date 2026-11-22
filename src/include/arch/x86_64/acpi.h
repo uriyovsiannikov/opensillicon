@@ -50,7 +50,9 @@ int acpi_parse_madt(const void *table, size_t table_size,
 int acpi_parse_mcfg(const void *table, size_t table_size,
 	struct acpi_mcfg_region *regions, size_t capacity, size_t *count);
 size_t acpi_mcfg_regions(struct acpi_mcfg_region *regions, size_t capacity);
-bool acpi_poweroff(void);
+/* Returning from either transition means firmware did not complete it. */
+void acpi_poweroff(void);
+void acpi_reboot(void);
 bool acpi_init(uint64_t rsdp_physical, struct acpi_madt_info *info);
 
 #endif

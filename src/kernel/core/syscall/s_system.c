@@ -8,6 +8,7 @@
 #include "kernel/version.h"
 
 #include "arch/x86_64/acpi.h"
+#include "arch/x86_64/reset.h"
 #include "kernel/block.h"
 #include "kernel/module.h"
 #include "kernel/process.h"
@@ -187,44 +188,31 @@ syscall_system_bsp(struct interrupt_frame *frame)
 	switch (number) {
 	case SYSCALL_SYSCTL:
 		return syscall_sysctl(frame);
-	case SYSCALL_POWER_CONTROL:
-		{
-			struct os_credentials credentials;
-			if (!process_current_credentials(&credentials) ||
-			    credentials.effective_uid != 0) {
-				syscall_error(frame, EPERM);
-				break;
-			}
+	case SYSCALL_POWER_CONTROL: {
+		struct os_credentials credentials;
+		if (!process_current_credentials(&credentials) ||
+		    credentials.effective_uid != 0) {
+			syscall_error(frame, EPERM);
+			break;
 		}
-		if (frame->rdi == POWER_CONTROL_POWEROFF) {
-			/* Flush registered disks before invoking firmware S5. */
-			for (size_t i = 0; i < block_device_count(); i++) {
-				if (block_flush(block_device_at(i)) != 0) {
-					syscall_error(frame, EIO);
-					return frame;
-				}
-			}
-			(void)acpi_poweroff();
-			/* Compatibility fallback for emulators without usable ACPI. */
-			__asm__ volatile ("outw %0, %1" : : "a" ((uint16_t)0x2000),
-			    "Nd" ((uint16_t)0x0604));
-			__asm__ volatile ("outw %0, %1" : : "a" ((uint16_t)0x2000),
-			    "Nd" ((uint16_t)0xb004));
-		} else if (frame->rdi == POWER_CONTROL_REBOOT) {
-			uint8_t reset = 0x02;
-			__asm__ volatile ("outb %0, %1" : : "a" (reset),
-			    "Nd" ((uint16_t)0x0cf9));
-			for (volatile unsigned int delay = 0; delay < 100000; delay++)
-				__asm__ volatile ("pause");
-			reset = 0x06;
-			__asm__ volatile ("outb %0, %1" : : "a" (reset),
-			    "Nd" ((uint16_t)0x0cf9));
-		} else {
+		if (frame->rdi != POWER_CONTROL_POWEROFF &&
+		    frame->rdi != POWER_CONTROL_REBOOT) {
 			syscall_error(frame, EINVAL);
 			break;
 		}
+		int result = block_flush_all();
+		if (result != 0) {
+			syscall_error(frame, errno_from_kernel(result));
+			break;
+		}
+		if (frame->rdi == POWER_CONTROL_POWEROFF)
+			acpi_poweroff();
+		else
+			arch_reboot();
+		/* A completed firmware transition does not return to its caller. */
 		syscall_error(frame, EIO);
 		break;
+	}
 	case SYSCALL_KLDLOAD:
 		{
 			char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
