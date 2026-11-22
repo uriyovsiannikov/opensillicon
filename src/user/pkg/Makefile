@@ -114,8 +114,8 @@ $(DOOM_BUILD_DIR)/doomgeneric_opensillicon.o: \
 # The X11 client libraries come from the shared X11 build prefix.
 $(BUILD_DIR)/doom/doom: $(DOOM_OBJECTS) $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) \
 		$(BUILD_DIR)/x11/.apps-ready
-	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(DOOM_OBJECTS) \
-		--start-group $(LIBC_ARCHIVE) $(X11_DOOM_LIBS) --end-group -o $@
+	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(DOOM_OBJECTS) \
+		-Wl,--start-group $(LIBC_ARCHIVE) $(X11_DOOM_LIBS) -lgcc -Wl,--end-group -o $@
 
 LIBZ_SOURCES := gzlib gzread gzclose adler32 crc32 deflate trees inflate inffast inftrees zutil
 LIBZ_OBJECTS := $(addprefix $(LIBZ_BUILD_DIR)/,$(addsuffix .o,$(LIBZ_SOURCES)))
