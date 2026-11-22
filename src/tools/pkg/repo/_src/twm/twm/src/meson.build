@@ -66,6 +66,7 @@ twm = executable(
         lexer,
     ],
     dependencies: twm_dependencies,
+    link_args: ['-lgcc'],
     install: true,
 )
 
