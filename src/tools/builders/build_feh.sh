@@ -85,7 +85,7 @@ cat > opensillicon_config.h <<'EOF'
 EOF
 fi
 cd "$root/src/build/x11/feh"
-build_component "PKG feh" make ${feh_force:-} -C src -j2 curl=0 xinerama=0 exif=0 magic=0 mkstemps=0 verscmp=0 \
+build_component "PKG feh" make ${feh_force:-} -C src -j2 curl=0 xinerama=0 exif=0 magic=0 mkstemps=0 \
     PREFIX=/usr CC="$cc" \
     CFLAGS="$cflags $cppflags -I$prefix/include/freetype2 -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -include $root/src/build/x11/feh/opensillicon_config.h" \
     LDFLAGS="-nostdlib -static -no-pie -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-T,$root/src/user/c_linker.ld $root/src/build/musl/sysroot/lib/crt1.o -L$prefix/lib -L$root/src/build/libz" \

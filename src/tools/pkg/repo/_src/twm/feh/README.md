@@ -69,7 +69,6 @@ indicates that the corresponding feature is enabled by default.
 | stat64 | 0 | Support CIFS shares from 64bit hosts on 32bit machines |
 | magic | 0 | Use libmagic to filter unsupported file formats |
 | mkstemps | 1 | Whether your libc provides `mkstemps()`. If set to 0, feh will be unable to load gif images via libcurl |
-| verscmp | 1 | Whether your libc provides `strvercmp()`. If set to 0, feh will use an internal implementation. |
 | xinerama | 1 | Support Xinerama/XRandR multiscreen setups |
 
 For example, `make xinerama=0 debug=1` will disable Xinerama support and

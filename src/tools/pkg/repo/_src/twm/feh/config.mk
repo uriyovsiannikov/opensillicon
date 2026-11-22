@@ -9,7 +9,6 @@ help ?= 0
 install_fonts ?= 1
 magic ?= 0
 mkstemps ?= 1
-verscmp ?= 1
 xinerama ?= 1
 
 # Prefix for all installed files
@@ -82,10 +81,6 @@ ifeq (${magic},1)
 	MAN_MAGIC = enabled
 else
 	MAN_MAGIC = disabled
-endif
-
-ifeq (${verscmp},1)
-	CFLAGS += -DHAVE_STRVERSCMP
 endif
 
 ifeq (${xinerama},1)
