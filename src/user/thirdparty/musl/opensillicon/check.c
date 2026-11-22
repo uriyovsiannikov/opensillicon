@@ -822,6 +822,17 @@ static int network_check(void)
  CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,udp,(long)&native_endpoint.value,0,0,0,0)==0);
  CHECK(native_endpoint.value.port==ntohs(local.sin_port) &&
      !memcmp(native_endpoint.value.address,&local.sin_addr,4) && native_endpoint.guard==0xabcd);
+ struct os_ipv4_endpoint unchanged_endpoint=native_endpoint.value;
+ const long name_calls[]={SYSCALL_UDP_GETSOCKNAME,SYSCALL_UDP_GETPEERNAME,
+     SYSCALL_TCP_GETSOCKNAME,SYSCALL_TCP_GETPEERNAME};
+ for(size_t i=0;i<sizeof name_calls/sizeof name_calls[0];i++) {
+  CHECK(__os_raw(name_calls[i],-1,1,0,0,0,0)==-EBADF);
+  CHECK(__os_raw(name_calls[i],0,1,0,0,0,0)==-ENOTSOCK);
+ }
+ CHECK(__os_raw(SYSCALL_TCP_GETSOCKNAME,udp,1,0,0,0,0)==-ENOTSOCK);
+ CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,udp,1,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_UDP_GETPEERNAME,udp,(long)&native_endpoint.value,0,0,0,0)==-ENOTCONN);
+ CHECK(!memcmp(&unchanged_endpoint,&native_endpoint.value,sizeof unchanged_endpoint) && native_endpoint.guard==0xabcd);
  CHECK(recv(udp,message,sizeof message,0)==-1 && errno==EAGAIN);
  CHECK(recv(udp,message,(size_t)-1,0)==-1 && errno==EINVAL);
  CHECK(send(udp,message,1,MSG_PEEK)==-1 && errno==EOPNOTSUPP);
@@ -850,6 +861,8 @@ static int network_check(void)
  CHECK(__os_raw(SYSCALL_TCP_GETPEERNAME,tcp,(long)&native_endpoint.value,0,0,0,0)==0);
  CHECK(native_endpoint.value.port==ntohs(remote.sin_port) &&
      !memcmp(native_endpoint.value.address,&remote.sin_addr,4) && native_endpoint.guard==0xabcd);
+ CHECK(__os_raw(SYSCALL_UDP_GETSOCKNAME,tcp,1,0,0,0,0)==-ENOTSOCK);
+ CHECK(__os_raw(SYSCALL_TCP_GETSOCKNAME,tcp,1,0,0,0,0)==-EFAULT);
  CHECK(send(tcp,"hello",5,0)==5);
  memset(message,0,sizeof message);
  int total=0;

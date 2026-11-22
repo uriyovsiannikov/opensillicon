@@ -417,39 +417,6 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		break;
 	case SYSCALL_TCP_GETSOCKNAME:
 	case SYSCALL_TCP_GETPEERNAME:
-		{
-			struct os_ipv4_endpoint endpoint;
-			struct address_space *space = vmm_active_address_space();
-			struct fd_object *object = fd_object_for_descriptor(
-				current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!tcp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (!vmm_validate_user_write(space, frame->rsi,
-			    sizeof(endpoint))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			result = tcp_socket_get_name(object,
-			    number == SYSCALL_TCP_GETPEERNAME, &endpoint);
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (!vmm_copy_to_user(space, frame->rsi, &endpoint,
-			    sizeof(endpoint))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
 	case SYSCALL_UDP_GETSOCKNAME:
 	case SYSCALL_UDP_GETPEERNAME:
 		{
@@ -457,12 +424,17 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			struct address_space *space = vmm_active_address_space();
 			struct fd_object *object = fd_object_for_descriptor(
 			    current_fd_table(), frame->rdi);
+			bool tcp = number == SYSCALL_TCP_GETSOCKNAME ||
+			    number == SYSCALL_TCP_GETPEERNAME;
+			bool peer = number == SYSCALL_TCP_GETPEERNAME ||
+			    number == SYSCALL_UDP_GETPEERNAME;
 			int result;
+
 			if (object == NULL) {
 				syscall_error(frame, EBADF);
 				break;
 			}
-			if (!udp_socket_is_object(object)) {
+			if (!(tcp ? tcp_socket_is_object(object) : udp_socket_is_object(object))) {
 				syscall_error(frame, ENOTSOCK);
 				break;
 			}
@@ -471,9 +443,11 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, EFAULT);
 				break;
 			}
-			result = number == SYSCALL_UDP_GETSOCKNAME ?
-			    udp_socket_local_endpoint(object, &endpoint) :
-			    udp_socket_peer_endpoint(object, &endpoint);
+			if (tcp)
+				result = tcp_socket_get_name(object, peer, &endpoint);
+			else
+				result = peer ? udp_socket_peer_endpoint(object, &endpoint) :
+				    udp_socket_local_endpoint(object, &endpoint);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
