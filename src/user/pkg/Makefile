@@ -239,7 +239,7 @@ $(BUILD_DIR)/startx.elf: $(BUILD_DIR)/startx.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_A
 
 .PHONY: $(BUILD_DIR)/x11/.apps-ready
 $(BUILD_DIR)/x11/.apps-ready: $(TINYX_BINARY) $(LIBC_ARCHIVE) $(LIBZ_ARCHIVE) \
-		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE)
+		$(LIBFONTENC_ARCHIVE) $(LIBXFONT_ARCHIVE) $(NCURSES_ARCHIVE)
 	sh src/tools/builders/build_x11_if_needed.sh
 
 .PHONY: $(BUILD_DIR)/netsurf/.ready

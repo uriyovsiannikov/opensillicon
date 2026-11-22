@@ -17,7 +17,7 @@ if [ "${1:-full}" = relink ]; then
         "$root/src/build/x11/xterm/xterm" "$root/src/build/x11/feh/src/feh"
     build_component "PKG twm" meson compile -C "$root/src/build/x11/twm"
     build_component "PKG xterm link" make -C "$root/src/build/x11/xterm" -j2 \
-        LIBS="-Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a -lXaw7 -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm -Wl,--end-group"
+        LIBS="-Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a -lXaw7 -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm $root/src/build/nano/ncurses/lib/libncurses.a -Wl,--end-group -lgcc"
     sh "$root/src/tools/builders/build_feh.sh" relink
     exit 0
 fi
@@ -113,11 +113,10 @@ build_component "PKG twm" meson compile -C "$root/src/build/x11/twm"
 # utmp declarations and stubs, but the OS has no utmp or lastlog service.
 mkdir -p "$root/src/build/x11/xterm"
 cd "$root/src/build/x11/xterm"
-xterm_cpp="-DOPEN_SILLICON -D_POSIX_C_SOURCE=200809L -DUSE_TERMIOS -DUSE_POSIX_TERMIOS -DUSE_POSIX_WAIT -DDISABLE_SETUID -nostdinc -I$gcc_include -I$root/src/build/musl/sysroot/include -I$root/src/tools/pkg/repo/_src/twm/xterm -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libX11/include -I$root/src/build/x11/libX11/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxtrans -idirafter /usr/include"
+xterm_cpp="-DOPEN_SILLICON -D_POSIX_C_SOURCE=200809L -DUSE_TERMIOS -DUSE_POSIX_TERMIOS -DUSE_POSIX_WAIT -DDISABLE_SETUID -nostdinc -I$root/src/build/musl/sysroot/include -isystem $gcc_include -I$root/src/build/nano/ncurses/include -I$root/src/tools/pkg/repo/_src/twm/xterm -I$prefix/include -I$root/src/tools/pkg/repo/_src/twm/deps/libX11/include -I$root/src/build/x11/libX11/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxtrans -idirafter /usr/include"
 xterm_ld="-nostdlib -static -no-pie -L$prefix/lib -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-T,$root/src/user/c_linker.ld $root/src/build/musl/sysroot/lib/crt1.o $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a"
 CPPFLAGS="$xterm_cpp" CFLAGS="$common_c" LDFLAGS="$xterm_ld" \
-	LIBS="-lXaw -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm" \
-	ac_cv_header_curses_h=no ac_cv_header_ncurses_h=no ac_cv_header_termcap_h=no \
+	LIBS="-Wl,--start-group -lXaw -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm $root/src/build/nano/ncurses/lib/libncurses.a $root/src/build/musl/sysroot/lib/libc.a -Wl,--end-group -lgcc" \
 	cf_cv_have_utmp=no cf_cv_path_lastlog=no \
 	build_component "PKG xterm configure" "$root/src/tools/pkg/repo/_src/twm/xterm/configure" --build="$build_triplet" --host=x86_64-elf --prefix="$prefix" \
 	--disable-imake --disable-man-pages --disable-setuid --disable-luit \
@@ -125,6 +124,6 @@ CPPFLAGS="$xterm_cpp" CFLAGS="$common_c" LDFLAGS="$xterm_ld" \
 	--disable-tcap-query --disable-tcap-fkeys --disable-pty-handshake \
 	--with-app-defaults=/etc/X11/app-defaults
 rm -f xterm
-build_component "PKG xterm" make -j2 LIBS="-Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a -lXaw7 -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm -Wl,--end-group"
+build_component "PKG xterm" make -j2 LIBS="-Wl,--start-group $root/src/build/musl/sysroot/lib/libc.a $prefix/lib/libi18n.a -lXaw7 -lXmu -lXt -lSM -lICE -lXext -lX11 -lxcb -lXau -lXpm $root/src/build/nano/ncurses/lib/libncurses.a -Wl,--end-group -lgcc"
 
 sh "$root/src/tools/builders/build_feh.sh"
