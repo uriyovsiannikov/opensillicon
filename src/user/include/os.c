@@ -43,13 +43,6 @@ long u_framebuffer_info(struct os_framebuffer_info *info)
 { return syscall4(SYSCALL_FRAMEBUFFER_INFO, (uintptr_t)info, 0, 0, 0); }
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect)
 { return syscall4(SYSCALL_FRAMEBUFFER_PRESENT_RECT, (uintptr_t)rect, 0, 0, 0); }
-_Noreturn void u_exit(uint64_t status)
-{
-	(void)syscall4(SYSCALL_EXIT, status, 0, 0, 0);
-	__asm__ volatile ("ud2");
-	__builtin_unreachable();
-}
-
 void u_putn(const char *string, size_t length) { (void)u_write(1, string, length); }
 void u_puts(const char *string) { u_putn(string, u_strlen(string)); }
 
@@ -72,14 +65,4 @@ u_strlen(const char *string)
 	size_t length = 0;
 	while (string[length] != '\0') length++;
 	return length;
-}
-
-int
-u_streq(const char *left, const char *right)
-{
-	while (*left != '\0' && *left == *right) {
-		left++;
-		right++;
-	}
-	return *left == *right;
 }
