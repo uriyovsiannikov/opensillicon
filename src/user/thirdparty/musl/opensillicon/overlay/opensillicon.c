@@ -16,6 +16,7 @@
 #include "abi/syscall.h"
 #include "abi/fcntl.h"
 #include "abi/time.h"
+#include "abi/dirent.h"
 #include "abi/credentials.h"
 #include "abi/termios.h"
 #include "abi/stat.h"
@@ -35,7 +36,17 @@ _Static_assert(sizeof(struct stat)==sizeof(struct os_stat), "stat ABI size");
 _Static_assert(offsetof(struct stat, st_mode)==offsetof(struct os_stat, st_mode), "stat mode ABI");
 _Static_assert(offsetof(struct stat, st_size)==offsetof(struct os_stat, st_size), "stat size ABI");
 _Static_assert(offsetof(struct stat, st_atim)==offsetof(struct os_stat, st_atime_sec), "stat timestamps ABI");
-_Static_assert(offsetof(struct dirent, d_name)==19, "getdents ABI");
+#define CHECK_DIRENT_FIELD(public, native) \
+ _Static_assert(offsetof(struct dirent, public)==offsetof(struct os_dirent_record, native), "dirent " #public " offset ABI"); \
+ _Static_assert(sizeof(((struct dirent *)0)->public)==sizeof(((struct os_dirent_record *)0)->native), "dirent " #public " width ABI")
+CHECK_DIRENT_FIELD(d_ino, inode);
+CHECK_DIRENT_FIELD(d_off, offset);
+CHECK_DIRENT_FIELD(d_reclen, record_length);
+CHECK_DIRENT_FIELD(d_type, type);
+#undef CHECK_DIRENT_FIELD
+_Static_assert(offsetof(struct dirent, d_name)==offsetof(struct os_dirent_record, name), "dirent name ABI");
+_Static_assert(_Alignof(struct dirent)==OS_DIRENT_ALIGNMENT, "dirent alignment ABI");
+_Static_assert(DT_CHR==OS_DT_CHR && DT_DIR==OS_DT_DIR && DT_REG==OS_DT_REG && DT_SOCK==OS_DT_SOCK, "dirent types ABI");
 
 _Static_assert(sizeof(struct timespec)==sizeof(struct os_timespec), "timespec ABI size");
 _Static_assert(offsetof(struct timespec, tv_sec)==offsetof(struct os_timespec, tv_sec), "timespec seconds ABI");
@@ -217,7 +228,7 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  case SYS_stat: return call(SYSCALL_FSTATAT,AT_FDCWD,a,b,0,0,0);
  case SYS_lstat: return call(SYSCALL_FSTATAT,AT_FDCWD,a,b,AT_SYMLINK_NOFOLLOW,0,0);
  case SYS_getdents64:
-  if(c>4096)c=4096;
+  if(c>OS_GETDENTS_MAX)c=OS_GETDENTS_MAX;
   s=SYSCALL_GETDENTS; break;
  case SYS_mkdir: s=SYSCALL_MKDIR; break;
  case SYS_unlink: return call(SYSCALL_UNLINK,a,0,0,0,0,0);

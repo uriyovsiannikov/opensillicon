@@ -1,5 +1,6 @@
 #include "syscall_internal.h"
 #include "abi/stat.h"
+#include "abi/dirent.h"
 
 #include "kernel/mount.h"
 #include "kernel/process.h"
@@ -36,27 +37,10 @@ stat_from_metadata(struct os_stat *value,
 	return 0;
 }
 
-struct native_dirent_record {
-	uint64_t inode;
-	int64_t offset;
-	uint16_t record_length;
-	uint8_t type;
-	char name[];
-};
-
-_Static_assert(offsetof(struct native_dirent_record, name) == 19,
-	"native getdents record header ABI mismatch");
-
-#define NATIVE_DT_DIR 4U
-#define NATIVE_DT_REG 8U
-#define NATIVE_DT_CHR 2U
-#define NATIVE_DT_SOCK 12U
-#define SYSCALL_GETDENTS_MAX 4096U
-
 static struct interrupt_frame *
 syscall_getdents(struct interrupt_frame *frame)
 {
-	uint64_t records[SYSCALL_GETDENTS_MAX / sizeof(uint64_t)];
+	uint64_t records[OS_GETDENTS_MAX / sizeof(uint64_t)];
 	char *output = (char *)records;
 	struct fd_table *table = current_fd_table();
 	uint64_t descriptor = frame->rdi;
@@ -69,7 +53,7 @@ syscall_getdents(struct interrupt_frame *frame)
 		syscall_error(frame, EBADF);
 		return frame;
 	}
-	if (frame->rdx == 0 || frame->rdx > SYSCALL_GETDENTS_MAX) {
+	if (frame->rdx == 0 || frame->rdx > OS_GETDENTS_MAX) {
 		syscall_error(frame, EINVAL);
 		return frame;
 	}
@@ -83,7 +67,7 @@ syscall_getdents(struct interrupt_frame *frame)
 
 	while (written < capacity) {
 		struct vfs_dirent entry;
-		struct native_dirent_record *record;
+		struct os_dirent_record *record;
 		uint64_t before = fd_get_offset(table, descriptor);
 		uint64_t after;
 		size_t name_length = 0;
@@ -112,22 +96,22 @@ syscall_getdents(struct interrupt_frame *frame)
 			break;
 		}
 		if (entry.type == VNODE_DIRECTORY)
-			type = NATIVE_DT_DIR;
+			type = OS_DT_DIR;
 		else if (entry.type == VNODE_REGULAR)
-			type = NATIVE_DT_REG;
+			type = OS_DT_REG;
 		else if (entry.type == VNODE_SOCKET)
-			type = NATIVE_DT_SOCK;
+			type = OS_DT_SOCK;
 		else if (entry.type == VNODE_DEVICE)
-			type = NATIVE_DT_CHR;
+			type = OS_DT_CHR;
 		else {
 			(void)fd_set_offset(table, descriptor, before);
 			if (written == 0)
 				syscall_error(frame, EIO);
 			break;
 		}
-		record_length = (offsetof(struct native_dirent_record, name) +
-		    name_length + 1U + sizeof(uint64_t) - 1U) &
-		    ~(sizeof(uint64_t) - 1U);
+		record_length = (offsetof(struct os_dirent_record, name) +
+		    name_length + 1U + OS_DIRENT_ALIGNMENT - 1U) &
+		    ~(size_t)(OS_DIRENT_ALIGNMENT - 1U);
 		if (record_length > UINT16_MAX || record_length > capacity - written) {
 			(void)fd_set_offset(table, descriptor, before);
 			if (written == 0)
@@ -136,7 +120,7 @@ syscall_getdents(struct interrupt_frame *frame)
 		}
 		for (index = 0; index < record_length; index++)
 			output[written + index] = 0;
-		record = (struct native_dirent_record *)(void *)(output + written);
+		record = (struct os_dirent_record *)(void *)(output + written);
 		record->inode = entry.inode;
 		record->offset = (int64_t)after;
 		record->record_length = (uint16_t)record_length;

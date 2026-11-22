@@ -29,6 +29,7 @@
 #undef hidden
 #include "abi/syscall.h"
 #include "abi/fcntl.h"
+#include "abi/dirent.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -87,6 +88,40 @@ static int files_check(void)
  char result[10000];
  CHECK(fread(result,1,sizeof result,f)==sizeof result);
  CHECK(!memcmp(result,payload,sizeof result) && fclose(f)==0);
+ CHECK(mkdir("entry-dir",0700)==0);
+ int raw_dir=open(".",O_RDONLY|O_DIRECTORY), fresh_dir=open(".",O_RDONLY|O_DIRECTORY);
+ CHECK(raw_dir>=0 && fresh_dir>=0);
+ struct { uint64_t words[OS_GETDENTS_MAX/8]; uint64_t guard; } records;
+ uint64_t fresh_records[OS_GETDENTS_MAX/8];
+ memset(&records,0xff,sizeof records);
+ CHECK(__os_raw(SYSCALL_GETDENTS,raw_dir,(long)records.words,1,0,0,0)==-EINVAL);
+ CHECK(__os_raw(SYSCALL_GETDENTS,raw_dir,1,OS_GETDENTS_MAX,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_GETDENTS,raw_dir,(long)records.words,OS_GETDENTS_MAX+1,0,0,0)==-EINVAL);
+ long record_bytes=__os_raw(SYSCALL_GETDENTS,raw_dir,(long)records.words,OS_GETDENTS_MAX,0,0,0);
+ CHECK(record_bytes>0 && record_bytes<=OS_GETDENTS_MAX);
+ CHECK(__os_raw(SYSCALL_GETDENTS,fresh_dir,(long)fresh_records,OS_GETDENTS_MAX,0,0,0)==record_bytes);
+ CHECK(!memcmp(records.words,fresh_records,(size_t)record_bytes) && records.guard==UINT64_MAX);
+ for(size_t i=(size_t)record_bytes;i<sizeof records.words;i++)
+  CHECK(((unsigned char *)records.words)[i]==0xff);
+ size_t record_position=0; int raw_files=0, raw_directories=0; int64_t last_offset=0;
+ while(record_position<(size_t)record_bytes) {
+  struct os_dirent_record *record=(void *)((char *)records.words+record_position);
+  size_t header=offsetof(struct os_dirent_record,name);
+  CHECK((size_t)record_bytes-record_position>=header+1);
+  CHECK(record->record_length>=header+1 && record->record_length%OS_DIRENT_ALIGNMENT==0 &&
+      record->record_length<=(size_t)record_bytes-record_position);
+  CHECK(record->inode!=0 && record->offset>last_offset);
+  last_offset=record->offset;
+  char *end=memchr(record->name,0,record->record_length-header);
+  CHECK(end!=NULL && end!=record->name);
+  if(!strcmp(record->name,"data")) { CHECK(record->type==OS_DT_REG); raw_files++; }
+  if(!strcmp(record->name,"entry-dir")) { CHECK(record->type==OS_DT_DIR); raw_directories++; }
+  for(char *padding=end+1;padding<(char *)record+record->record_length;padding++) CHECK(*padding==0);
+  record_position+=record->record_length;
+ }
+ CHECK(record_position==(size_t)record_bytes && raw_files==1 && raw_directories==1);
+ CHECK(__os_raw(SYSCALL_GETDENTS,raw_dir,(long)records.words,OS_GETDENTS_MAX,0,0,0)==0);
+ CHECK(close(raw_dir)==0 && close(fresh_dir)==0 && rmdir("entry-dir")==0);
  DIR *dir=opendir(".");
  CHECK(dir);
  CHECK(fcntl(dirfd(dir),F_GETFD)&FD_CLOEXEC);
