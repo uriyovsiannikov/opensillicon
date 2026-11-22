@@ -733,11 +733,7 @@ Lisp_MakePipe(LispBuiltin *builtin)
 	    close(ofd[1]);
 	    close(efd[0]);
 	    close(efd[1]);
-#ifdef OPEN_SILLICON
-	    execv("/bin/sh", argv);
-#else
 	    execve("/bin/sh", argv, environ);
-#endif
 	    exit(-1);
 	}
 	else if (program->pid < 0)
