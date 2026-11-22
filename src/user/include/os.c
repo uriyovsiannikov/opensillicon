@@ -25,8 +25,6 @@ long u_open_mode(const char *path, uint64_t flags, uint32_t mode)
 long u_mkdir(const char *path, uint32_t mode)
 { return syscall4(SYSCALL_MKDIR, (uintptr_t)path, mode, 0, 0); }
 long u_close(uint64_t fd) { return syscall4(SYSCALL_CLOSE, fd, 0, 0, 0); }
-long u_stat_path(const char *path, struct os_stat *status)
-{ return syscall4(SYSCALL_FSTATAT, OS_AT_FDCWD, (uintptr_t)path, (uintptr_t)status, 0); }
 long u_ioctl(uint64_t fd, uint64_t request, void *argument)
 { return syscall4(SYSCALL_IOCTL, fd, request, (uintptr_t)argument, 0); }
 long u_network_ipv4_config(struct u_ipv4_config *config)

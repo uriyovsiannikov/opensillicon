@@ -7,7 +7,6 @@
 #include "abi/framebuffer.h"
 #include "abi/input.h"
 #include "abi/credentials.h"
-#include "abi/stat.h"
 #include "abi/process_info.h"
 
 #define U_O_RDONLY 0U
@@ -59,8 +58,6 @@ long u_open(const char *path, uint64_t flags);
 long u_open_mode(const char *path, uint64_t flags, uint32_t mode);
 long u_mkdir(const char *path, uint32_t mode);
 long u_close(uint64_t fd);
-long u_stat_path(const char *path, struct os_stat *status);
-int u_find_command(const char *name, char *path, size_t capacity);
 long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_network_ipv4_config(struct u_ipv4_config *config);
 long u_network_dns_server(uint8_t address[4]);
