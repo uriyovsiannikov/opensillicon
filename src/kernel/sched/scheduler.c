@@ -91,7 +91,7 @@ reap_dead_threads(void)
 		struct thread *next = thread->dead_next;
 
 		if (!kheap_free(thread->stack) || !kheap_free(thread)) {
-			klog("OpenSillicon panic: failed to release thread resources\n");
+			klog("panic: failed to release thread resources\n");
 			kernel_halt();
 		}
 		thread = next;
@@ -251,7 +251,7 @@ thread_create_on_cpu(size_t logical_id, thread_entry entry, void *argument)
 	thread->stack = kheap_alloc(THREAD_STACK_SIZE);
 	if (thread->stack == NULL) {
 		if (!kheap_free(thread)) {
-			klog("OpenSillicon panic: failed to release thread control block\n");
+			klog("panic: failed to release thread control block\n");
 			kernel_halt();
 		}
 		return false;
@@ -281,7 +281,7 @@ thread_create_on_cpu(size_t logical_id, thread_entry entry, void *argument)
 	remote = current_cpu == NULL ? logical_id != 0 :
 	    current_cpu->logical_id != logical_id;
 	if (remote && target_is_smp && !smp_kick_cpu(logical_id)) {
-		klog("OpenSillicon panic: failed to wake scheduled CPU\n");
+		klog("panic: failed to wake scheduled CPU\n");
 		kernel_halt();
 	}
 	return true;
@@ -307,7 +307,7 @@ thread_remove(struct scheduler_cpu *cpu, struct thread *thread)
 	if (cpu->run_queue == thread)
 		cpu->run_queue = thread->next;
 	if (thread->process == NULL || thread->process->thread_count <= 1) {
-		klog("OpenSillicon panic: invalid process thread count\n");
+		klog("panic: invalid process thread count\n");
 		kernel_halt();
 	}
 	thread->process->thread_count--;
@@ -326,7 +326,7 @@ thread_yield(void)
 		return;
 	flags = interrupt_state_disable();
 	if ((flags & (1ULL << 9)) == 0) {
-		klog("OpenSillicon panic: thread_yield with interrupts disabled\n");
+		klog("panic: thread_yield with interrupts disabled\n");
 		kernel_halt();
 	}
 	reap_dead_threads();
@@ -361,7 +361,7 @@ thread_exit(void)
 	finished = cpu->current;
 	next = finished->next;
 	if (finished == &boot_threads[cpu->logical_id]) {
-		klog("OpenSillicon panic: bootstrap thread exited\n");
+		klog("panic: bootstrap thread exited\n");
 		kernel_halt();
 	}
 	thread_remove(cpu, finished);
@@ -545,10 +545,10 @@ scheduler_verify_cpu_queues(void)
 	for (size_t i = 0; i < count; i++) {
 		if (!targets[i])
 			continue;
-		klog("OpenSillicon test: scheduler CPU ");
+		klog("test: scheduler cpu ");
 		klog_u64(i);
 		klog(" threads 2 yields 64 reaped 2\n");
-		klog("OpenSillicon test: scheduler submit CPU ");
+		klog("test: scheduler submit cpu ");
 		klog_u64(i);
 		klog(" target ");
 		klog_u64(child_probes[i][0].logical_id);
