@@ -1,64 +1,69 @@
-#include "../include/os.h"
-
-#define BUFFER_SIZE 512U
-#define PATH_SIZE 256U
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 static int
-copy_descriptor(uint64_t descriptor)
+copy_descriptor(int input)
 {
-	char buffer[BUFFER_SIZE];
-	long amount;
+	char buffer[8192];
+	ssize_t amount;
 
-	while ((amount = u_read(descriptor, buffer, sizeof(buffer))) > 0) {
-		size_t offset = 0;
-		while (offset < (size_t)amount) {
-			long written = u_write(1, buffer + offset,
-			    (size_t)amount - offset);
-			if (written <= 0)
-				return 0;
-			offset += (size_t)written;
+	for (;;) {
+		amount = read(input, buffer, sizeof(buffer));
+		if (amount == 0)
+			return 0;
+		if (amount < 0) {
+			if (errno == EINTR)
+				continue;
+			return errno;
 		}
+		if (fwrite(buffer, 1, (size_t)amount, stdout) != (size_t)amount)
+			return errno != 0 ? errno : EIO;
 	}
-	return amount == 0;
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	uint64_t index;
-	int failed = 0;
+	int option, failed = 0;
 
-	if (argc == 1)
-		return copy_descriptor(0) ? 0 : 1;
-	for (index = 1; index < argc; index++) {
-		long descriptor;
-		if (u_streq(argv[index], "-")) {
-			if (!copy_descriptor(0)) {
-				u_puts("cat: stdin read or output failed\n");
-				failed = 1;
-			}
-			continue;
+	opterr = 0;
+	while ((option = getopt(argc, argv, "u")) != -1) {
+		if (option != 'u') {
+			fputs("usage: cat [-u] [file ...]\n", stderr);
+			return 2;
 		}
-		descriptor = u_open(argv[index], U_O_RDONLY);
-		if (descriptor < 0) {
-			u_puts("cat: cannot open: ");
-			u_puts(argv[index]);
-			u_puts("\n");
+		setvbuf(stdout, NULL, _IONBF, 0);
+	}
+	if (optind == argc) {
+		int error = copy_descriptor(STDIN_FILENO);
+		if (error != 0) {
+			fprintf(stderr, "cat: stdin: %s\n", strerror(error));
+			failed = 1;
+		}
+	}
+	for (int i = optind; i < argc; i++) {
+		int from_stdin = strcmp(argv[i], "-") == 0;
+		int input = from_stdin ? STDIN_FILENO :
+		    open(argv[i], O_RDONLY);
+		if (input < 0) {
+			fprintf(stderr, "cat: %s: %s\n", argv[i], strerror(errno));
 			failed = 1;
 			continue;
 		}
-		if (!copy_descriptor((uint64_t)descriptor)) {
-			u_puts("cat: read/write failed: ");
-			u_puts(argv[index]);
-			u_puts("\n");
+		int error = copy_descriptor(input);
+		if (!from_stdin && close(input) != 0 && error == 0)
+			error = errno;
+		if (error != 0) {
+			fprintf(stderr, "cat: %s: %s\n", argv[i], strerror(error));
 			failed = 1;
 		}
-		if (u_close((uint64_t)descriptor) < 0) {
-			u_puts("cat: close failed: ");
-			u_puts(argv[index]);
-			u_puts("\n");
-			failed = 1;
-		}
+	}
+	if (fflush(stdout) != 0 || ferror(stdout)) {
+		perror("cat: stdout");
+		failed = 1;
 	}
 	return failed;
 }
