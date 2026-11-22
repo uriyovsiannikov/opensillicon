@@ -6060,7 +6060,7 @@ GetBytesAvailable(Display *dpy)
 
     FD_ZERO(&set);
     FD_SET(fd, &set);
-    result = (Select(fd + 1, &set, NULL, NULL, &select_timeout) > 0) ? 1 : 0;
+    result = (select(fd + 1, &set, NULL, NULL, &select_timeout) > 0) ? 1 : 0;
 #else
     struct pollfd pollfds[1];
 

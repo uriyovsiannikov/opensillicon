@@ -6823,7 +6823,7 @@ in_put(XtermWidget xw)
 	     */
 	    if (size == FRG_SIZE) {
 		init_timeval(&my_timeout, 0L);
-		i = Select(max_plus1, &select_mask, &write_mask, 0, &my_timeout);
+		i = select(max_plus1, &select_mask, &write_mask, 0, &my_timeout);
 		if (i > 0 && FD_ISSET(screen->respond, &select_mask)) {
 		    sched_yield();
 		} else
@@ -6842,13 +6842,13 @@ in_put(XtermWidget xw)
 
 	/* Update the masks and, unless X events are already in the queue,
 	   wait for I/O to be possible. */
-	XFD_COPYSET(&Select_mask, &select_mask);
+	select_mask = Select_mask;
 	/* in selection mode xterm does not read pty */
 	if (screen->eventMode != NORMAL)
 	    FD_CLR(screen->respond, &select_mask);
 
 	if (v_bufptr > v_bufstr) {
-	    XFD_COPYSET(&pty_mask, &write_mask);
+	    write_mask = pty_mask;
 	} else
 	    FD_ZERO(&write_mask);
 	init_timeval(&my_timeout, 0L);
@@ -6905,7 +6905,7 @@ in_put(XtermWidget xw)
 	if (need_cleanup)
 	    NormalExit();
 	xtermFlushDbe(xw);
-	i = Select(max_plus1, &select_mask, &write_mask, 0,
+	i = select(max_plus1, &select_mask, &write_mask, 0,
 		   (time_select ? &my_timeout : NULL));
 	if (i < 0) {
 	    if (errno != EINTR)

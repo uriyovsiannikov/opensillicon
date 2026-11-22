@@ -356,13 +356,7 @@ extern int errno;
 #else
 #define IGNORE_RC(func) (void) func
 #endif /* gcc workarounds */
-#if (XtSpecificationRelease >= 6) && !defined(NO_XPOLL_H) && !defined(sun)
-#include <X11/Xpoll.h>
-#define USE_XPOLL_H 1
-#else
-#define Select(n,r,w,e,t) select(n,(fd_set*)r,(fd_set*)w,(fd_set*)e,(struct timeval *)t)
-#define XFD_COPYSET(src,dst) memcpy((dst)->fds_bits, (src)->fds_bits, sizeof(fd_set))
-#endif
+#include <sys/select.h>
 
 #ifdef TIME_WITH_SYS_TIME
 # include <sys/time.h>
@@ -378,16 +372,6 @@ extern int errno;
 /* these may be needed for sig_atomic_t */
 #include <sys/types.h>
 #include <signal.h>
-
-#ifdef USE_SYS_SELECT_H
-
-#if defined(USE_XPOLL_H) && defined(AIXV3) && defined(NFDBITS)
-#undef NFDBITS			/* conflict between X11/Xpoll.h and sys/select.h */
-#endif
-
-#include <sys/select.h>
-
-#endif /* USE_SYS_SELECT_H */
 
 #include <setjmp.h>
 

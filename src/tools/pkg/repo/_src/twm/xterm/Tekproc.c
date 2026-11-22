@@ -795,13 +795,13 @@ Tinput(TekWidget tw)
 
 	if (nplot > 0)		/* flush line */
 	    TekFlush(tw);
-	XFD_COPYSET(&pty_mask, &Tselect_mask);
+	Tselect_mask = pty_mask;
 	for (;;) {
 #ifdef CRAY
 	    struct timeval crocktimeout;
 	    crocktimeout.tv_sec = 0;
 	    crocktimeout.tv_usec = 0;
-	    (void) Select(max_plus1,
+	    (void) select(max_plus1,
 			  &Tselect_mask, NULL, NULL,
 			  &crocktimeout);
 #endif
@@ -813,13 +813,13 @@ Tinput(TekWidget tw)
 		Ttoggled = False;
 	    }
 	    if (xtermAppPending() & XtIMXEvent) {
-		XFD_COPYSET(&X_mask, &Tselect_mask);
+		Tselect_mask = X_mask;
 	    } else {
 		XFlush(XtDisplay(tw));
-		XFD_COPYSET(&Select_mask, &Tselect_mask);
+		Tselect_mask = Select_mask;
 		if (need_cleanup)
 		    Cleanup(0);
-		if (Select(max_plus1, &Tselect_mask, NULL, NULL, NULL) < 0) {
+		if (select(max_plus1, &Tselect_mask, NULL, NULL, NULL) < 0) {
 		    if (errno != EINTR)
 			SysError(ERROR_TSELECT);
 		    continue;
