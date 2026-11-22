@@ -56,10 +56,13 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
                 ('touch /tmp/native-openat-check', None),
                 ('stat /tmp/native-openat-check', '  Mode: 644'),
                 ('rm /tmp/native-openat-check', None),
+                ('doas /bin/pkg list -i', 'Installed packages (0)'),
+                ('doas /bin/pkg repo https://127.0.0.1:1', 'Repository saved in /etc/pkg.conf'),
+                ('doas /bin/sysupgrade check', 'sysupgrade: unable to fetch a verified release'),
             ]:
                 offset = len(log.read_text(errors='replace'))
                 for char in line + '\n':
-                    key = {' ': 'spc', '\n': 'ret', '/': 'slash', '-': 'minus'}.get(char, char)
+                    key = {' ': 'spc', '\n': 'ret', '/': 'slash', '-': 'minus', '.': 'dot', ':': 'shift-semicolon'}.get(char, char)
                     command('human-monitor-command', {'command-line': 'sendkey ' + key + ' 1'})
                     time.sleep(.03)
                 end = wait_for(expected, offset) if expected is not None else offset

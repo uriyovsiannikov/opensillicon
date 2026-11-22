@@ -760,7 +760,6 @@ static int compare_installed_entries(const void *left, const void *right)
 static int list_installed(void)
 {
 	char path[256];
-	struct installed_package_entry packages[PKG_MAX_PACKAGES];
 	size_t count = 0;
 	if (lock_database() < 0 || rooted(path, "var/db/pkg") < 0)
 		return 1;
@@ -768,6 +767,11 @@ static int list_installed(void)
 	if (!dir) {
 		perror("pkg: package database");
 		return 1;
+	}
+	struct installed_package_entry *packages = calloc(PKG_MAX_PACKAGES, sizeof(*packages));
+	if (packages == NULL) {
+		closedir(dir);
+		return fail("cannot allocate installed package list");
 	}
 	int result = 0;
 	for (;;) {
@@ -806,13 +810,16 @@ static int list_installed(void)
 		free(bytes);
 	}
 	closedir(dir);
-	if (result)
+	if (result) {
+		free(packages);
 		return result;
+	}
 	qsort(packages, count, sizeof(packages[0]), compare_installed_entries);
 	printf("Installed packages (%zu):\n", count);
 	for (size_t i = 0; i < count; i++)
 		printf("%s %s - %s\n", packages[i].name, packages[i].version,
 		    packages[i].description);
+	free(packages);
 	return 0;
 }
 

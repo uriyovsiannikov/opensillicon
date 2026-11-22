@@ -63,16 +63,15 @@ static int fetch_release(struct pkg_archive *archive, uint8_t **package_bytes)
 	char repo[256], index_path[] = "/index", package_path[160];
 	size_t index_size = 0, package_size = 0, count = 0;
 	uint8_t *index = NULL, *bytes = NULL;
-	struct pkg_index_entry entries[PKG_MAX_PACKAGES], *selected = NULL;
+	struct pkg_index_entry *entries = NULL, *selected = NULL;
 	int result = -1;
 	if (repository(repo)) { fputs("sysupgrade: invalid /etc/pkg.conf\n", stderr); goto done; }
 	index = pkg_http_get(repo, index_path, PKG_INDEX_MAX, &index_size, false);
 	if (!index || memchr(index, 0, index_size)) goto done;
-	char *index_text = malloc(index_size + 1);
-	if (!index_text) goto done;
-	memcpy(index_text, index, index_size); index_text[index_size] = 0;
-	const char *parse_error = pkg_index_parse(index_text, entries, &count);
-	free(index_text);
+	entries = calloc(PKG_MAX_PACKAGES, sizeof(*entries));
+	if (!entries) { fputs("sysupgrade: cannot allocate repository index\n", stderr); goto done; }
+	/* HTTP bodies already have a trailing NUL; parse the owned buffer in place. */
+	const char *parse_error = pkg_index_parse((char *)index, entries, &count);
 	if (parse_error) { fprintf(stderr, "sysupgrade: repository index: %s\n", parse_error); goto done; }
 	for (size_t i = 0; i < count; i++)
 		if (!strcmp(entries[i].name, "os-kernel") &&
@@ -94,7 +93,7 @@ static int fetch_release(struct pkg_archive *archive, uint8_t **package_bytes)
 	result = 0;
 done:
 	if (result) pkg_archive_release(archive);
-	free(index); free(bytes);
+	free(entries); free(index); free(bytes);
 	if (result) fputs("sysupgrade: unable to fetch a verified release\n", stderr);
 	return result;
 }
