@@ -23,7 +23,7 @@
 #define LOG_DIR "/var/log/services"
 #define MAX_SERVICES 32
 #define CONFIG_SIZE 2048
-#define LOOP_TICKS 5
+#define LOOP_DELAY_NS 50000000L
 #define RESTART_DELAY_MS 1000
 #define RAPID_EXIT_MS 10000
 #define RAPID_EXIT_LIMIT 5
@@ -745,6 +745,7 @@ service_manager(void)
 		if (listener >= 0)
 			serve_control(now);
 		advance_services(now);
-		(void)u_sleep_ticks(LOOP_TICKS);
+		const struct timespec delay = {.tv_nsec = LOOP_DELAY_NS};
+		(void)nanosleep(&delay, NULL);
 	}
 }

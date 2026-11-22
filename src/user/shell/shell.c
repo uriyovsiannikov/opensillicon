@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
 
@@ -812,7 +813,8 @@ main(int argc, char **argv)
 					u_puts("\nOpenSillicon shell: no keyboard controller available\n");
 					waiting_for_keyboard = true;
 				}
-				(void)u_sleep_ticks(100);
+				const struct timespec delay = {.tv_sec = 1};
+				(void)nanosleep(&delay, NULL);
 				continue;
 			}
 			(void)u_puts("\n");
