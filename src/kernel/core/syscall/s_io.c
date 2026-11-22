@@ -274,14 +274,22 @@ load_iovecs(struct interrupt_frame *frame, struct syscall_iovec *vectors,
 	    frame->rsi, (size_t)(count * sizeof(*vectors)))))
 		return -(int)EFAULT;
 	for (i = 0; i < count; i++) {
-		if (vectors[i].length > SYSCALL_MAX_IOV_BYTES - total_bytes)
+		if (vectors[i].length > INT64_MAX - total_bytes)
 			return -(int)EINVAL;
 		total_bytes += vectors[i].length;
 		if (vectors[i].length != 0 &&
 		    vectors[i].base > UINT64_MAX - vectors[i].length)
 			return -(int)EFAULT;
 	}
-	*total = total_bytes;
+	/* Bound work per syscall with a short result, rather than rejecting
+	 * large application buffers. libc can continue the remaining I/O. */
+	uint64_t budget = SYSCALL_MAX_IOV_BYTES;
+	for (i = 0; i < count; i++) {
+		if (vectors[i].length > budget)
+			vectors[i].length = budget;
+		budget -= vectors[i].length;
+	}
+	*total = SYSCALL_MAX_IOV_BYTES - budget;
 	return 0;
 }
 

@@ -12,6 +12,7 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <signal.h>
@@ -36,6 +37,52 @@ static _Thread_local int tls = 123;
 static int constructed;
 __attribute__((constructor)) static void construct(void) { constructed=42; }
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr,"MUSL_FAIL line %d: %s errno=%d\n",__LINE__,#condition,errno); return __LINE__%254+1; } } while (0)
+static int large_iovec_check(void)
+{
+ const size_t length=256*1024+37;
+ unsigned char *data=malloc(length), *result=malloc(length);
+ CHECK(data && result);
+ for(size_t i=0;i<length;i++) data[i]=(unsigned char)(i*17+3);
+ int fd=open("/musl-large-io",O_CREAT|O_EXCL|O_RDWR,0600);
+ CHECK(fd>=0);
+ struct iovec vectors[2]={{data,17},{data+17,length-17}};
+ ssize_t amount=writev(fd,vectors,2);
+ CHECK(amount>17 && (size_t)amount<length);
+ size_t done=(size_t)amount;
+ while(done<length) {
+  struct iovec rest={data+done,length-done};
+  amount=writev(fd,&rest,1); CHECK(amount>0 && (size_t)amount<=length-done);
+  done+=(size_t)amount;
+ }
+ CHECK(lseek(fd,0,SEEK_CUR)==(off_t)length && lseek(fd,0,SEEK_SET)==0);
+ vectors[0]=(struct iovec){result,13};
+ vectors[1]=(struct iovec){result+13,length-13};
+ amount=readv(fd,vectors,2); CHECK(amount>13 && (size_t)amount<length);
+ done=(size_t)amount;
+ while(done<length) {
+  struct iovec rest={result+done,length-done};
+  amount=readv(fd,&rest,1); CHECK(amount>0 && (size_t)amount<=length-done);
+  done+=(size_t)amount;
+ }
+ CHECK(!memcmp(data,result,length));
+ CHECK(readv(fd,vectors,2)==0);
+ struct iovec overflow[2]={{data,(size_t)INT64_MAX},{data,1}};
+ CHECK(writev(fd,overflow,2)==-1 && errno==EINVAL);
+ CHECK(readv(fd,overflow,2)==-1 && errno==EINVAL);
+ CHECK(lseek(fd,0,SEEK_CUR)==(off_t)length);
+ CHECK(__os_raw(SYSCALL_WRITEV,fd,1,1,0,0,0)==-EFAULT);
+ CHECK(writev(fd,NULL,0)==0 && readv(fd,NULL,0)==0);
+ CHECK(close(fd)==0);
+ FILE *file=fopen("/musl-large-io","w+"); CHECK(file);
+ CHECK(fwrite("prefix",1,6,file)==6);
+ CHECK(fwrite(data,1,length,file)==length && fflush(file)==0);
+ CHECK(ftell(file)==(long)length+6 && fseek(file,6,SEEK_SET)==0);
+ memset(result,0,length);
+ CHECK(fread(result,1,length,file)==length && !memcmp(data,result,length));
+ CHECK(fclose(file)==0 && unlink("/musl-large-io")==0);
+ free(result); free(data);
+ return 0;
+}
 static int files_check(void)
 {
  char cwd[256];
@@ -956,6 +1003,8 @@ int main(int argc, char **argv)
  if(sleep_result) return sleep_result;
  int sysctl_result=sysctl_check();
  if(sysctl_result) return sysctl_result;
+ int large_io_result=large_iovec_check();
+ if(large_io_result) return large_io_result;
  int file_result=files_check();
  if(file_result) return file_result;
  int at_result=openat_check();

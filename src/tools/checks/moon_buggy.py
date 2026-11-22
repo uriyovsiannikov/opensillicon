@@ -26,11 +26,7 @@ int main(void) {
  FILE *file=fopen("/tmp/moon-buggy","wb");
  size_t length=(size_t)(game_end-game_start);
  if(!file) return 1;
- for(size_t offset=0;offset<length;) {
-  size_t amount=length-offset; if(amount>4096) amount=4096;
-  if(fwrite(game_start+offset,1,amount,file)!=amount) return 1;
-  offset+=amount;
- }
+ if(fwrite(game_start,1,length,file)!=length) return 1;
  if(fclose(file) || chmod("/tmp/moon-buggy",0755)) return 1;
  const char *options[]={"-V","-h"};
  for(int i=0;i<2;i++) {
