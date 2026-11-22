@@ -1,30 +1,31 @@
+#define _GNU_SOURCE
 /* Exercise the port's formatting and query failure paths with deterministic data. */
 #define main fetch_program_main
 #include "../pkg/repo/_src/fetch/fetch.c"
 #undef main
 #include <assert.h>
+#include <stdlib.h>
 #include <stdio.h>
 
-static char output[256];
+static char *output;
 static size_t used;
 static int failed_query;
 
-size_t u_strlen(const char *text) { return strlen(text); }
-
-long u_write(uint64_t fd, const void *data, size_t length)
+static void
+reset_output(void)
 {
-	assert(fd == 1 && used + length < sizeof(output));
-	memcpy(output + used, data, length);
-	used += length;
-	output[used] = 0;
-	return length;
+	assert(fclose(stdout) == 0);
+	free(output);
+	output = NULL;
+	stdout = open_memstream(&output, &used);
+	assert(stdout);
 }
-void u_put_u64(uint64_t value)
+
+static int
+matches(const char *expected)
 {
-	char buffer[32];
-	int count = snprintf(buffer, sizeof(buffer), "%llu", (unsigned long long)value);
-	assert(count > 0);
-	(void)u_write(1, buffer, (size_t)count);
+	assert(fflush(stdout) == 0);
+	return !strcmp(output, expected);
 }
 int sysctlbyname(const char *name, void *data, size_t *length,
 	const void *replacement, size_t replacement_length)
@@ -65,21 +66,27 @@ int uname(struct utsname *value)
 }
 int main(void)
 {
-	assert(write_memory() && !strcmp(output, "12.0 / 16.0 MiB"));
+	FILE *original_stdout = stdout;
+	stdout = open_memstream(&output, &used);
+	assert(stdout);
+	assert(write_memory() && matches("12.0 / 16.0 MiB"));
 	for (failed_query = 1; failed_query <= 6; failed_query++) {
-		used = 0;
-		assert(write_memory() && !strcmp(output, "unavailable"));
+		reset_output();
+		assert(write_memory() && matches("unavailable"));
 	}
-	failed_query = 0; used = 0;
-	assert(write_uptime() && !strcmp(output, "1h 1m 1s"));
-	failed_query = 7; used = 0;
-	assert(write_uptime() && !strcmp(output, "unavailable"));
-	failed_query = 0; used = 0;
-	assert(write_identity(0) && !strcmp(output, "TestSystem"));
-	used = 0;
-	assert(write_identity(1) && !strcmp(output, "TestMachine"));
-	failed_query = 8; used = 0;
-	assert(write_identity(0) && !strcmp(output, "unavailable"));
+	failed_query = 0; reset_output();
+	assert(write_uptime() && matches("1h 1m 1s"));
+	failed_query = 7; reset_output();
+	assert(write_uptime() && matches("unavailable"));
+	failed_query = 0; reset_output();
+	assert(write_identity(0) && matches("TestSystem"));
+	reset_output();
+	assert(write_identity(1) && matches("TestMachine"));
+	failed_query = 8; reset_output();
+	assert(write_identity(0) && matches("unavailable"));
+	assert(fclose(stdout) == 0);
+	free(output);
+	stdout = original_stdout;
 	puts("fetch typed-query formatting and failure checks passed");
 	return 0;
 }

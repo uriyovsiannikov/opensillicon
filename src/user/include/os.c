@@ -37,7 +37,6 @@ long u_kldload(const char *path)
 { return syscall4(SYSCALL_KLDLOAD, (uintptr_t)path, 0, 0, 0); }
 long u_kldunload(const char *name)
 { return syscall4(SYSCALL_KLDUNLOAD, (uintptr_t)name, 0, 0, 0); }
-long u_getpid(void) { return syscall4(SYSCALL_GETPID, 0, 0, 0, 0); }
 long u_process_info(struct os_process_info *entries, size_t capacity)
 { return syscall4(SYSCALL_PROCESS_INFO, (uintptr_t)entries, capacity, 0, 0); }
 long u_framebuffer_info(struct os_framebuffer_info *info)

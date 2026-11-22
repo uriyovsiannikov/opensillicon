@@ -13,7 +13,7 @@ $(LIBC_BUILD_DIR)/crt1.o: $(LIBC_BUILD_DIR)/libc.a
 	@test -f $@
 
 # Ensure generated musl headers exist before compiling user C programs.
-$(BUILD_DIR)/service.o $(BUILD_DIR)/doas.o $(BUILD_DIR)/svctl.o $(BUILD_DIR)/coreutils/host.o: $(LIBC_ARCHIVE) src/mk/common.mk src/user/Makefile
+$(BUILD_DIR)/service.o $(BUILD_DIR)/doas.o $(BUILD_DIR)/svctl.o: $(LIBC_ARCHIVE) src/mk/common.mk src/user/Makefile
 $(BUILD_DIR)/coreutils/%.o $(BUILD_DIR)/storage/%.o $(BUILD_DIR)/scinstall/%.o $(BUILD_DIR)/pkg/%.o: $(LIBC_ARCHIVE) src/mk/common.mk src/user/Makefile
 
 $(BUILD_DIR)/user_init.o: $(LIBC_ARCHIVE) src/mk/common.mk

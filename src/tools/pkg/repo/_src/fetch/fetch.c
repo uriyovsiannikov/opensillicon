@@ -1,10 +1,13 @@
 #include <dirent.h>
 #include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 #include <string.h>
 #include <sys/sysctl.h>
 #include <sys/utsname.h>
 #include <time.h>
-#include "include/os.h"
 
 #define LOGO_WIDTH 24U
 
@@ -51,23 +54,9 @@ static const char *const bright_palette[] = {
 };
 
 static int
-write_all(const char *text, size_t length)
-{
-	while (length != 0) {
-		long amount = u_write(1, text, length);
-
-		if (amount <= 0 || (size_t)amount > length)
-			return 0;
-		text += (size_t)amount;
-		length -= (size_t)amount;
-	}
-	return 1;
-}
-
-static int
 write_string(const char *text)
 {
-	return write_all(text, u_strlen(text));
+	return fputs(text, stdout) != EOF;
 }
 
 static int
@@ -89,24 +78,15 @@ write_uptime(void)
 	if (clock_gettime(CLOCK_MONOTONIC, &uptime) < 0 || uptime.tv_sec < 0)
 		return write_string("unavailable");
 	uint64_t seconds = (uint64_t)uptime.tv_sec;
-	u_put_u64(seconds / 3600U);
-	if (!write_string("h "))
-		return 0;
-	u_put_u64(seconds / 60U % 60U);
-	if (!write_string("m "))
-		return 0;
-	u_put_u64(seconds % 60U);
-	return write_string("s");
+	return printf("%" PRIu64 "h %" PRIu64 "m %" PRIu64 "s",
+	    seconds / 3600U, seconds / 60U % 60U, seconds % 60U) >= 0;
 }
 
 static int
 write_mib(uint64_t kib)
 {
-	u_put_u64(kib / 1024U);
-	if (!write_string("."))
-		return 0;
-	u_put_u64(kib % 1024U * 10U / 1024U);
-	return 1;
+	return printf("%" PRIu64 ".%" PRIu64, kib / 1024U,
+	    kib % 1024U * 10U / 1024U) >= 0;
 }
 
 static int
@@ -170,26 +150,15 @@ write_dynamic_information(size_t row)
 		}
 		if (closedir(directory) < 0 || read_error != 0)
 			return write_string("unavailable");
-		u_put_u64(count);
-		return 1;
+		return printf("%" PRIu64, count) >= 0;
 	}
 	if (row == 6) {
-		struct u_winsize size;
-		if (u_ioctl(1, 0x5413U, &size) != 0)
+		struct winsize size;
+		if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0)
 			return write_string("unavailable");
-		u_put_u64(size.rows);
-		if (!write_all("x", 1))
-			return 0;
-		u_put_u64(size.columns);
-		return 1;
+		return printf("%ux%u", (unsigned)size.ws_row, (unsigned)size.ws_col) >= 0;
 	}
-	{
-		long pid = u_getpid();
-		if (pid < 0)
-			return write_string("unavailable");
-		u_put_u64((uint64_t)pid);
-		return 1;
-	}
+	return printf("%jd", (intmax_t)getpid()) >= 0;
 }
 
 int
@@ -198,19 +167,19 @@ main(int argc, char **argv)
 	size_t row;
 	(void)argv;
 	if (argc != 1) {
-		u_puts("fetch: arguments are unsupported\n");
+		fputs("fetch: arguments are unsupported\n", stderr);
 		return 1;
 	}
 
 	for (row = 0; row < sizeof(logo) / sizeof(logo[0]); row++) {
-		size_t length = u_strlen(logo[row]);
+		size_t length = strlen(logo[row]);
 		size_t column;
 
 		if (!write_string(logo_colors[row]) ||
-		    !write_all(logo[row], length) || !write_string("\033[0m"))
+		    fwrite(logo[row], 1, length, stdout) != length || !write_string("\033[0m"))
 			return 1;
 		for (column = length; column < LOGO_WIDTH; column++) {
-			if (!write_all(" ", 1))
+			if (!write_string(" "))
 				return 1;
 		}
 		if (row < INFO_LINE_COUNT) {
@@ -227,8 +196,8 @@ main(int argc, char **argv)
 			if (!write_palette(bright_palette))
 				return 1;
 		}
-		if (!write_all("\n", 1))
+		if (!write_string("\n"))
 			return 1;
 	}
-	return 0;
+	return fflush(stdout) == EOF;
 }

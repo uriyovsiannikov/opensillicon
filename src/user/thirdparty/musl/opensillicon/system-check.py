@@ -52,6 +52,8 @@ with tempfile.TemporaryDirectory(prefix='musl-qmp-') as temporary:
             for line, expected in [
                 ('svctl list', 'console: running pid='),
                 ('host localhost', 'localhost has address 127.0.0.1'),
+                ('host 127.0.0.1', '127.0.0.1 has address 127.0.0.1'),
+                ('host help', 'usage: host'),
                 ('uname', 'OpenSillicon\n'),
                 ('basename /etc/hosts', 'hosts\n'),
                 ('basename /tmp/file.txt .txt', 'file\n'),

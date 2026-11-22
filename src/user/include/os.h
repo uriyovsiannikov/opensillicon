@@ -59,7 +59,6 @@ long u_power_control(uint64_t command);
 long u_kernel_crash(void);
 long u_kldload(const char *path);
 long u_kldunload(const char *name);
-long u_getpid(void);
 long u_process_info(struct os_process_info *entries, size_t capacity);
 long u_framebuffer_info(struct os_framebuffer_info *info);
 long u_framebuffer_present_rect(const struct os_framebuffer_rect *rect);
