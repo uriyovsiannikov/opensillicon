@@ -68,6 +68,11 @@ enum kernel_module_error kernel_module_relocate(const void *image,
  * The image must remain readable only for the duration of this call. */
 enum kernel_module_error kernel_module_load(const char *name,
 	const void *image, size_t image_size);
+struct fd_object;
+/* Read, validate and load from an open file at its current offset. The caller
+ * retains the file reference. Metadata is read from that same open object. */
+enum kernel_module_error kernel_module_load_file(const char *name,
+	struct fd_object *file);
 /* Load a regular module file through the kernel VFS after root is mounted. */
 enum kernel_module_error kernel_module_load_path(const char *name,
 	const char *path);

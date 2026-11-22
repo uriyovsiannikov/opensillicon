@@ -60,32 +60,24 @@ symbol_name_is(const uint8_t *strings, size_t size, uint32_t offset,
 }
 
 enum kernel_module_error
-kernel_module_load_path(const char *name, const char *path)
+kernel_module_load_file(const char *name, struct fd_object *file)
 {
 	struct fd_metadata stat;
-	struct fd_object *file = NULL;
 	void *image;
-	size_t offset = 0;
-	size_t name_length;
-	int error;
+	size_t offset = 0, name_length;
 	enum kernel_module_error result;
-	if (!name_valid(name, &name_length) || path == NULL)
+
+	if (!name_valid(name, &name_length) || file == NULL)
 		return KERNEL_MODULE_INVALID_ARGUMENT;
-	error = vfs_open(path, OS_O_RDONLY, 0, &file);
-	if (error != 0)
-		return error == -2 ? KERNEL_MODULE_NOT_FOUND : KERNEL_MODULE_IO_ERROR;
 	if (fd_object_stat(file, &stat) != 0) {
-		fd_object_put(file);
 		return KERNEL_MODULE_IO_ERROR;
 	}
 	if (stat.type != VNODE_REGULAR || stat.size == 0 ||
 	    stat.size > 8U * 1024U * 1024U || stat.size > SIZE_MAX) {
-		fd_object_put(file);
 		return KERNEL_MODULE_INVALID_ARGUMENT;
 	}
 	image = kheap_alloc((size_t)stat.size);
 	if (image == NULL) {
-		fd_object_put(file);
 		return KERNEL_MODULE_NO_MEMORY;
 	}
 	while (offset < stat.size) {
@@ -96,10 +88,24 @@ kernel_module_load_path(const char *name, const char *path)
 			break;
 		offset += amount;
 	}
-	fd_object_put(file);
 	result = offset == stat.size ? kernel_module_load(name, image, offset) :
 	    KERNEL_MODULE_IO_ERROR;
 	(void)kheap_free(image);
+	return result;
+}
+
+enum kernel_module_error
+kernel_module_load_path(const char *name, const char *path)
+{
+	struct fd_object *file;
+	size_t name_length;
+	if (!name_valid(name, &name_length) || path == NULL)
+		return KERNEL_MODULE_INVALID_ARGUMENT;
+	int error = vfs_open(path, OS_O_RDONLY, 0, &file);
+	if (error != 0)
+		return error == -2 ? KERNEL_MODULE_NOT_FOUND : KERNEL_MODULE_IO_ERROR;
+	enum kernel_module_error result = kernel_module_load_file(name, file);
+	fd_object_put(file);
 	return result;
 }
 

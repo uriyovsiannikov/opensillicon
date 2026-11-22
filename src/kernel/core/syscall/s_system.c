@@ -9,7 +9,6 @@
 
 #include "arch/x86_64/acpi.h"
 #include "kernel/block.h"
-#include "kernel/heap.h"
 #include "kernel/log.h"
 #include "kernel/module.h"
 #include "kernel/process.h"
@@ -245,10 +244,8 @@ syscall_system_bsp(struct interrupt_frame *frame)
 			char path[VFS_PATH_MAX], canonical[VFS_PATH_MAX];
 			char name[KERNEL_MODULE_NAME_MAX + 1U];
 			struct os_credentials credentials;
-			struct vnode *node = NULL;
 			struct fd_object *file = NULL;
-			void *image = NULL;
-			size_t image_size, offset = 0, name_length;
+			size_t name_length;
 			int result;
 			enum kernel_module_error module_error;
 			if (!process_current_credentials(&credentials) ||
@@ -260,20 +257,10 @@ syscall_system_bsp(struct interrupt_frame *frame)
 			if (result == 0)
 				result = process_resolve_path(path, canonical,
 				    sizeof(canonical));
-			if (result == 0)
-				result = vfs_lookup_as(canonical, 0, 0, &node);
 			if (result != 0) {
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			if (node->type != VNODE_REGULAR || node->size == 0 ||
-			    node->size > 8U * 1024U * 1024U || node->size > SIZE_MAX) {
-				vnode_put(node);
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			image_size = (size_t)node->size;
-			vnode_put(node);
 			name_length = strlen(canonical);
 			while (name_length != 0 && canonical[name_length - 1U] != '/')
 				name_length--;
@@ -297,29 +284,8 @@ syscall_system_bsp(struct interrupt_frame *frame)
 				syscall_error(frame, errno_from_kernel(result));
 				break;
 			}
-			image = kheap_alloc(image_size);
-			if (image == NULL) {
-				fd_object_put(file);
-				syscall_error(frame, ENOMEM);
-				break;
-			}
-			while (offset < image_size) {
-				size_t amount = 0;
-				result = fd_object_read(file, (uint8_t *)image + offset,
-				    image_size - offset, &amount);
-				if (result != 0 || amount == 0)
-					break;
-				offset += amount;
-			}
+			module_error = kernel_module_load_file(name, file);
 			fd_object_put(file);
-			if (result != 0 || offset != image_size) {
-				(void)kheap_free(image);
-				syscall_error(frame, result == 0 ? 5U :
-				    errno_from_kernel(result));
-				break;
-			}
-			module_error = kernel_module_load(name, image, image_size);
-			(void)kheap_free(image);
 			if (module_error != KERNEL_MODULE_OK)
 				syscall_error(frame, errno_from_module(module_error));
 			else

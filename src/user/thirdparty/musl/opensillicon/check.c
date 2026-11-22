@@ -578,6 +578,36 @@ static int shell_path_check(void)
  }
  return 0;
 }
+static int module_file_check(void)
+{
+ const char *path="/boot/modules/module_file_probe.ko";
+ const char *name="module_file_probe";
+ CHECK(__os_raw(SYSCALL_KLDLOAD,1,0,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/missing-module.ko",0,0,0,0,0)==-ENOENT);
+ CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/boot/modules",0,0,0,0,0)==-EINVAL);
+ int fd=open("/tmp/invalid-module.ko",O_CREAT|O_EXCL|O_RDWR,0600); CHECK(fd>=0);
+ CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/tmp/invalid-module.ko",0,0,0,0,0)==-EINVAL);
+ CHECK(write(fd,"not an ELF module",17)==17 && close(fd)==0);
+ CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/tmp/invalid-module.ko",0,0,0,0,0)==-EINVAL);
+ CHECK(unlink("/tmp/invalid-module.ko")==0);
+ for(int attempt=0;attempt<3;attempt++) {
+  CHECK(__os_raw(SYSCALL_KLDLOAD,(long)path,0,0,0,0,0)==0);
+  CHECK(__os_raw(SYSCALL_KLDLOAD,(long)path,0,0,0,0,0)==-EEXIST);
+  CHECK(__os_raw(SYSCALL_KLDUNLOAD,(long)name,0,0,0,0,0)==0);
+  CHECK(__os_raw(SYSCALL_KLDUNLOAD,(long)name,0,0,0,0,0)==-ENOENT);
+ }
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  if(setgid(1000) || setuid(1000)) _exit(120);
+  if(__os_raw(SYSCALL_KLDLOAD,(long)path,0,0,0,0,0)!=-EPERM ||
+      __os_raw(SYSCALL_KLDUNLOAD,(long)name,0,0,0,0,0)!=-EPERM) _exit(121);
+  _exit(0);
+ }
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ return 0;
+}
+
 static int process_check(void)
 {
 	CHECK(kill(getpid(),0)==0);
@@ -1425,6 +1455,8 @@ int main(int argc, char **argv)
  if(action_result) return action_result;
  int nested_result=nested_signal_check();
  if(nested_result) return nested_result;
+ int module_result=module_file_check();
+ if(module_result) return module_result;
  int process_result=process_check();
  if(process_result) return process_result;
  int shell_result=shell_path_check();
