@@ -42,7 +42,6 @@ long u_waitpid(uint64_t pid, int *status)
 { return u_waitpid_options(pid, status, 0); }
 long u_waitpid_options(uint64_t pid, int *status, uint64_t options)
 { return syscall4(SYSCALL_WAITPID, pid, (uintptr_t)status, options, 0); }
-long u_sleep_ticks(uint64_t ticks) { return syscall4(SYSCALL_SLEEP_TICKS, ticks, 0, 0, 0); }
 long u_power_control(uint64_t command)
 { return syscall4(SYSCALL_POWER_CONTROL, command, 0, 0, 0); }
 long u_kernel_crash(void)

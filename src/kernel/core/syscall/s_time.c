@@ -19,11 +19,6 @@ syscall_time_local(struct interrupt_frame **result_frame)
 	uint64_t error;
 
 	switch (frame->rax) {
-	case SYSCALL_SLEEP_TICKS:
-		*result_frame = process_sleep_ticks(frame, frame->rdi, &error);
-		if (error != 0)
-			syscall_error(*result_frame, error);
-		return true;
 	case SYSCALL_NANOSLEEP:
 		{
 			struct native_timespec request;

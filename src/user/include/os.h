@@ -28,7 +28,6 @@
 #define U_SIG_IGN 1ULL
 #define U_EXEC_ARG_MAX 16U
 #define U_EXEC_ARG_BYTES_MAX 2048U
-#define U_TIMER_HZ 100U
 #define U_WAIT_NOHANG 1U
 #define U_TIOCGWINSZ 0x5413U
 #define U_TIOCSRAW 0x4f530001U
@@ -82,7 +81,6 @@ long u_icmp_echo(struct u_icmp_echo_request *request);
 long u_fork(void);
 long u_waitpid(uint64_t pid, int *status);
 long u_waitpid_options(uint64_t pid, int *status, uint64_t options);
-long u_sleep_ticks(uint64_t ticks);
 long u_power_control(uint64_t command);
 long u_kernel_crash(void);
 long u_kldload(const char *path);

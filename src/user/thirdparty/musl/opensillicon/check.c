@@ -689,6 +689,48 @@ static int network_check(void)
  CHECK(socket(AF_INET6,SOCK_STREAM,0)==-1 && errno==EAFNOSUPPORT);
  return 0;
 }
+static volatile sig_atomic_t sleep_interrupted;
+static void handle_sleep_signal(int signo)
+{
+ if(signo==SIGUSR1) sleep_interrupted=1;
+}
+static int nanosleep_check(void)
+{
+ struct timespec zero={0}, before, after;
+ struct { struct timespec value; uint64_t guard; } remaining={.guard=0x12345678abcdef00ULL};
+ CHECK(nanosleep(&zero,NULL)==0);
+ struct timespec invalid={-1,0};
+ CHECK(nanosleep(&invalid,NULL)==-1 && errno==EINVAL);
+ invalid=(struct timespec){0,1000000000};
+ CHECK(nanosleep(&invalid,NULL)==-1 && errno==EINVAL);
+ invalid=(struct timespec){INT64_MAX,0};
+ CHECK(nanosleep(&invalid,NULL)==-1 && errno==EINVAL);
+ CHECK(__os_raw(SYSCALL_NANOSLEEP,1,0,0,0,0,0)==-EFAULT);
+ CHECK(__os_raw(SYSCALL_NANOSLEEP,(long)&zero,1,0,0,0,0)==-EFAULT);
+ struct timespec short_wait={0,20000000};
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&before)==0 && nanosleep(&short_wait,NULL)==0);
+ CHECK(clock_gettime(CLOCK_MONOTONIC,&after)==0);
+ CHECK((after.tv_sec-before.tv_sec)*1000000000LL+after.tv_nsec-before.tv_nsec>=20000000);
+ struct sigaction action={.sa_handler=handle_sleep_signal}, previous;
+ sigemptyset(&action.sa_mask);
+ CHECK(sigaction(SIGUSR1,&action,&previous)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  struct timespec delay={0,50000000};
+  if(nanosleep(&delay,NULL)<0 || kill(getppid(),SIGUSR1)<0) _exit(91);
+  _exit(0);
+ }
+ struct timespec request={2,0};
+ CHECK(nanosleep(&request,&remaining.value)==-1 && errno==EINTR && sleep_interrupted);
+ CHECK(remaining.value.tv_sec>=0 && remaining.value.tv_sec<=2 &&
+     remaining.value.tv_nsec>=0 && remaining.value.tv_nsec<1000000000);
+ CHECK(remaining.value.tv_sec || remaining.value.tv_nsec);
+ CHECK(remaining.guard==0x12345678abcdef00ULL);
+ CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ return 0;
+}
 static int sysctl_check(void)
 {
  struct os_process_info processes[OS_PROCESS_INFO_MAX];
@@ -799,12 +841,14 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,9,10,14,17,23,53,58,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,53,58,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
  struct timespec t;
  if(clock_gettime(CLOCK_MONOTONIC,&t)) return 5;
+ int sleep_result=nanosleep_check();
+ if(sleep_result) return sleep_result;
  int sysctl_result=sysctl_check();
  if(sysctl_result) return sysctl_result;
  int file_result=files_check();
@@ -835,6 +879,6 @@ int main(int argc, char **argv)
  if(network_result) return network_result;
  int dns_result=dns_check();
  if(dns_result) return dns_result;
- printf("MUSL_PASS pid=%ld tls=%d ctor=%d malloc=ok errno=ok files=ok processes=ok signals=ok sockets=ok poll=ok dns=ok terminal=ok ncurses=ok openat=ok append=ok duplication=ok sigaction=ok nested-signals=ok sysctl=ok\n",(long)getpid(),tls,constructed);
+ printf("MUSL_PASS pid=%ld tls=%d ctor=%d malloc=ok errno=ok files=ok processes=ok signals=ok sockets=ok poll=ok dns=ok terminal=ok ncurses=ok openat=ok append=ok duplication=ok sigaction=ok nested-signals=ok sysctl=ok nanosleep=ok\n",(long)getpid(),tls,constructed);
  return 0;
 }

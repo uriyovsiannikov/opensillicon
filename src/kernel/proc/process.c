@@ -2601,30 +2601,6 @@ park_timer_wait(struct interrupt_frame *frame, uint64_t deadline, uint64_t *erro
 }
 
 struct interrupt_frame *
-process_sleep_ticks(struct interrupt_frame *frame, uint64_t ticks,
-	uint64_t *error)
-{
-	if (current_process == NULL) {
-		*error = ECHILD;
-		return frame;
-	}
-	if (ticks == 0) {
-		frame->rax = 0;
-		frame->rflags &= ~1ULL;
-		*error = 0;
-		return frame;
-	}
-	uint64_t now = timer_ticks();
-	if (ticks > UINT64_MAX - now) {
-		*error = EINVAL;
-		return frame;
-	}
-	current_process->nanosleep_active = false;
-	current_process->nanosleep_remaining_address = 0;
-	return park_timer_wait(frame, now + ticks, error);
-}
-
-struct interrupt_frame *
 process_nanosleep(struct interrupt_frame *frame, uint64_t ticks,
 	int64_t seconds, int64_t nanoseconds, uint64_t remaining_address,
 	uint64_t *error)

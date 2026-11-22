@@ -114,7 +114,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_KLDLOAD] = { .bsp = syscall_system_bsp },
 	[SYSCALL_KLDUNLOAD] = { .bsp = syscall_system_bsp },
 	/* Time */
-	[SYSCALL_SLEEP_TICKS] = { .local = syscall_time_local },
 	[SYSCALL_NANOSLEEP] = { .local = syscall_time_local },
 	[SYSCALL_CLOCK_GETTIME] = { .local = syscall_time_local },
 	/* Unix */

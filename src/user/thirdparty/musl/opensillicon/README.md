@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v9.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v10.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -231,3 +231,7 @@ shared PROCESS_INFO format with PID, parent PID, state, effective UID and name.
 The duplicate process-list traversal and compact userspace structures are
 removed. The internal current-process status used by procfs remains local to
 the kernel and is not a syscall wire format.
+
+ABI v10 removes SLEEP_TICKS (slot 8). All applications use nanosleep with
+seconds/nanoseconds; the old tick-count syscall, userspace wrapper, public
+timer-frequency constant and duplicate scheduler wait entry are removed.
