@@ -631,12 +631,70 @@ static int process_check(void)
  CHECK(WIFEXITED(native.status) && WEXITSTATUS(native.status)==59 && native.guard==0xaabbccdd);
  return 0;
 }
+static int shell_pty_output(int fd, const char *first, const char *second)
+{
+ char output[8192]; size_t used=0;
+ output[0]=0;
+ for(int i=0;i<200;i++) {
+  char *found=strstr(output,first);
+  if(found && strstr(found+strlen(first),second)) return 1;
+  struct pollfd input={fd,POLLIN,0};
+  int ready=poll(&input,1,50);
+  if(ready<0 || (input.revents&(POLLERR|POLLNVAL))) return 0;
+  if(!ready) continue;
+  ssize_t amount=read(fd,output+used,sizeof output-1-used);
+  if(amount<=0) return 0;
+  used+=(size_t)amount; output[used]=0;
+  if(used==sizeof output-1) return 0;
+ }
+ return 0;
+}
+
+static int shell_pty_check(void)
+{
+ int pair[2];
+ CHECK(__os_raw(SYSCALL_PTY_PAIR,(long)pair,0,0,0,0,0)==0);
+ struct termios original,actual;
+ CHECK(tcgetattr(pair[1],&original)==0);
+ original.c_lflag|=ICANON|ECHO;
+ original.c_oflag=OPOST|ONLCR;
+ original.c_cc[VERASE]=8;
+ CHECK(tcsetattr(pair[1],TCSANOW,&original)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(!child) {
+  close(pair[0]);
+  if(dup2(pair[1],0)<0 || dup2(pair[1],1)<0 || dup2(pair[1],2)<0) _exit(120);
+  close(pair[1]);
+  char *args[]={"sh","--xterm",NULL};
+  execv("/bin/sh",args); _exit(121);
+ }
+ CHECK(shell_pty_output(pair[0],"","% "));
+ CHECK(tcgetattr(pair[1],&actual)==0 && !(actual.c_lflag&(ICANON|ECHO)) &&
+     actual.c_oflag==original.c_oflag && actual.c_cc[VERASE]==8);
+ const char command[]="/sbin/init --shell-tty-check\n";
+ CHECK(write(pair[0],command,sizeof command-1)==sizeof command-1);
+ CHECK(shell_pty_output(pair[0],"SHELL_TTY_OK","% "));
+ CHECK(tcgetattr(pair[1],&actual)==0 && !(actual.c_lflag&(ICANON|ECHO)));
+ CHECK(write(pair[0],"exit\n",5)==5);
+ int status;
+ CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
+ CHECK(tcgetattr(pair[1],&actual)==0 && actual.c_iflag==original.c_iflag &&
+     actual.c_oflag==original.c_oflag && actual.c_cflag==original.c_cflag &&
+     actual.c_lflag==original.c_lflag && !memcmp(actual.c_cc,original.c_cc,NCCS));
+ CHECK(close(pair[0])==0 && close(pair[1])==0);
+ return 0;
+}
+
 static int terminal_check(void)
 {
  int pair[2];
  CHECK(__os_raw(SYSCALL_PTY_PAIR,(long)pair,0,0,0,0,0)==0);
  struct termios tty;
  CHECK(tcgetattr(pair[1],&tty)==0 && (tty.c_lflag&ICANON));
+ CHECK(ioctl(pair[1],0x4f530001U,NULL)==-1 && errno==ENOTTY);
+ CHECK(ioctl(pair[1],0x4f530002U,NULL)==-1 && errno==ENOTTY);
+ CHECK(ioctl(0,0x4f530001U,NULL)==-1 && errno==ENOTTY);
+ CHECK(ioctl(0,0x4f530002U,NULL)==-1 && errno==ENOTTY);
  CHECK(tty.c_cc[VINTR]==3 && tty.c_cc[VEOF]==4 && tty.c_cc[VERASE]==127);
  struct winsize size={.ws_row=37,.ws_col=91}, retrieved;
  CHECK(ioctl(pair[1],TIOCSWINSZ,&size)==0 && ioctl(pair[1],TIOCGWINSZ,&retrieved)==0);
@@ -1288,6 +1346,14 @@ static int sysctl_check(void)
 }
 int main(int argc, char **argv)
 {
+ if(argc==2 && !strcmp(argv[1],"--shell-tty-check")) {
+  struct termios attributes;
+  if(tcgetattr(0,&attributes) || !(attributes.c_lflag&ICANON) ||
+      !(attributes.c_lflag&ECHO) || attributes.c_cc[VERASE]!=8 ||
+      attributes.c_oflag!=(OPOST|ONLCR)) return 123;
+  puts("SHELL_TTY_OK");
+  return 0;
+ }
  if(argc==2 && !strcmp(argv[1],"--shell-path-check")) {
   const char *env=getenv("MUSL_SHELL_CHECK"), *term=getenv("TERM");
   if(!env || strcmp(env,"present") || !term || strcmp(term,"xterm")) return 122;
@@ -1350,6 +1416,8 @@ int main(int argc, char **argv)
  if(process_result) return process_result;
  int shell_result=shell_path_check();
  if(shell_result) return shell_result;
+ int shell_pty_result=shell_pty_check();
+ if(shell_pty_result) return shell_pty_result;
  int terminal_result=terminal_check();
  if(terminal_result) return terminal_result;
  int curses_result=curses_check();

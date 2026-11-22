@@ -10,21 +10,11 @@
 #include "abi/process_info.h"
 
 #define U_EXEC_ARG_MAX 16U
-#define U_TIOCSRAW 0x4f530001U
-#define U_TIOCCANON 0x4f530002U
 #define U_POWER_CONTROL_POWEROFF 1U
 #define U_POWER_CONTROL_REBOOT 2U
 
-struct u_winsize {
-	uint16_t rows;
-	uint16_t columns;
-	uint16_t xpixel;
-	uint16_t ypixel;
-};
-
 long u_write(uint64_t fd, const void *buffer, size_t length);
 long u_read(uint64_t fd, void *buffer, size_t length);
-long u_ioctl(uint64_t fd, uint64_t request, void *argument);
 long u_power_control(uint64_t command);
 long u_kernel_crash(void);
 long u_kldload(const char *path);

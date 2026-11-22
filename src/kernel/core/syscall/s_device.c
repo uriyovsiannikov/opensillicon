@@ -23,8 +23,6 @@
 #define OS_FIONBIO 0x5421U
 #define TCGETS_REQUEST 0x5401U
 #define TCSETS_REQUEST 0x5402U
-#define TIOCSRAW_REQUEST 0x4f530001U
-#define TIOCCANON_REQUEST 0x4f530002U
 #define TIOCSFB_REQUEST 0x4f530003U
 struct syscall_winsize {
 	uint16_t rows;
@@ -460,21 +458,6 @@ syscall_device_bsp(struct interrupt_frame *frame)
 			}
 			if (!fd_object_is_terminal(object)) {
 				syscall_error(frame, ENOTTY);
-				break;
-			}
-			if (frame->rsi == TIOCSRAW_REQUEST ||
-			    frame->rsi == TIOCCANON_REQUEST) {
-				if (pty_is_object(object)) {
-					int result = pty_set_raw(object, frame->rsi == TIOCSRAW_REQUEST);
-					if (result != 0) syscall_error(frame, errno_from_kernel(result));
-					else frame->rax = 0;
-					break;
-				}
-				int result = tty_set_raw_mode(frame->rsi == TIOCSRAW_REQUEST);
-				if (result != 0)
-					syscall_error(frame, errno_from_kernel(result));
-				else
-					frame->rax = 0;
 				break;
 			}
 			if (frame->rsi != TIOCGWINSZ_REQUEST) {

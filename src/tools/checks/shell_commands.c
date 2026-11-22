@@ -6,8 +6,6 @@
 void u_puts(const char *text) { (void)text; }
 void u_putn(const char *text, size_t length) { (void)text; (void)length; }
 void u_put_u64(uint64_t value) { (void)value; }
-long u_ioctl(uint64_t fd, uint64_t request, void *argument)
-{ (void)fd; (void)request; (void)argument; return -1; }
 
 int
 main(int argc, char **argv)

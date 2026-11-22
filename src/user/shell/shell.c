@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <termios.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <stdbool.h>
 
@@ -26,6 +28,9 @@ struct completion_candidate {
 	char name[HELP_NAME_CAPACITY];
 	int is_directory;
 };
+
+static struct termios command_attributes;
+static struct termios editor_attributes;
 
 static const char *const internal_commands[] = {
 	"help", "cd", "exit", "history"
@@ -206,12 +211,12 @@ print_help_commands(void)
 	int listing_error = visit_path_commands(collect_command_name, &list);
 	uint64_t total = listing_error == 0 ? list.count : internal_count;
 	uint64_t columns = 1, max_columns = 4;
-	struct u_winsize terminal_size;
+	struct winsize terminal_size;
 
 	while (columns * columns < total)
 		columns++;
-	if (u_ioctl(1, 0x5413U, &terminal_size) == 0) {
-		max_columns = terminal_size.columns / HELP_COLUMN_WIDTH;
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &terminal_size) == 0) {
+		max_columns = terminal_size.ws_col / HELP_COLUMN_WIDTH;
 		if (max_columns == 0)
 			max_columns = 1;
 	}
@@ -251,7 +256,7 @@ command_external(const char *const argv[], int background,
 	pid_t wait_result;
 	int status = 0;
 
-	if (interactive && u_ioctl(0, U_TIOCCANON, 0) < 0) {
+	if (interactive && tcsetattr(STDIN_FILENO, TCSANOW, &command_attributes) < 0) {
 		print_error("tty mode", "canonical");
 		return;
 	}
@@ -294,7 +299,7 @@ command_external(const char *const argv[], int background,
 		background_children[background_child_count++] = child;
 	}
 resume_editor:
-	if (interactive && u_ioctl(0, U_TIOCSRAW, 0) < 0) {
+	if (interactive && tcsetattr(STDIN_FILENO, TCSANOW, &editor_attributes) < 0) {
 		u_puts("sh: cannot restore interactive input mode\n");
 		_exit(1);
 	}
@@ -768,12 +773,17 @@ main(int argc, char **argv)
 		u_puts("usage: sh [-c command] [--xterm]\n");
 		_exit(2);
 	}
-	long input_mode = u_ioctl(0, U_TIOCSRAW, 0);
-	if (input_mode < 0) {
-		u_puts("OpenSillicon shell: cannot enable interactive input mode, errno ");
-		u_put_u64((uint64_t)-input_mode);
-		u_puts("\n");
-		_exit(1);
+	if (tcgetattr(STDIN_FILENO, &command_attributes) < 0) {
+		perror("sh: cannot read terminal attributes");
+		return 1;
+	}
+	editor_attributes = command_attributes;
+	cfmakeraw(&editor_attributes);
+	/* Keep newline processing for prompt and command output. */
+	editor_attributes.c_oflag = command_attributes.c_oflag;
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &editor_attributes) < 0) {
+		perror("sh: cannot enable interactive input mode");
+		return 1;
 	}
 	bool waiting_for_keyboard = false;
 	for (;;) {
@@ -786,7 +796,7 @@ main(int argc, char **argv)
 		}
 		result = read_command_line(line);
 		if (result == 0) {
-			(void)u_ioctl(0, U_TIOCCANON, 0);
+			(void)tcsetattr(STDIN_FILENO, TCSANOW, &command_attributes);
 			_exit(0);
 		}
 		if (result < 0) {
@@ -807,7 +817,7 @@ main(int argc, char **argv)
 		}
 		waiting_for_keyboard = false;
 		if (!run_command(line, 1)) {
-			(void)u_ioctl(0, U_TIOCCANON, 0);
+			(void)tcsetattr(STDIN_FILENO, TCSANOW, &command_attributes);
 			_exit(0);
 		}
 	}

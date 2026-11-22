@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v15.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v16.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -296,3 +296,10 @@ remains 56 bytes. Rebuild ping and other native ICMP callers for ABI v15.
 The native `os_icmp_echo` libc extension in `sys/icmp.h` returns -1 and sets
 errno on failure. ping uses libc address parsing and formatting and no longer
 links the legacy userspace runtime. Its bounded count remains 1–4 requests.
+
+ABI v16 removes the private TIOCSRAW/TIOCCANON ioctls (0x4f530001/2), which
+now return ENOTTY. The shell uses tcgetattr/tcsetattr, saves the initial
+terminal attributes and restores them for external programs and on exit.
+Its editor disables input canonicalization and echo while preserving output
+newline processing. Terminal dimensions use libc's winsize/TIOCGWINSZ.
+The duplicate PTY raw-mode setter and legacy userspace ioctl wrapper are removed.

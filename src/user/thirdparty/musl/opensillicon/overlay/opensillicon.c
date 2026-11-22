@@ -1,4 +1,4 @@
-/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v15.
+/* Translate musl's Linux syscall vocabulary to OpenSillicon ABI v16.
  * Never forward unknown numbers: the two number spaces overlap. */
 #define _GNU_SOURCE
 #include <errno.h>

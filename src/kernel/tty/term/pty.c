@@ -258,20 +258,6 @@ pty_window(struct fd_object *object, uint16_t dimensions[4], bool set)
 }
 
 int
-pty_set_raw(struct fd_object *object, bool enabled)
-{
-	struct pty_endpoint *endpoint;
-
-	if (!pty_is_object(object))
-		return -ENOTTY;
-	endpoint = object->context;
-	if (endpoint->pty->raw != enabled) {
-		endpoint->pty->raw = enabled;
-	}
-	return 0;
-}
-
-int
 pty_termios(struct fd_object *object, void *attributes, bool set)
 {
  struct pty_endpoint *endpoint;
