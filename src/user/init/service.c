@@ -16,7 +16,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "include/os.h"
 #include "service.h"
 #include "abi/exec.h"
 
@@ -116,11 +115,7 @@ configure_installer_console(void)
 static void
 report(const char *name, const char *message)
 {
-	u_puts("init: ");
-	u_puts(name);
-	u_puts(": ");
-	u_puts(message);
-	u_puts("\n");
+	printf("init: %s: %s\n", name, message);
 }
 
 static bool

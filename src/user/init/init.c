@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "include/os.h"
 #include "common/logo_pixels.h"
 #include "service.h"
@@ -75,41 +77,20 @@ show_init_banner(void)
 		};
 		(void)u_framebuffer_present_rect(&rect);
 	}
-	u_puts("\033[3;16H\033[36mWelcome! Running on ");
+	fputs("\033[3;16H\033[36mWelcome! Running on ", stdout);
 	if (processor_length != 0)
-		u_putn(processor, processor_length);
+		fwrite(processor, 1, processor_length, stdout);
 	else
-		u_puts("unknown CPU");
-	u_puts("\033[0m\033[6;1H");
-}
-
-static void
-init_status(const char *component, int success, const char *detail)
-{
-	size_t length;
-	size_t i;
-
-	u_puts("\033[34m*\033[0m Initializing ");
-	u_puts(component);
-	u_puts(" ...");
-	length = u_strlen(component);
-	for (i = length + 20; i < 46; i++)
-		u_puts(" ");
-	u_puts(success ? " \033[32m[ OK ]\033[0m\n" :
-	    " \033[31m[ ER ]\033[0m");
-	if (!success && detail != 0) {
-		u_puts(" ");
-		u_puts(detail);
-	}
-	if (!success)
-		u_puts("\n");
+		fputs("unknown CPU", stdout);
+	fputs("\033[0m\033[6;1H", stdout);
 }
 
 /* musl CRT initializes TLS, errno and constructors before entering init. */
 int
 main(void)
 {
- show_init_banner();
- init_status("init", 1, 0);
- service_manager();
+	setvbuf(stdout, NULL, _IONBF, 0);
+	show_init_banner();
+	puts("\033[34m*\033[0m Initializing init ...                       \033[32m[ OK ]\033[0m");
+	service_manager();
 }
