@@ -13,7 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static volatile int stopping;
+static volatile sig_atomic_t stopping;
 static void stop(int signo) { (void)signo; stopping = 1; }
 
 static int display_socket(void)
@@ -39,6 +39,7 @@ static pid_t launch(char *const argv[])
 		fprintf(stderr, "startx: cannot execute %s: %s\n", argv[0], strerror(errno));
 		_exit(127);
 	}
+	if (pid < 0) perror("startx: fork");
 	return pid;
 }
 
@@ -52,6 +53,10 @@ int main(void)
 	    "-e", "/bin/sh", "--xterm", NULL};
 	pid_t children[4] = {-1, -1, -1, -1};
 	int result = 1, fd, status, framebuffer_console = 0;
+	const char *failed_child = NULL;
+	int failed_status = 0;
+	const char *failure = NULL;
+	int failure_error = 0;
 	/* Check executables before taking over the framebuffer. */
 	for (unsigned i = 0; i < 4; i++) {
 		const char *path = i == 0 ? server_args[0] : i == 1 ? wm_args[0] :
@@ -62,14 +67,19 @@ int main(void)
 	}
 	fd = display_socket();
 	if (fd >= 0) { close(fd); fputs("startx: display :0 already active\n", stderr); return 1; }
-	if (signal(SIGINT, stop) == SIG_ERR || signal(SIGTERM, stop) == SIG_ERR)
+	struct sigaction action = {.sa_handler = stop};
+	sigemptyset(&action.sa_mask);
+	if (sigaction(SIGINT, &action, NULL) < 0 ||
+	    sigaction(SIGTERM, &action, NULL) < 0) {
+		perror("startx: install signal handlers");
 		return 1;
+	}
 	if (ioctl(STDOUT_FILENO, OS_TIOCSFB, &framebuffer_console) < 0) {
 		perror("startx: cannot suppress framebuffer console output");
 		return 1;
 	}
 	children[0] = launch(server_args);
-	if (children[0] < 0) goto cleanup;
+	if (children[0] < 0) { failure = "fork X server"; failure_error = errno; goto cleanup; }
 	for (unsigned i = 0; i < 200 && !stopping; i++) {
 		fd = display_socket();
 		if (fd >= 0) break;
@@ -77,40 +87,48 @@ int main(void)
 		nanosleep(&delay, NULL);
 	}
 	if (fd < 0 || stopping) {
-		fputs("startx: display :0 did not become ready\n", stderr);
+		failure = "display :0 did not become ready";
 		goto cleanup;
 	}
 	close(fd);
 	children[1] = launch(wm_args);
-	if (children[1] < 0) goto cleanup;
+	if (children[1] < 0) { failure = "fork window manager"; failure_error = errno; goto cleanup; }
 	{
 		struct timespec delay = {0, 300000000};
 		nanosleep(&delay, NULL);
 	}
 	children[2] = launch(wallpaper_args);
-	if (children[2] < 0) goto cleanup;
+	if (children[2] < 0) { failure = "fork wallpaper client"; failure_error = errno; goto cleanup; }
 	while (waitpid(children[2], &status, 0) < 0) {
 		if (errno == EINTR) continue;
+		failure = "wait for wallpaper client"; failure_error = errno;
 		goto cleanup;
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
 		fputs("startx: could not set desktop wallpaper\n", stderr);
 	children[2] = -1;
 	children[3] = launch(term_args);
-	if (children[3] < 0) goto cleanup;
+	if (children[3] < 0) { failure = "fork terminal"; failure_error = errno; goto cleanup; }
 	puts("startx: TinyX, twm and xterm launched");
 	while (!stopping) {
 		pid_t pid = waitpid(-1, &status, 0);
 		if (pid < 0) {
 			if (errno == EINTR) continue;
+			failure = "wait for desktop clients"; failure_error = errno;
 			break;
 		}
-		for (unsigned i = 0; i < 3; i++)
-			if (children[i] == pid) children[i] = -1;
+		for (unsigned i = 0; i < 4; i++) {
+			if (children[i] != pid) continue;
+			failed_child = i == 0 ? server_args[0] : i == 1 ? wm_args[0] :
+			    i == 2 ? wallpaper_args[0] : term_args[0];
+			failed_status = status;
+			children[i] = -1;
+		}
 		result = WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1;
 		break;
 	}
 cleanup:
+	if (stopping) result = 0;
 	/* Clients leave first so they can still communicate with the server. */
 	for (int i = 3; i >= 0; i--) {
 		if (children[i] <= 0) continue;
@@ -124,5 +142,16 @@ cleanup:
 	framebuffer_console = 1;
 	if (ioctl(STDOUT_FILENO, OS_TIOCSFB, &framebuffer_console) < 0)
 		perror("startx: cannot restore framebuffer console output");
+	if (result != 0 && failure != NULL)
+		fprintf(stderr, "startx: %s%s%s\n", failure,
+		    failure_error ? ": " : "", failure_error ? strerror(failure_error) : "");
+	if (result != 0 && failed_child != NULL) {
+		if (WIFSIGNALED(failed_status))
+			fprintf(stderr, "startx: %s terminated by signal %d\n",
+			    failed_child, WTERMSIG(failed_status));
+		else if (WIFEXITED(failed_status))
+			fprintf(stderr, "startx: %s exited with status %d\n",
+			    failed_child, WEXITSTATUS(failed_status));
+	}
 	return result;
 }

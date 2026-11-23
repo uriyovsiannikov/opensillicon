@@ -30,6 +30,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <pty.h>
 #include <curses.h>
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -734,6 +735,9 @@ static int process_check(void)
  CHECK(sigismember(&current,SIGUSR1)==1);
  CHECK(sigprocmask(SIG_SETMASK,&old,NULL)==0);
  CHECK(getuid()==0 && geteuid()==0 && getgid()==0 && getegid()==0);
+ CHECK(seteuid(0)==0 && setegid(0)==0);
+ CHECK(setresuid((uid_t)-1,0,(uid_t)-1)==0);
+ CHECK(setresgid((gid_t)-1,0,(gid_t)-1)==0);
  int channel[2];
  CHECK(pipe(channel)==0);
  pid_t parent=getpid(), child=fork();
@@ -799,7 +803,7 @@ static int shell_pty_output(int fd, const char *first, const char *second)
 static int shell_pty_check(void)
 {
  int pair[2];
- CHECK(__os_raw(SYSCALL_PTY_PAIR,(long)pair,0,0,0,0,0)==0);
+ CHECK(openpty(&pair[0],&pair[1],NULL,NULL,NULL)==0);
  struct termios original,actual;
  CHECK(tcgetattr(pair[1],&original)==0);
  original.c_lflag|=ICANON|ECHO;
@@ -839,7 +843,7 @@ static int shell_pty_check(void)
 static int terminal_check(void)
 {
  int pair[2];
- CHECK(__os_raw(SYSCALL_PTY_PAIR,(long)pair,0,0,0,0,0)==0);
+ CHECK(openpty(&pair[0],&pair[1],NULL,NULL,NULL)==0);
  struct termios tty;
  CHECK(tcgetattr(pair[1],&tty)==0 && (tty.c_lflag&ICANON));
  CHECK(ioctl(pair[1],0x4f530001U,NULL)==-1 && errno==ENOTTY);
@@ -850,6 +854,18 @@ static int terminal_check(void)
  struct winsize size={.ws_row=37,.ws_col=91}, retrieved;
  CHECK(ioctl(pair[1],TIOCSWINSZ,&size)==0 && ioctl(pair[1],TIOCGWINSZ,&retrieved)==0);
  CHECK(retrieved.ws_row==37 && retrieved.ws_col==91);
+ int configured[2]={-1,-1};
+ CHECK(openpty(&configured[0],&configured[1],NULL,&tty,&size)==0);
+ CHECK(tcgetattr(configured[1],&tty)==0 && (tty.c_lflag&ICANON));
+ CHECK(ioctl(configured[1],TIOCGWINSZ,&retrieved)==0 &&
+     retrieved.ws_row==37 && retrieved.ws_col==91);
+ CHECK(close(configured[0])==0 && close(configured[1])==0);
+ configured[0]=configured[1]=-1; char unsupported_name[64];
+ CHECK(openpty(&configured[0],&configured[1],unsupported_name,NULL,NULL)==-1 &&
+     errno==EOPNOTSUPP && configured[0]==-1 && configured[1]==-1);
+ CHECK(openpty(&configured[0],&configured[1],NULL,NULL,(void *)1)==-1 &&
+     errno==EFAULT && configured[0]==-1 && configured[1]==-1);
+
  struct { struct os_winsize value; uint64_t guard; } native_window={.guard=0x12345678abcdef01ULL};
  CHECK(__os_raw(SYSCALL_IOCTL,pair[1],OS_TIOCGWINSZ,(long)&native_window.value,0,0,0)==0);
  CHECK(native_window.value.rows==37 && native_window.value.columns==91 &&

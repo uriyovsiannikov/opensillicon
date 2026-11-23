@@ -219,8 +219,10 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  }
  case SYS_setuid: s=SYSCALL_SETUID; break;
  case SYS_setgid: s=SYSCALL_SETGID; break;
- case SYS_setresuid: s=SYSCALL_SETRESUID; break;
- case SYS_setresgid: s=SYSCALL_SETRESGID; break;
+ case SYS_setresuid:
+  return call(SYSCALL_SETRESUID,(uint32_t)a,(uint32_t)b,(uint32_t)c,0,0,0);
+ case SYS_setresgid:
+  return call(SYSCALL_SETRESGID,(uint32_t)a,(uint32_t)b,(uint32_t)c,0,0,0);
  case SYS_ioctl: {
   if(b>=TCGETS && b<=TCSETSF) {
    if(!c) return -EFAULT;

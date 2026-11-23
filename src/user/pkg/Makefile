@@ -283,8 +283,8 @@ $(BUILD_DIR)/pkg/xorg-stage.ready: $(XORG_BINS) $(XORG_FONTS) \
 	cp src/tools/pkg/repo/_src/twm/startx/background.jpg $(XORG_STAGE)/usr/share/xorg/background.jpg
 	touch $@
 
-src/tools/pkg/repo/_pkges/twm-1.0.0+abi23.spkg: $(BUILD_DIR)/pkg/xorg-stage.ready $(BUILD_DIR)/pkg/pkg-build
-	$(BUILD_DIR)/pkg/pkg-build twm 1.0.0+abi23 $(XORG_STAGE) $@ 'TinyX desktop with twm, X11 clients and fonts'
+src/tools/pkg/repo/_pkges/twm-1.0.0+abi23.1.spkg: $(BUILD_DIR)/pkg/xorg-stage.ready $(BUILD_DIR)/pkg/pkg-build
+	$(BUILD_DIR)/pkg/pkg-build twm 1.0.0+abi23.1 $(XORG_STAGE) $@ 'TinyX desktop with twm, X11 clients and fonts'
 
 X11_CLIENT_PREFIX := $(BUILD_DIR)/x11/prefix
 X11_CLIENT_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin -fno-strict-aliasing \

@@ -13,6 +13,7 @@ cp -p "$port/include/sys/icmp.h" "$build/source/include/sys/icmp.h"
 cp -p "$port/include/sys/opensillicon.h" "$build/source/include/sys/opensillicon.h"
 cp -p "$port/include/sys/sysctl.h" "$build/source/include/sys/sysctl.h"
 cp -p "$port/overlay/getrlimit.c" "$build/source/src/misc/getrlimit.c"
+cp -p "$port/overlay/openpty.c" "$build/source/src/misc/openpty.c"
 cp -p "$port/overlay/uname.c" "$build/source/src/misc/uname.c"
 cp -p "$port/overlay/resolvconf.c" "$build/source/src/network/resolvconf.c"
 cp -p "$port/overlay/syscall_arch.h" "$build/source/arch/x86_64/syscall_arch.h"
@@ -40,7 +41,7 @@ fi
 # Upstream musl does not track headers outside its source tree. The native
 # adapters must be recompiled when their shared kernel ABI changes.
 cat > opensillicon-abi.mk <<EOF
-obj/src/conf/sysconf.o obj/src/network/sendmmsg.o obj/src/network/recvmmsg.o obj/src/misc/opensillicon.o obj/src/misc/network.o obj/src/misc/sysctl.o obj/src/misc/uname.o obj/src/misc/getrlimit.o obj/src/misc/icmp_echo.o obj/src/misc/native_control.o obj/src/network/resolvconf.o: $(printf '%s ' "$root"/src/include/abi/*.h)
+obj/src/conf/sysconf.o obj/src/network/sendmmsg.o obj/src/network/recvmmsg.o obj/src/misc/openpty.o obj/src/misc/opensillicon.o obj/src/misc/network.o obj/src/misc/sysctl.o obj/src/misc/uname.o obj/src/misc/getrlimit.o obj/src/misc/icmp_echo.o obj/src/misc/native_control.o obj/src/network/resolvconf.o: $(printf '%s ' "$root"/src/include/abi/*.h)
 EOF
 make -f Makefile -f opensillicon-abi.mk -j"${JOBS:-4}" > build.log 2>&1 || { tail -60 build.log; exit 1; }
 make install > install.log 2>&1
