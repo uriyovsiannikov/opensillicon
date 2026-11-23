@@ -2,6 +2,7 @@
 
 #include "abi/select.h"
 #include "abi/poll.h"
+#include "abi/uio.h"
 #include "kernel/pipe.h"
 #include "kernel/heap.h"
 #include "kernel/hda_audio.h"
@@ -15,14 +16,8 @@
 #include "kernel/vfs.h"
 #include "kernel/vmm.h"
 
-#define SYSCALL_MAX_IOV 16U
 #define SYSCALL_MAX_IOV_BYTES (64U * 1024U)
 #define SYSCALL_IOV_CHUNK 512U
-
-struct syscall_iovec {
-	uint64_t base;
-	uint64_t length;
-};
 
 static bool
 fd_set_contains(const struct os_fd_set *set, unsigned int descriptor)
@@ -189,7 +184,7 @@ syscall_select(struct interrupt_frame *frame)
 	    deadline == UINT64_MAX ? 0 : deadline);
 }
 
-/* Linux-compatible pollfd wire layout; never retain user buffers across waits. */
+/* Never retain user poll buffers across waits. */
 _Static_assert(sizeof(struct os_pollfd) == 8, "pollfd ABI");
 static struct interrupt_frame *
 syscall_poll(struct interrupt_frame *frame)
@@ -270,7 +265,7 @@ io_vector_count(const struct interrupt_frame *frame)
 }
 
 static int
-load_iovecs(struct interrupt_frame *frame, struct syscall_iovec *vectors,
+load_iovecs(struct interrupt_frame *frame, struct os_iovec *vectors,
 	uint64_t *total)
 {
 	struct address_space *space = vmm_active_address_space();
@@ -278,10 +273,10 @@ load_iovecs(struct interrupt_frame *frame, struct syscall_iovec *vectors,
 	uint64_t total_bytes = 0;
 	uint64_t i;
 
-	if (count > SYSCALL_MAX_IOV)
+	if (count > OS_IOV_MAX)
 		return -(int)EINVAL;
 	if (scalar_io(frame)) {
-		vectors[0] = (struct syscall_iovec){frame->rsi, frame->rdx};
+		vectors[0] = (struct os_iovec){frame->rsi, frame->rdx};
 	} else if (count != 0 && (frame->rsi > UINT64_MAX -
 	    count * sizeof(*vectors) || !vmm_copy_from_user(space, vectors,
 	    frame->rsi, (size_t)(count * sizeof(*vectors)))))
@@ -307,7 +302,7 @@ load_iovecs(struct interrupt_frame *frame, struct syscall_iovec *vectors,
 }
 
 static int
-validate_iovec_buffers(const struct syscall_iovec *vectors, uint64_t count,
+validate_iovec_buffers(const struct os_iovec *vectors, uint64_t count,
 	bool for_read)
 {
 	struct address_space *space = vmm_active_address_space();
@@ -342,7 +337,7 @@ validate_iovec_buffers(const struct syscall_iovec *vectors, uint64_t count,
 /* Keep a complete small writev indivisible, just like one scalar pipe write. */
 static struct interrupt_frame *
 syscall_pipe_writev(struct interrupt_frame *frame, struct fd_object *object,
-	const struct syscall_iovec *vectors, uint64_t count, uint64_t total)
+	const struct os_iovec *vectors, uint64_t count, uint64_t total)
 {
 	char buffer[PIPE_CAPACITY];
 	size_t offset = 0, amount = 0;
@@ -367,7 +362,7 @@ syscall_pipe_writev(struct interrupt_frame *frame, struct fd_object *object,
 static struct interrupt_frame *
 syscall_writev(struct interrupt_frame *frame)
 {
-	struct syscall_iovec vectors[SYSCALL_MAX_IOV];
+	struct os_iovec vectors[OS_IOV_MAX];
 	struct os_credentials credentials;
 	char buffer[SYSCALL_IOV_CHUNK];
 	struct fd_table *table = current_fd_table();
@@ -470,7 +465,7 @@ pipe_copy_user(void *context, const void *source, size_t length)
 static struct interrupt_frame *
 syscall_readv(struct interrupt_frame *frame)
 {
-	struct syscall_iovec vectors[SYSCALL_MAX_IOV];
+	struct os_iovec vectors[OS_IOV_MAX];
 	char buffer[SYSCALL_IOV_CHUNK];
 	struct fd_table *table = current_fd_table();
 	struct fd_object *object = fd_object_for_descriptor(table, frame->rdi);

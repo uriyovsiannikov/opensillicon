@@ -4,6 +4,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/uio.h>
+#include <poll.h>
+#include "abi/poll.h"
+#include "abi/uio.h"
 
 #include <sys/stat.h>
 #include <dirent.h>
@@ -26,6 +30,27 @@ _Static_assert(LOCK_SH == OS_LOCK_SH && LOCK_EX == OS_LOCK_EX &&
 #include "abi/ioctl.h"
 #include "abi/stat.h"
 #include "abi/signal.h"
+_Static_assert(sizeof(struct iovec) == sizeof(struct os_iovec), "iovec ABI size");
+_Static_assert(sizeof(struct pollfd) == sizeof(struct os_pollfd), "pollfd ABI size");
+#define CHECK_FIELD(type, field, native, member) \
+ _Static_assert(offsetof(struct type, field) == offsetof(struct native, member), #type " " #field " offset"); \
+ _Static_assert(sizeof(((struct type *)0)->field) == sizeof(((struct native *)0)->member), #type " " #field " width")
+CHECK_FIELD(iovec, iov_base, os_iovec, base);
+CHECK_FIELD(iovec, iov_len, os_iovec, length);
+CHECK_FIELD(pollfd, fd, os_pollfd, fd);
+CHECK_FIELD(pollfd, events, os_pollfd, events);
+CHECK_FIELD(pollfd, revents, os_pollfd, revents);
+#undef CHECK_FIELD
+#define CHECK_POLL(name) _Static_assert(name == OS_##name, #name " poll ABI")
+CHECK_POLL(POLLIN);
+CHECK_POLL(POLLOUT);
+CHECK_POLL(POLLERR);
+CHECK_POLL(POLLHUP);
+CHECK_POLL(POLLNVAL);
+CHECK_POLL(POLLRDNORM);
+CHECK_POLL(POLLWRNORM);
+#undef CHECK_POLL
+
 extern long __os_raw(long,long,long,long,long,long,long);
 long __os_native_call(long n,long a,long b,long c,long d,long e,long f)
 {

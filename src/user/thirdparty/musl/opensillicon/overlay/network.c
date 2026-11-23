@@ -9,6 +9,7 @@
 #include "abi/syscall.h"
 #include "abi/inet.h"
 #include "abi/socket.h"
+#include "abi/uio.h"
 #include "abi/unix_socket.h"
 
 _Static_assert(sizeof(struct sockaddr_un) == sizeof(struct os_unix_address) &&
@@ -54,7 +55,7 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
  if(n==SYS_recvmsg || n==SYS_sendmsg) {
   struct msghdr *msg=(void *)b;
   if(!msg) return -EFAULT;
-  if(msg->msg_iovlen>16) return -EMSGSIZE;
+  if(msg->msg_iovlen>OS_IOV_MAX) return -EMSGSIZE;
   long kind=call(SYSCALL_SOCKET_KIND,a,0,0,0,0,0);
   if(kind<0) return kind;
   if(kind!=OS_SOCKET_KIND_UDP) {

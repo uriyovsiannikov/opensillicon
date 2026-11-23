@@ -1,4 +1,6 @@
 #include "abi/signal.h"
+#include "abi/uio.h"
+#include "abi/poll.h"
 #include "abi/process_info.h"
 #include "abi/exec.h"
 #define _GNU_SOURCE
@@ -80,6 +82,10 @@ static int large_iovec_check(void)
  CHECK(lseek(fd,0,SEEK_CUR)==(off_t)length);
  CHECK(__os_raw(SYSCALL_WRITEV,fd,1,1,0,0,0)==-EFAULT);
  CHECK(writev(fd,NULL,0)==0 && readv(fd,NULL,0)==0);
+ struct iovec limit[OS_IOV_MAX+1]={0};
+ CHECK(writev(fd,limit,OS_IOV_MAX)==0 && readv(fd,limit,OS_IOV_MAX)==0);
+ CHECK(writev(fd,limit,OS_IOV_MAX+1)==-1 && errno==EINVAL);
+ CHECK(readv(fd,limit,OS_IOV_MAX+1)==-1 && errno==EINVAL);
  CHECK(close(fd)==0);
  fd=open("/musl-large-io",O_RDWR|O_TRUNC); CHECK(fd>=0);
  for(int native=0;native<2;native++) {
@@ -892,7 +898,7 @@ static int poll_check(void)
  CHECK(poll(fds,1,0)==1 && fds[0].revents==POLLHUP);
  CHECK(close(channel[0])==0);
  CHECK(syscall(SYS_poll,1,1,0)==-1 && errno==EFAULT);
- CHECK(poll(NULL,1025,0)==-1 && errno==EINVAL);
+ CHECK(poll(NULL,OS_POLL_MAX+1,0)==-1 && errno==EINVAL);
  struct timespec before,after;
  CHECK(clock_gettime(CLOCK_MONOTONIC,&before)==0 && poll(NULL,0,30)==0);
  CHECK(clock_gettime(CLOCK_MONOTONIC,&after)==0);
