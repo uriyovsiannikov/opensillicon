@@ -16,6 +16,7 @@ run('objcopy','--remove-section=.note.gnu.property',p/'module_file_probe.ko')
 # Local echo peers exercise real guest IPv4 traffic through QEMU user networking.
 tcp=socket.socket(); tcp.bind(('127.0.0.1',0)); tcp.listen(1); tcp.settimeout(20)
 udp=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); udp.bind(('127.0.0.1',0)); udp.settimeout(20)
+refused=socket.socket(); refused.bind(('127.0.0.1',0))
 peer_errors=[]
 def tcp_echo():
  try:
@@ -43,7 +44,8 @@ def udp_echo():
 threads=[threading.Thread(target=tcp_echo,daemon=True),threading.Thread(target=udp_echo,daemon=True)]
 for thread in threads: thread.start()
 run('src/build/musl/sysroot/bin/musl-gcc','-O2','-mno-red-zone','-Isrc/include','-Isrc/build/nano/ncurses/include','-static','-no-pie',
-    '-DMUSL_TEST_TCP_PORT='+str(tcp.getsockname()[1]),'-DMUSL_TEST_UDP_PORT='+str(udp.getsockname()[1]),
+    '-DMUSL_TEST_TCP_PORT='+str(tcp.getsockname()[1]),
+    '-DMUSL_TEST_TCP_REFUSED_PORT='+str(refused.getsockname()[1]),'-DMUSL_TEST_UDP_PORT='+str(udp.getsockname()[1]),
     '-Wl,-T,src/user/thirdparty/musl/opensillicon/linker.ld','-Wl,--build-id=none',
     'src/user/thirdparty/musl/opensillicon/check.c','src/build/nano/ncurses/lib/libncurses.a','-o',p/'check.elf')
 run('python3','src/tools/packers/mksilliconfs.py',p/'root.img','--inodes','1024','--reserve-mib','32','--size-from',p/'check.elf')
@@ -66,4 +68,4 @@ try:
  print(text,flush=True)
 finally:
  q.terminate();q.wait(timeout=5)
- tcp.close();udp.close()
+ tcp.close();udp.close();refused.close()

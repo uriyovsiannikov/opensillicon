@@ -9,14 +9,6 @@
 #include "abi/inet.h"
 #include "kernel/fd.h"
 
-#define TCP_SOCKET_SOL_SOCKET 1U
-#define TCP_SOCKET_SO_ERROR 4U
-#define TCP_SOCKET_SO_SNDBUF 7U
-#define TCP_SOCKET_SO_RCVBUF 8U
-#define TCP_SOCKET_SO_KEEPALIVE 9U
-#define TCP_SOCKET_SO_REUSEADDR 2U
-#define TCP_SOCKET_SOL_TCP 6U
-#define TCP_SOCKET_TCP_NODELAY 1U
 
 int tcp_socket_system_init(void);
 void tcp_socket_service(void);

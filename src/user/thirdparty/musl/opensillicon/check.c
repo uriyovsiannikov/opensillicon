@@ -28,6 +28,7 @@
 #include <sys/un.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <curses.h>
 #include <termios.h>
@@ -41,6 +42,7 @@
 #include "abi/dirent.h"
 #include "abi/inet.h"
 #include "abi/socket.h"
+#include "abi/tcp_diag.h"
 #include "abi/unix_socket.h"
 #include <sys/icmp.h>
 #include "abi/ioctl.h"
@@ -904,6 +906,77 @@ static int curses_check(void)
  delscreen(screen);
  return 0;
 }
+static int socket_option_check(void)
+{
+ int integer=1; socklen_t length=sizeof integer;
+ CHECK(getsockopt(-1,SOL_SOCKET,SO_TYPE,&integer,&length)==-1 && errno==EBADF);
+ CHECK(setsockopt(-1,SOL_SOCKET,SO_SNDBUF,&integer,sizeof integer)==-1 && errno==EBADF);
+ int ordinary=open("/dev/null",O_RDWR); CHECK(ordinary>=0);
+ CHECK(getsockopt(ordinary,SOL_SOCKET,SO_TYPE,&integer,&length)==-1 && errno==ENOTSOCK);
+ CHECK(setsockopt(ordinary,SOL_SOCKET,SO_SNDBUF,&integer,sizeof integer)==-1 && errno==ENOTSOCK);
+ CHECK(close(ordinary)==0);
+ for(int kind=0;kind<3;kind++) {
+  int fd=socket(kind==0 ? AF_UNIX : AF_INET,kind==2 ? SOCK_DGRAM : SOCK_STREAM,0);
+  CHECK(fd>=0);
+  const int options[]={SO_TYPE,SO_DOMAIN,SO_PROTOCOL};
+  const int expected[]={kind==2 ? SOCK_DGRAM : SOCK_STREAM,kind==0 ? AF_UNIX : AF_INET,
+      kind==0 ? 0 : kind==1 ? IPPROTO_TCP : IPPROTO_UDP};
+  for(size_t i=0;i<3;i++) {
+   struct { int value; unsigned char unused[32]; } output={.value=-1};
+   memset(output.unused,0xa9,sizeof output.unused); length=sizeof output;
+   CHECK(getsockopt(fd,SOL_SOCKET,options[i],&output,&length)==0 &&
+       length==sizeof output.value && output.value==expected[i]);
+   for(size_t j=0;j<sizeof output.unused;j++) CHECK(output.unused[j]==0xa9);
+   struct { unsigned char byte,guard; } prefix={0,0xb7}; length=1;
+   CHECK(getsockopt(fd,SOL_SOCKET,options[i],&prefix.byte,&length)==0 && length==1 &&
+       prefix.byte==(unsigned char)expected[i] && prefix.guard==0xb7);
+  }
+  length=0;
+  CHECK(getsockopt(fd,SOL_SOCKET,SO_TYPE,NULL,&length)==0 && length==0);
+  length=sizeof integer;
+  CHECK(__os_raw(SYSCALL_GETSOCKOPT,fd,SOL_SOCKET,SO_TYPE,1,(long)&length,0)==-EFAULT);
+  CHECK(length==sizeof integer);
+  CHECK(__os_raw(SYSCALL_GETSOCKOPT,fd,SOL_SOCKET,SO_TYPE,(long)&integer,1,0)==-EFAULT);
+  CHECK(__os_raw(SYSCALL_GETSOCKOPT,fd,((long)1<<32)|SOL_SOCKET,SO_TYPE,
+      (long)&integer,(long)&length,0)==-ENOPROTOOPT);
+  CHECK(__os_raw(SYSCALL_GETSOCKOPT,fd,SOL_SOCKET,((long)1<<32)|SO_TYPE,
+      (long)&integer,(long)&length,0)==-ENOPROTOOPT);
+  integer=1;
+  CHECK(setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&integer,sizeof integer)==-1 && errno==ENOPROTOOPT);
+  CHECK(getsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&integer,&length)==-1 && errno==ENOPROTOOPT);
+  if(kind==0 || kind==2) {
+   CHECK(setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&integer,sizeof integer)==-1 && errno==ENOPROTOOPT);
+  } else {
+   for(int enabled=0;enabled<=1;enabled++) {
+    CHECK(setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&enabled,sizeof enabled)==0);
+    length=sizeof integer;
+    CHECK(getsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&integer,&length)==0 && integer==enabled);
+    CHECK(setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&enabled,sizeof enabled)==0);
+    CHECK(getsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&integer,&length)==0 && integer==enabled);
+   }
+   struct { struct os_tcp_diag value; unsigned char guard; } diag={.guard=0xc3};
+   length=sizeof diag;
+   CHECK(getsockopt(fd,IPPROTO_TCP,OS_TCP_DIAG,&diag,&length)==0 &&
+       length==sizeof diag.value && diag.guard==0xc3);
+   unsigned char short_diag[4]={0,0,0,0xd4}; length=3;
+   CHECK(getsockopt(fd,IPPROTO_TCP,OS_TCP_DIAG,short_diag,&length)==0 &&
+       length==3 && !memcmp(short_diag,&diag.value,3) && short_diag[3]==0xd4);
+  }
+  if(kind!=2) {
+   integer=4096;
+   CHECK(setsockopt(fd,SOL_SOCKET,SO_RCVBUF,&integer,sizeof integer)==0);
+   length=sizeof integer; integer=0;
+   CHECK(getsockopt(fd,SOL_SOCKET,SO_RCVBUF,&integer,&length)==0 && integer>=4096);
+   CHECK(__os_raw(SYSCALL_SETSOCKOPT,fd,SOL_SOCKET,SO_RCVBUF,1,sizeof integer,0)==-EFAULT);
+   CHECK(setsockopt(fd,SOL_SOCKET,SO_RCVBUF,&integer,3)==-1 && errno==EINVAL);
+   CHECK(__os_raw(SYSCALL_SETSOCKOPT,fd,SOL_SOCKET,((long)1<<32)|SO_RCVBUF,
+       (long)&integer,sizeof integer,0)==-ENOPROTOOPT);
+  }
+  CHECK(close(fd)==0);
+ }
+ return 0;
+}
+
 static int socket_control_check(void)
 {
  CHECK(__os_raw(SYSCALL_LISTEN,-1,1,0,0,0,0)==-EBADF);
@@ -1240,6 +1313,11 @@ static int network_check(void)
  CHECK(select(server+1,&reads,NULL,NULL,&timeout)==1 && FD_ISSET(server,&reads));
  int peer=accept4(server,NULL,NULL,SOCK_CLOEXEC);
  CHECK(peer>=0 && (fcntl(peer,F_GETFD)&FD_CLOEXEC));
+ struct ucred credential;
+ socklen_t credential_length=sizeof credential;
+ CHECK(getsockopt(peer,SOL_SOCKET,SO_PEERCRED,&credential,&credential_length)==0 &&
+     credential_length==sizeof credential && credential.pid==child &&
+     credential.uid==getuid() && credential.gid==getgid());
  queried_length=sizeof queried;
  CHECK(getsockname(peer,(struct sockaddr *)&queried,&queried_length)==0 &&
      queried_length==server_name_length && !strcmp(queried.sun_path,address.sun_path));
@@ -1389,6 +1467,20 @@ static int network_check(void)
  struct pollfd shut_poll={.fd=tcp,.events=POLLIN|POLLOUT};
  CHECK(poll(&shut_poll,1,0)==1 && (shut_poll.revents&(POLLIN|POLLOUT))==(POLLIN|POLLOUT));
  CHECK(recv(tcp,message,sizeof message,0)==0 && close(tcp)==0);
+ int failed=socket(AF_INET,SOCK_STREAM|SOCK_NONBLOCK,0); CHECK(failed>=0);
+ remote.sin_port=htons(MUSL_TEST_TCP_REFUSED_PORT);
+ CHECK(connect(failed,(struct sockaddr *)&remote,sizeof remote)==-1 && errno==EINPROGRESS);
+ struct pollfd refused_poll={.fd=failed,.events=POLLOUT};
+ CHECK(poll(&refused_poll,1,3000)==1 && (refused_poll.revents&POLLERR));
+ length=sizeof(int); int failure=0;
+ CHECK(__os_raw(SYSCALL_GETSOCKOPT,failed,SOL_SOCKET,SO_ERROR,1,(long)&length,0)==-EFAULT);
+ CHECK(length==sizeof(int));
+ static const socklen_t readonly_length=sizeof(int);
+ CHECK(__os_raw(SYSCALL_GETSOCKOPT,failed,SOL_SOCKET,SO_ERROR,
+     (long)&failure,(long)&readonly_length,0)==-EFAULT);
+ CHECK(getsockopt(failed,SOL_SOCKET,SO_ERROR,&failure,&length)==0 && failure==ECONNREFUSED);
+ CHECK(getsockopt(failed,SOL_SOCKET,SO_ERROR,&failure,&length)==0 && failure==0);
+ CHECK(close(failed)==0);
  CHECK(socket(AF_INET6,SOCK_STREAM,0)==-1 && errno==EAFNOSUPPORT);
  return 0;
 }
@@ -1621,7 +1713,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,53,58,63,81,82,83,84,86,88,89,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,50,51,53,58,63,81,82,83,84,86,87,88,89,90,91,92,93,94,101,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
@@ -1669,6 +1761,8 @@ int main(int argc, char **argv)
  if(terminal_result) return terminal_result;
  int curses_result=curses_check();
  if(curses_result) return curses_result;
+ int option_result=socket_option_check();
+ if(option_result) return option_result;
  int control_result=socket_control_check();
  if(control_result) return control_result;
  int poll_result=poll_check();

@@ -582,7 +582,7 @@ unix_socket_shutdown(struct fd_object *object, uint64_t how)
 }
 
 int
-unix_socket_get_option(struct fd_object *object, int option, void *value,
+unix_socket_get_option(struct fd_object *object, uint64_t option, void *value,
 	size_t *length)
 {
 	struct unix_socket_state *state = socket_state(object);
@@ -591,7 +591,7 @@ unix_socket_get_option(struct fd_object *object, int option, void *value,
 	if (value == NULL || length == NULL)
 		return -EINVAL;
 	uint64_t flags = state_guard_enter();
-	if (option == UNIX_SOCKET_SO_PEERCRED) {
+	if (option == OS_SO_PEERCRED) {
 		struct os_unix_ucred credential;
 		if (!state->connected || state->peer == NULL) {
 			state_guard_leave(flags);
@@ -608,45 +608,39 @@ unix_socket_get_option(struct fd_object *object, int option, void *value,
 		};
 		*(struct os_unix_ucred *)value = credential;
 		*length = sizeof(credential);
-	} else if (option == UNIX_SOCKET_SO_SNDBUF ||
-	    option == UNIX_SOCKET_SO_RCVBUF) {
+	} else if (option == OS_SO_SNDBUF ||
+	    option == OS_SO_RCVBUF) {
 		if (*length < sizeof(int)) {
 			state_guard_leave(flags);
 			return -EINVAL;
 		}
-		*(int *)value = (int)(option == UNIX_SOCKET_SO_SNDBUF ?
+		*(int *)value = (int)(option == OS_SO_SNDBUF ?
 		    state->send_capacity : state->receive_capacity);
 		*length = sizeof(int);
 	} else {
 		state_guard_leave(flags);
-		return -EOPNOTSUPP;
+		return -ENOPROTOOPT;
 	}
 	state_guard_leave(flags);
 	return 0;
 }
 
 int
-unix_socket_set_option(struct fd_object *object, int option,
+unix_socket_set_option(struct fd_object *object, uint64_t option,
 	const void *value, size_t length)
 {
 	struct unix_socket_state *state = socket_state(object);
 	if (state == NULL)
 		return -ENOTSOCK;
-	if (option == UNIX_SOCKET_SO_REUSEADDR ||
-	    option == UNIX_SOCKET_SO_KEEPALIVE) {
-		if (value == NULL || length != sizeof(int))
-			return -EINVAL;
-		return 0;
-	}
-	if (option == UNIX_SOCKET_SO_SNDBUF ||
-	    option == UNIX_SOCKET_SO_RCVBUF) {
+	if (option == OS_SO_SNDBUF ||
+	    option == OS_SO_RCVBUF) {
 		if (value == NULL || length != sizeof(int))
 			return -EINVAL;
 		int capacity = *(const int *)value;
 		if (capacity < 1024 || capacity > (int)UNIX_SOCKET_BUFFER_SIZE)
 			return -EINVAL;
 		uint64_t flags = state_guard_enter();
-		if (option == UNIX_SOCKET_SO_SNDBUF)
+		if (option == OS_SO_SNDBUF)
 			state->send_capacity = (size_t)capacity;
 		else
 			state->receive_capacity = (size_t)capacity;
@@ -654,7 +648,7 @@ unix_socket_set_option(struct fd_object *object, int option,
 		state_guard_leave(flags);
 		return 0;
 	}
-	return -EOPNOTSUPP;
+	return -ENOPROTOOPT;
 }
 
 int

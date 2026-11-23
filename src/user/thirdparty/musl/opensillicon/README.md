@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v22.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v23.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -336,3 +336,15 @@ peer acknowledgment; it also drains discarded input after SHUT_RD.
 
 Partial TCP writes report the bytes already accepted by the transport even
 when its remaining send buffer fills, so callers retry only the unsent suffix.
+
+ABI v23 replaces TCP/Unix getsockopt and setsockopt (slots 87/90 and 50/51)
+with GETSOCKOPT (119) and SETSOCKOPT (120). The kernel owns socket metadata
+and output validation. Short getsockopt buffers receive the available prefix;
+optlen reports the bytes copied. Bad user memory returns EFAULT. Unknown or
+unsupported options return ENOPROTOOPT. Option identifiers are shared in
+abi/socket.h. Rebuild static programs.
+
+Unix SO_REUSEADDR/SO_KEEPALIVE and TCP SO_REUSEADDR no longer pretend to
+succeed: these paths had no effect on the socket implementation. Their setters
+and getters return ENOPROTOOPT. TCP keepalive and buffer controls remain real
+transport operations; Unix buffer capacities remain enforced.

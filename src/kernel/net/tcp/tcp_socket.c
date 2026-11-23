@@ -21,7 +21,6 @@ struct tcp_socket_state {
 	bool write_shutdown;
 	bool connect_pending;
 	bool no_delay;
-	bool reuse_address;
 	bool keep_alive;
 	int connect_error;
 	Socket *socket;
@@ -393,7 +392,6 @@ tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
 			*child = (struct tcp_socket_state){
 				.allocated = true,
 				.no_delay = parent->no_delay,
-				.reuse_address = parent->reuse_address,
 				.keep_alive = parent->keep_alive
 			};
 			break;
@@ -498,8 +496,8 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 		return -ENOTSOCK;
 	if (value == NULL || length == NULL || *length < sizeof(int))
 		return -EINVAL;
-	if (level == TCP_SOCKET_SOL_SOCKET) {
-		if (option == TCP_SOCKET_SO_ERROR) {
+	if (level == OS_SOL_SOCKET) {
+		if (option == OS_SO_ERROR) {
 			uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 			bool pending = state->connect_pending;
 			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
@@ -519,31 +517,27 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 			*(int *)value = state->connect_error;
 			state->connect_error = 0;
 			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
-		} else if (option == TCP_SOCKET_SO_SNDBUF ||
-		    option == TCP_SOCKET_SO_RCVBUF ||
-		    option == TCP_SOCKET_SO_KEEPALIVE) {
+		} else if (option == OS_SO_SNDBUF ||
+		    option == OS_SO_RCVBUF ||
+		    option == OS_SO_KEEPALIVE) {
 			int result;
-			if (option == TCP_SOCKET_SO_KEEPALIVE) {
+			if (option == OS_SO_KEEPALIVE) {
 				uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 				result = state->keep_alive ? 1 : 0;
 				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			} else {
 				netLock(state->socket->netContext);
-				if (option == TCP_SOCKET_SO_SNDBUF)
+				if (option == OS_SO_SNDBUF)
 					result = (int)state->socket->txBufferSize;
 				else
 					result = (int)state->socket->rxBufferSize;
 				netUnlock(state->socket->netContext);
 			}
 			*(int *)value = result;
-		} else if (option == TCP_SOCKET_SO_REUSEADDR) {
-			uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
-			*(int *)value = state->reuse_address ? 1 : 0;
-			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		} else {
-			return -EOPNOTSUPP;
+			return -ENOPROTOOPT;
 		}
-	} else if (level == TCP_SOCKET_SOL_TCP && option == OS_TCP_DIAG) {
+	} else if (level == OS_SOL_TCP && option == OS_TCP_DIAG) {
 		if (*length < sizeof(struct os_tcp_diag))
 			return -EINVAL;
 		Socket *socket = state->socket;
@@ -562,13 +556,13 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 		netUnlock(socket->netContext);
 		*length = sizeof(struct os_tcp_diag);
 		return 0;
-	} else if (level == TCP_SOCKET_SOL_TCP &&
-	    option == TCP_SOCKET_TCP_NODELAY) {
+	} else if (level == OS_SOL_TCP &&
+	    option == OS_TCP_NODELAY) {
 		uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 		*(int *)value = state->no_delay ? 1 : 0;
 		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	} else {
-		return -EOPNOTSUPP;
+		return -ENOPROTOOPT;
 	}
 	*length = sizeof(int);
 	return 0;
@@ -586,21 +580,9 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 	if (value == NULL || length != sizeof(setting))
 		return -EINVAL;
 	setting = *(const int *)value;
-	if (setting != 0 && setting != 1 &&
-	    !(level == TCP_SOCKET_SOL_SOCKET &&
-	    (option == TCP_SOCKET_SO_SNDBUF || option == TCP_SOCKET_SO_RCVBUF)))
-		return -EINVAL;
-	if (level == TCP_SOCKET_SOL_SOCKET) {
+	if (level == OS_SOL_SOCKET) {
 		switch (option) {
-		case TCP_SOCKET_SO_REUSEADDR:
-			/* Cyclone does not reject address reuse during bind. */
-			{
-				uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
-				state->reuse_address = setting != 0;
-				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
-			}
-			return 0;
-		case TCP_SOCKET_SO_KEEPALIVE:
+		case OS_SO_KEEPALIVE:
 			error = socketEnableKeepAlive(state->socket,
 			    setting ? TRUE : FALSE);
 			if (error == NO_ERROR) {
@@ -609,14 +591,14 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			}
 			return cyclone_error(error);
-		case TCP_SOCKET_SO_SNDBUF:
+		case OS_SO_SNDBUF:
 			if (setting <= 0)
 				return -EINVAL;
 			error = socketSetTxBufferSize(state->socket, (size_t)setting);
 			return error == ERROR_INVALID_PARAMETER ||
 			    error == ERROR_INVALID_SOCKET ? -EINVAL :
 			    cyclone_error(error);
-		case TCP_SOCKET_SO_RCVBUF:
+		case OS_SO_RCVBUF:
 			if (setting <= 0)
 				return -EINVAL;
 			error = socketSetRxBufferSize(state->socket, (size_t)setting);
@@ -624,17 +606,17 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 			    error == ERROR_INVALID_SOCKET ? -EINVAL :
 			    cyclone_error(error);
 		default:
-			return -EOPNOTSUPP;
+			return -ENOPROTOOPT;
 		}
 	}
-	if (level == TCP_SOCKET_SOL_TCP &&
-	    option == TCP_SOCKET_TCP_NODELAY) {
+	if (level == OS_SOL_TCP &&
+	    option == OS_TCP_NODELAY) {
 		uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 		state->no_delay = setting != 0;
 		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return 0;
 	}
-	return -EOPNOTSUPP;
+	return -ENOPROTOOPT;
 }
 
 int

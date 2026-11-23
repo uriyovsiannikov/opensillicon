@@ -59,69 +59,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 				frame->rax = (uint64_t)result;
 		}
 		break;
-	case SYSCALL_UNIX_GETSOCKOPT:
-		{
-			uint8_t value[16] = {0};
-			uint32_t length;
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			size_t actual;
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (frame->rsi != UNIX_SOCKET_SOL_SOCKET || frame->r8 == 0 ||
-			    !vmm_copy_from_user(vmm_active_address_space(), &length,
-			    frame->r8, sizeof(length)) || length > sizeof(value)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			actual = length;
-			result = unix_socket_get_option(object, (int)frame->rdx,
-			    value, &actual);
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			length = (uint32_t)actual;
-			if (!vmm_validate_user_write(vmm_active_address_space(),
-			    frame->r10, actual) || !vmm_validate_user_write(
-			    vmm_active_address_space(), frame->r8, sizeof(length)) ||
-			    !vmm_copy_to_user(vmm_active_address_space(), frame->r10,
-			    value, actual) || !vmm_copy_to_user(vmm_active_address_space(),
-			    frame->r8, &length, sizeof(length))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			frame->rax = 0;
-		}
-		break;
-	case SYSCALL_UNIX_SETSOCKOPT:
-		{
-			uint8_t value[16];
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (frame->rsi != UNIX_SOCKET_SOL_SOCKET || frame->r8 == 0 ||
-			    frame->r8 > sizeof(value) || !vmm_copy_from_user(
-			    vmm_active_address_space(), value, frame->r10,
-			    (size_t)frame->r8)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			result = unix_socket_set_option(object, (int)frame->rdx,
-			    value, (size_t)frame->r8);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	default:
 		syscall_error(frame, ENOSYS);
 		break;

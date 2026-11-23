@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/syscall.h>
 #include <errno.h>
 #include <stdint.h>
@@ -14,6 +15,12 @@
 
 _Static_assert(sizeof(struct sockaddr_un) == sizeof(struct os_unix_address) &&
     offsetof(struct sockaddr_un, sun_path) == offsetof(struct os_unix_address, path), "Unix address layout");
+
+_Static_assert(SOL_SOCKET == OS_SOL_SOCKET && IPPROTO_TCP == OS_SOL_TCP &&
+    SO_TYPE == OS_SO_TYPE && SO_DOMAIN == OS_SO_DOMAIN && SO_PROTOCOL == OS_SO_PROTOCOL &&
+    SO_ERROR == OS_SO_ERROR && SO_SNDBUF == OS_SO_SNDBUF && SO_RCVBUF == OS_SO_RCVBUF &&
+    SO_KEEPALIVE == OS_SO_KEEPALIVE && SO_PEERCRED == OS_SO_PEERCRED &&
+    TCP_NODELAY == OS_TCP_NODELAY, "socket options");
 
 _Static_assert(SHUT_RD == OS_SHUT_RD && SHUT_WR == OS_SHUT_WR &&
     SHUT_RDWR == OS_SHUT_RDWR, "shutdown modes");
@@ -112,11 +119,13 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   long type=b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK);
   return set_flags(call(SYSCALL_SOCKET,a,type,c,0,0,0),b);
  }
+ if(n==SYS_getsockopt || n==SYS_setsockopt)
+  return call(n==SYS_getsockopt ? SYSCALL_GETSOCKOPT : SYSCALL_SETSOCKOPT,a,b,c,d,e,0);
  if(n==SYS_shutdown) return call(SYSCALL_SHUTDOWN,a,b,0,0,0,0);
  if(n==SYS_listen) return call(SYSCALL_LISTEN,a,b,0,0,0,0);
  switch(n) {
  case SYS_bind: case SYS_connect: case SYS_accept:
- case SYS_accept4: case SYS_getsockopt: case SYS_setsockopt:
+ case SYS_accept4:
  case SYS_getsockname: case SYS_getpeername: case SYS_sendto: case SYS_recvfrom:
   break;
  default: return -ENOSYS;
@@ -144,22 +153,6 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
    if(converted<0) {call(SYSCALL_CLOSE,r,0,0,0,0,0);return converted;}
   }
   return set_flags(r,d);
- case SYS_getsockopt:
-  if(b==SOL_SOCKET && (c==SO_TYPE || c==SO_DOMAIN || c==SO_PROTOCOL)) {
-   if(!d || !e) return -EFAULT;
-   int value=c==SO_TYPE ? (kind==OS_SOCKET_KIND_UDP ? SOCK_DGRAM : SOCK_STREAM) :
-       c==SO_DOMAIN ? (unix_socket ? AF_UNIX : AF_INET) :
-       (unix_socket ? 0 : tcp ? IPPROTO_TCP : IPPROTO_UDP);
-   socklen_t *size=(void *)e;
-   memcpy((void *)d,&value,*size<sizeof value ? *size : sizeof value);
-   *size=sizeof value;
-   return 0;
-  }
-  if(!unix_socket && !tcp) return -ENOPROTOOPT;
-  return call(unix_socket ? SYSCALL_UNIX_GETSOCKOPT : SYSCALL_TCP_GETSOCKOPT,a,b,c,d,e,0);
- case SYS_setsockopt:
-  if(!unix_socket && !tcp) return -ENOPROTOOPT;
-  return call(unix_socket ? SYSCALL_UNIX_SETSOCKOPT : SYSCALL_TCP_SETSOCKOPT,a,b,c,d,e,0);
  case SYS_getsockname: case SYS_getpeername:
   if(!b || !c) return -EFAULT;
   op=n==SYS_getsockname ? SYSCALL_GETSOCKNAME : SYSCALL_GETPEERNAME;

@@ -307,86 +307,102 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 		break;
 	}
-	case SYSCALL_TCP_GETSOCKOPT:
-		{
-			union {
-				int integer;
-				struct os_tcp_diag diag;
-			} value;
-			size_t actual;
-			uint32_t length;
-			struct address_space *space = vmm_active_address_space();
-			struct fd_object *object = fd_object_for_descriptor(
-				current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!tcp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (frame->r8 == 0 || !vmm_copy_from_user(space, &length,
-			    frame->r8, sizeof(length)) || length < sizeof(value.integer)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			if (!vmm_validate_user_write(space, frame->r10,
-			    sizeof(value.integer)) || !vmm_validate_user_write(space, frame->r8,
-			    sizeof(length))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			actual = length < sizeof(value) ? length : sizeof(value);
+	case SYSCALL_GETSOCKOPT: {
+		union {
+			int integer;
+			struct os_tcp_diag diag;
+			struct os_unix_ucred credential;
+		} value = {0};
+		struct address_space *space = vmm_active_address_space();
+		struct fd_object *object = fd_object_for_descriptor(
+		    current_fd_table(), frame->rdi);
+		uint32_t capacity, copied;
+		size_t actual = sizeof(value), size = sizeof(int);
+		bool tcp = tcp_socket_is_object(object);
+		bool local = unix_socket_is_object(object);
+		bool udp = udp_socket_is_object(object);
+		int result;
+
+		if (object == NULL) {
+			syscall_error(frame, EBADF);
+			break;
+		}
+		if (!tcp && !local && !udp) {
+			syscall_error(frame, ENOTSOCK);
+			break;
+		}
+		if (!vmm_copy_from_user(space, &capacity, frame->r8, sizeof(capacity)) ||
+		    !vmm_validate_user_write(space, frame->r8, sizeof(capacity))) {
+			syscall_error(frame, EFAULT);
+			break;
+		}
+		if (tcp && frame->rsi == OS_SOL_TCP && frame->rdx == OS_TCP_DIAG)
+			size = sizeof(value.diag);
+		else if (local && frame->rsi == OS_SOL_SOCKET &&
+		    frame->rdx == OS_SO_PEERCRED)
+			size = sizeof(value.credential);
+		/* Check output before SO_ERROR can consume a pending error. */
+		copied = capacity < size ? capacity : size;
+		if (copied != 0 && !vmm_validate_user_write(space, frame->r10, copied)) {
+			syscall_error(frame, EFAULT);
+			break;
+		}
+		if (frame->rsi == OS_SOL_SOCKET && (frame->rdx == OS_SO_TYPE ||
+		    frame->rdx == OS_SO_DOMAIN || frame->rdx == OS_SO_PROTOCOL)) {
+			value.integer = frame->rdx == OS_SO_TYPE ?
+			    (udp ? OS_SOCK_DGRAM : OS_SOCK_STREAM) :
+			    frame->rdx == OS_SO_DOMAIN ? (local ? OS_AF_UNIX : OS_AF_INET) :
+			    (local ? 0 : tcp ? OS_IPPROTO_TCP : OS_IPPROTO_UDP);
+			actual = sizeof(value.integer);
+			result = 0;
+		} else if (tcp)
 			result = tcp_socket_get_option(object, frame->rsi, frame->rdx,
 			    &value, &actual);
-			if (result != 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			length = (uint32_t)actual;
-			if (!vmm_validate_user_write(space, frame->r10, actual) ||
-			    !vmm_validate_user_write(space, frame->r8, sizeof(length)) ||
-			    !vmm_copy_to_user(space, frame->r10, &value, actual) ||
-			    !vmm_copy_to_user(space, frame->r8, &length, sizeof(length))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
+		else if (local && frame->rsi == OS_SOL_SOCKET)
+			result = unix_socket_get_option(object, frame->rdx, &value, &actual);
+		else
+			result = -ENOPROTOOPT;
+		if (result != 0) {
+			syscall_error(frame, errno_from_kernel(result));
+			break;
+		}
+		copied = capacity < actual ? capacity : actual;
+		if ((copied != 0 && !vmm_copy_to_user(space, frame->r10, &value, copied)) ||
+		    !vmm_copy_to_user(space, frame->r8, &copied, sizeof(copied)))
+			syscall_error(frame, EFAULT);
+		else
 			frame->rax = 0;
-		}
 		break;
-	case SYSCALL_TCP_SETSOCKOPT:
-		{
-			int value;
-			struct fd_object *object = fd_object_for_descriptor(
-				current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!tcp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (frame->r8 != sizeof(value)) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			if (!vmm_copy_from_user(vmm_active_address_space(), &value,
-			    frame->r10, sizeof(value))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			result = tcp_socket_set_option(object, frame->rsi,
-			    frame->rdx, &value, sizeof(value));
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
+	}
+	case SYSCALL_SETSOCKOPT: {
+		struct fd_object *object = fd_object_for_descriptor(
+		    current_fd_table(), frame->rdi);
+		bool tcp = tcp_socket_is_object(object);
+		bool local = unix_socket_is_object(object);
+		int value, result;
+
+		if (object == NULL)
+			result = -EBADF;
+		else if (!tcp && !local)
+			result = udp_socket_is_object(object) ? -ENOPROTOOPT : -ENOTSOCK;
+		else if (frame->r8 != sizeof(value))
+			result = -EINVAL;
+		else if (!vmm_copy_from_user(vmm_active_address_space(), &value,
+		    frame->r10, sizeof(value)))
+			result = -EFAULT;
+		else if (tcp)
+			result = tcp_socket_set_option(object, frame->rsi, frame->rdx,
+			    &value, sizeof(value));
+		else if (frame->rsi == OS_SOL_SOCKET)
+			result = unix_socket_set_option(object, frame->rdx, &value, sizeof(value));
+		else
+			result = -ENOPROTOOPT;
+		if (result != 0)
+			syscall_error(frame, errno_from_kernel(result));
+		else
+			frame->rax = 0;
 		break;
+	}
 	case SYSCALL_GETSOCKNAME:
 	case SYSCALL_GETPEERNAME:
 		{
