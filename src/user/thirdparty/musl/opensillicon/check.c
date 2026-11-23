@@ -1729,7 +1729,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,50,51,53,58,63,81,82,83,84,86,87,88,89,90,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,50,51,53,58,63,67,69,81,82,83,84,86,87,88,89,90,91,92,93,94,101,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);

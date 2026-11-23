@@ -1234,7 +1234,7 @@ process_current_credentials(struct os_credentials *credentials)
 }
 
 int
-process_set_uid(uint32_t id, bool effective_only)
+process_set_uid(uint32_t id)
 {
 	uint64_t flags;
 	bool allowed;
@@ -1244,14 +1244,14 @@ process_set_uid(uint32_t id, bool effective_only)
 		return -EINVAL;
 	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
 	allowed = credentials_set_uid(&current_process->credentials, id,
-	    effective_only);
+	    false);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
 	return allowed ? 0 : -(int)EPERM;
 }
 
 int
-process_set_gid(uint32_t id, bool effective_only)
+process_set_gid(uint32_t id)
 {
 	uint64_t flags;
 	bool allowed;
@@ -1261,7 +1261,7 @@ process_set_gid(uint32_t id, bool effective_only)
 		return -EINVAL;
 	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
 	allowed = credentials_set_gid(&current_process->credentials, id,
-	    effective_only);
+	    false);
 	if ((flags & (1ULL << 9)) != 0)
 		__asm__ volatile ("sti" : : : "memory");
 	return allowed ? 0 : -(int)EPERM;

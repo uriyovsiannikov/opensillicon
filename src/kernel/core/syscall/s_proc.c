@@ -142,19 +142,13 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 		frame->rax = process_current_ppid();
 		break;
 	case SYSCALL_SETUID:
-	case SYSCALL_SETEUID:
 	case SYSCALL_SETGID:
-	case SYSCALL_SETEGID:
 		if (frame->rdi > UINT32_MAX) {
 			syscall_error(frame, EINVAL);
 		} else {
 			int result = number == SYSCALL_SETUID ?
-			    process_set_uid((uint32_t)frame->rdi, false) :
-			    number == SYSCALL_SETEUID ?
-			    process_set_uid((uint32_t)frame->rdi, true) :
-			    number == SYSCALL_SETGID ?
-			    process_set_gid((uint32_t)frame->rdi, false) :
-			    process_set_gid((uint32_t)frame->rdi, true);
+			    process_set_uid((uint32_t)frame->rdi) :
+			    process_set_gid((uint32_t)frame->rdi);
 			if (result != 0)
 				syscall_error(frame, errno_from_kernel(result));
 			else

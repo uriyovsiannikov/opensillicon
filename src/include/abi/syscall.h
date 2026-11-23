@@ -1,10 +1,10 @@
 #ifndef ABI_SYSCALL_H
 #define ABI_SYSCALL_H
 
-/* ABI v23. Retired slots: 4–10, 14, 17, 23, 33, 34, 41, 43–46, 49–51, 53, 58,
- * 63, 81–84, 86–90, 91–94, 101 and 109.
+/* ABI v24. Retired slots: 4–10, 14, 17, 23, 33, 34, 41, 43–46, 49–51, 53, 58,
+ * 63, 67, 69, 81–84, 86–90, 91–94, 101 and 109.
  * Slots are never reused; rebuild userspace after an ABI change. */
-#define SYSCALL_ABI_VERSION 23U
+#define SYSCALL_ABI_VERSION 24U
 
 #ifdef __ASSEMBLER__
 #define OS_SYSCALL(name, number) .equ name, number ;
