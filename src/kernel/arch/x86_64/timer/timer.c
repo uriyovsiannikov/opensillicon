@@ -6,20 +6,10 @@
 #include "kernel/process.h"
 #include "kernel/smp.h"
 #include "kernel/timer.h"
-#include "kernel/spinlock.h"
 
 #define TIMER_VECTOR 32U
 #define PIC_MASTER_DATA 0x21U
 #define PIC_SLAVE_DATA 0xa1U
-#define TIMER_CALLBACK_SLOTS 64U
-
-struct timer_callback_slot {
-	uint64_t handle;
-	uint64_t deadline_ns;
-	kernel_timer_callback callback;
-	void *argument;
-	bool active;
-};
 
 static uint64_t ticks;
 static uint64_t tsc_frequency_hz;
@@ -27,30 +17,6 @@ static uint32_t ap_initial_count;
 static bool initialized;
 static uint64_t realtime_epoch;
 static bool realtime_available;
-static struct spinlock callback_lock = SPINLOCK_INITIALIZER;
-static struct timer_callback_slot callbacks[TIMER_CALLBACK_SLOTS];
-static uint64_t next_callback_handle = 1;
-
-static void
-timer_callbacks_run(void)
-{
-	for (size_t ran = 0; ran < TIMER_CALLBACK_SLOTS; ran++) {
-		struct timer_callback_slot due = {0};
-		uint64_t now = timer_monotonic_ns();
-		uint64_t flags = spinlock_lock_irqsave(&callback_lock);
-		for (size_t i = 0; i < TIMER_CALLBACK_SLOTS; i++) {
-			if (callbacks[i].active && callbacks[i].deadline_ns <= now) {
-				due = callbacks[i];
-				callbacks[i].active = false;
-				break;
-			}
-		}
-		spinlock_unlock_irqrestore(&callback_lock, flags);
-		if (due.callback == NULL)
-			return;
-		due.callback(due.argument);
-	}
-}
 
 static struct interrupt_frame *
 timer_interrupt(struct interrupt_frame *frame)
@@ -61,57 +27,8 @@ timer_interrupt(struct interrupt_frame *frame)
 		current = __atomic_add_fetch(&ticks, 1, __ATOMIC_RELAXED);
 	lapic_eoi();
 	hda_audio_tick();
-	timer_callbacks_run();
 	process_timer_wakeup(current);
 	return process_timer_preempt(frame);
-}
-
-bool
-timer_callback_schedule(uint64_t deadline_ns, kernel_timer_callback callback,
-	void *argument, uint64_t *handle)
-{
-	uint64_t flags;
-	if (callback == NULL || handle == NULL ||
-	    !__atomic_load_n(&initialized, __ATOMIC_ACQUIRE))
-		return false;
-	flags = spinlock_lock_irqsave(&callback_lock);
-	for (size_t i = 0; i < TIMER_CALLBACK_SLOTS; i++) {
-		if (callbacks[i].active)
-			continue;
-		uint64_t next = next_callback_handle++;
-		if (next == 0)
-			next = next_callback_handle++;
-		callbacks[i] = (struct timer_callback_slot){
-			.handle = next,
-			.deadline_ns = deadline_ns,
-			.callback = callback,
-			.argument = argument,
-			.active = true
-		};
-		*handle = next;
-		spinlock_unlock_irqrestore(&callback_lock, flags);
-		return true;
-	}
-	spinlock_unlock_irqrestore(&callback_lock, flags);
-	return false;
-}
-
-bool
-timer_callback_cancel(uint64_t handle)
-{
-	uint64_t flags;
-	if (handle == 0)
-		return false;
-	flags = spinlock_lock_irqsave(&callback_lock);
-	for (size_t i = 0; i < TIMER_CALLBACK_SLOTS; i++) {
-		if (!callbacks[i].active || callbacks[i].handle != handle)
-			continue;
-		callbacks[i].active = false;
-		spinlock_unlock_irqrestore(&callback_lock, flags);
-		return true;
-	}
-	spinlock_unlock_irqrestore(&callback_lock, flags);
-	return false;
 }
 
 bool
@@ -189,8 +106,8 @@ timer_monotonic_ns(void)
 
 	if (frequency == 0) {
 		tick_count = timer_ticks();
-		return tick_count > UINT64_MAX / UINT64_C(10000000) ? UINT64_MAX :
-		    tick_count * UINT64_C(10000000);
+		return tick_count > UINT64_MAX / TIMER_TICK_NS ? UINT64_MAX :
+		    tick_count * TIMER_TICK_NS;
 	}
 	__asm__ volatile ("lfence; rdtsc" : "=a" (low), "=d" (high) : : "memory");
 	cycles = ((uint64_t)high << 32) | low;
