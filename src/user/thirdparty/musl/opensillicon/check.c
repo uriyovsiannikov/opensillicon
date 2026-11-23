@@ -18,6 +18,7 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <signal.h>
@@ -49,6 +50,8 @@ __attribute__((constructor)) static void construct(void) { constructed=42; }
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr,"MUSL_FAIL line %d: %s errno=%d\n",__LINE__,#condition,errno); return __LINE__%254+1; } } while (0)
 static int large_iovec_check(void)
 {
+ CHECK(IOV_MAX==OS_IOV_MAX && UIO_MAXIOV==OS_IOV_MAX);
+ CHECK(sysconf(_SC_IOV_MAX)==OS_IOV_MAX);
  const size_t length=256*1024+37;
  unsigned char *data=malloc(length), *result=malloc(length);
  CHECK(data && result);
