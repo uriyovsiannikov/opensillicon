@@ -36,11 +36,6 @@ $(BUILD_DIR)/cyclone-config-check.o: src/kernel/net/cyclonetcp/opensillicon/conf
 	$(CC) $(CYCLONE_CFLAGS) -fsyntax-only $<
 	$(CC) $(CYCLONE_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/cyclone-net.o: $(CYCLONE_TCP_ROOT)/core/net.c \
-		$(CYCLONE_PORT_ROOT)/net_config.h \
-		$(CYCLONE_PORT_ROOT)/os_port_config.h | $(BUILD_DIR)
-	$(CC) $(CYCLONE_CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/main.o: src/kernel/main.c src/include/kernel/boot.h src/include/kernel/log.h \
 		src/include/kernel/framebuffer.h \
 		src/include/kernel/pmm.h src/include/kernel/vmm.h src/include/kernel/heap.h \
