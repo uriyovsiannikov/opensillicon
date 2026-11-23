@@ -152,35 +152,26 @@ framebuffer_device_present_rect(const struct os_framebuffer_rect *rect)
 	row_bytes = (uint64_t)rect->width * sizeof(uint32_t);
 	if (x_offset > active_framebuffer->pitch ||
 	    row_bytes > active_framebuffer->pitch - x_offset ||
-	    rect->source == 0 || rect->source > UINT64_MAX - active_framebuffer_size)
+	    rect->source == 0)
 		return -EINVAL;
-	if (rect->source_pitch != 0 && rect->source_pitch < row_bytes)
+	if (rect->source_pitch < row_bytes)
 		return -EINVAL;
-	if (rect->source_pitch != 0 && rect->height - 1U >
+	if (rect->height - 1U >
 	    (UINT64_MAX - row_bytes) / rect->source_pitch)
 		return -EINVAL;
-	source_span = rect->source_pitch == 0 ? active_framebuffer_size :
-	    (uint64_t)(rect->height - 1U) * rect->source_pitch + row_bytes;
+	source_span = (uint64_t)(rect->height - 1U) * rect->source_pitch + row_bytes;
 	if (rect->source > UINT64_MAX - source_span)
 		return -EINVAL;
 	destination = active_framebuffer->address;
 	for (uint32_t row = 0; row < rect->height; row++) {
-		uint64_t source_offset = rect->source_pitch == 0 ?
-		    ((uint64_t)rect->y + row) * active_framebuffer->pitch + x_offset :
-		    (uint64_t)row * rect->source_pitch;
-		uint64_t destination_offset = source_offset;
+		uint64_t source_offset = (uint64_t)row * rect->source_pitch;
+		uint64_t destination_offset = ((uint64_t)rect->y + row) *
+		    active_framebuffer->pitch + x_offset;
 		uint64_t copied = 0;
-		if (rect->source_pitch != 0)
-			destination_offset = ((uint64_t)rect->y + row) *
-			    active_framebuffer->pitch + x_offset;
 
-		if ((rect->source_pitch == 0 &&
-		    (source_offset > active_framebuffer_size ||
-		    row_bytes > active_framebuffer_size - source_offset)) ||
-		    rect->source > UINT64_MAX - source_offset ||
-		    !vmm_validate_user_read(space, rect->source + source_offset,
+		if (!vmm_validate_user_read(space, rect->source + source_offset,
 		    (size_t)row_bytes))
-			return -14;
+			return -EFAULT;
 		while (copied < row_bytes) {
 			size_t amount = (size_t)(row_bytes - copied);
 			if (amount > sizeof(staging))

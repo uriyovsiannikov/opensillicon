@@ -47,11 +47,13 @@ opensilliconFramebufferPresent(ScreenPtr pScreen, shadowBufPtr pBuf)
 		    box->y2 <= box->y1)
 			continue;
 		rect = (struct os_framebuffer_rect){
-			.source = (uintptr_t)card->pixels,
+			.source = (uintptr_t)card->pixels +
+			    (uint64_t)box->y1 * card->info.pitch + (uint64_t)box->x1 * 4U,
 			.x = box->x1,
 			.y = box->y1,
 			.width = box->x2 - box->x1,
-			.height = box->y2 - box->y1
+			.height = box->y2 - box->y1,
+			.source_pitch = card->info.pitch
 		};
 		if (os_syscall2(SYSCALL_FRAMEBUFFER_PRESENT_RECT,
 		    (uintptr_t)&rect, 0) < 0) {
