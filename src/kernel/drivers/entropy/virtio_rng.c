@@ -62,10 +62,6 @@ struct virtio_rng_state {
 	struct dma_buffer data_buffer;
 	struct dma_buffer_info queue_memory;
 	struct dma_buffer_info data_memory;
-#ifdef VIRTIO_RNG_TESTING
-	struct virtio_rng_test_ops test_ops;
-	void *test_context;
-#endif
 };
 
 static struct virtio_rng_state state;
@@ -96,191 +92,81 @@ irq_restore(uint64_t flags)
 static bool
 pci_read(uint16_t offset, unsigned int width, uint32_t *value)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.pci_read != NULL &&
-	    state.test_ops.pci_read(state.test_context, &state.pci, offset,
-	    width, value);
-#else
 	return pci_config_read(state.pci.segment, state.pci.bus,
 	    state.pci.device, state.pci.function, offset, width, value);
-#endif
 }
 
 static bool
 pci_write(uint16_t offset, unsigned int width, uint32_t value)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.pci_write != NULL &&
-	    state.test_ops.pci_write(state.test_context, &state.pci, offset,
-	    width, value);
-#else
 	return pci_config_write(state.pci.segment, state.pci.bus,
 	    state.pci.device, state.pci.function, offset, width, value);
-#endif
 }
 
 static uint8_t
 io_read8(uint16_t offset)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.in8 == NULL ? 0 :
-	    state.test_ops.in8(state.test_context,
-	    (uint16_t)(state.io_base + offset));
-#else
 	uint8_t value;
 	__asm__ volatile ("inb %1, %0" : "=a" (value) : "Nd"
 	    ((uint16_t)(state.io_base + offset)));
 	return value;
-#endif
 }
 
 static uint16_t
 io_read16(uint16_t offset)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.in16 == NULL ? 0 :
-	    state.test_ops.in16(state.test_context,
-	    (uint16_t)(state.io_base + offset));
-#else
 	uint16_t value;
 	__asm__ volatile ("inw %1, %0" : "=a" (value) : "Nd"
 	    ((uint16_t)(state.io_base + offset)));
 	return value;
-#endif
 }
 
 static uint32_t
 io_read32(uint16_t offset)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.in32 == NULL ? 0 :
-	    state.test_ops.in32(state.test_context,
-	    (uint16_t)(state.io_base + offset));
-#else
 	uint32_t value;
 	__asm__ volatile ("inl %1, %0" : "=a" (value) : "Nd"
 	    ((uint16_t)(state.io_base + offset)));
 	return value;
-#endif
 }
 
 static void
 io_write8(uint16_t offset, uint8_t value)
 {
-#ifdef VIRTIO_RNG_TESTING
-	if (state.test_ops.out8 != NULL) {
-		state.test_ops.out8(state.test_context,
-		    (uint16_t)(state.io_base + offset), value);
-		return;
-	}
-#else
 	__asm__ volatile ("outb %0, %1" : : "a" (value), "Nd"
 	    ((uint16_t)(state.io_base + offset)));
-#endif
 }
 
 static void
 io_write16(uint16_t offset, uint16_t value)
 {
-#ifdef VIRTIO_RNG_TESTING
-	if (state.test_ops.out16 != NULL) {
-		state.test_ops.out16(state.test_context,
-		    (uint16_t)(state.io_base + offset), value);
-		return;
-	}
-#else
 	__asm__ volatile ("outw %0, %1" : : "a" (value), "Nd"
 	    ((uint16_t)(state.io_base + offset)));
-#endif
 }
 
 static void
 io_write32(uint16_t offset, uint32_t value)
 {
-#ifdef VIRTIO_RNG_TESTING
-	if (state.test_ops.out32 != NULL) {
-		state.test_ops.out32(state.test_context,
-		    (uint16_t)(state.io_base + offset), value);
-		return;
-	}
-#else
 	__asm__ volatile ("outl %0, %1" : : "a" (value), "Nd"
 	    ((uint16_t)(state.io_base + offset)));
-#endif
 }
 
 static bool
 platform_dma_alloc(size_t size, size_t alignment, unsigned int address_bits,
 	struct dma_buffer *buffer, struct dma_buffer_info *info)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_alloc != NULL &&
-	    state.test_ops.dma_alloc(state.test_context, size, alignment,
-	    address_bits, buffer, info);
-#else
 	if (!dma_alloc(size, alignment, address_bits, buffer))
 		return false;
-	if (!dma_buffer_query(*buffer, info)) {
+	if (!dma_buffer_query(*buffer, info))
 		return false;
-	}
 	return true;
-#endif
 }
 
 static bool
 dma_acquire(struct dma_buffer buffer)
 {
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_acquire != NULL &&
-	    state.test_ops.dma_acquire(state.test_context, buffer);
-#else
 	uint64_t device_address;
 	return dma_device_acquire(buffer, &device_address);
-#endif
-}
-
-static bool
-dma_complete(struct dma_buffer buffer)
-{
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_complete != NULL &&
-	    state.test_ops.dma_complete(state.test_context, buffer);
-#else
-	return dma_device_complete(buffer);
-#endif
-}
-
-static bool
-dma_pin(struct dma_buffer buffer)
-{
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_pin != NULL &&
-	    state.test_ops.dma_pin(state.test_context, buffer);
-#else
-	return dma_descriptor_ring_pin(buffer);
-#endif
-}
-
-static bool
-dma_unpin(struct dma_buffer buffer)
-{
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_unpin != NULL &&
-	    state.test_ops.dma_unpin(state.test_context, buffer);
-#else
-	return dma_descriptor_ring_unpin(buffer);
-#endif
-}
-
-static bool
-dma_release(struct dma_buffer buffer)
-{
-#ifdef VIRTIO_RNG_TESTING
-	return state.test_ops.dma_free != NULL &&
-	    state.test_ops.dma_free(state.test_context, buffer);
-#else
-	return dma_free(buffer);
-#endif
 }
 
 bool
@@ -441,21 +327,21 @@ release_dma_after_quiescence(void)
 {
 	bool success = true;
 	if (state.data_device_owned && state.data_buffer.generation != 0 &&
-	    !dma_complete(state.data_buffer))
+	    !dma_device_complete(state.data_buffer))
 		success = false;
 	if (!success)
 		return false;
 	state.data_device_owned = false;
 	if (state.queue_buffer.generation != 0) {
-		if (state.queue_pinned && !dma_unpin(state.queue_buffer))
+		if (state.queue_pinned && !dma_descriptor_ring_unpin(state.queue_buffer))
 			return false;
 		state.queue_pinned = false;
-		if (!dma_release(state.queue_buffer))
+		if (!dma_free(state.queue_buffer))
 			return false;
 		state.queue_buffer = (struct dma_buffer){0};
 	}
 	if (state.data_buffer.generation != 0) {
-		if (!dma_release(state.data_buffer))
+		if (!dma_free(state.data_buffer))
 			return false;
 		state.data_buffer = (struct dma_buffer){0};
 	}
@@ -540,7 +426,7 @@ initialize(const struct pci_device_info *device)
 	    state.queue_memory.allocated_size - 1 >
 	    UINT32_MAX - state.queue_memory.physical_address ||
 	    state.queue_memory.cpu_virtual_address == NULL ||
-	    !dma_pin(state.queue_buffer))
+	    !dma_descriptor_ring_pin(state.queue_buffer))
 		goto failed;
 	state.queue_pinned = true;
 	if (!platform_dma_alloc(VIRTIO_RNG_DATA_BYTES, 16, 32,
@@ -690,7 +576,7 @@ virtio_rng_read(void *output, size_t capacity, size_t *received)
 			    VIRTIO_RNG_TRANSPORT_FAILURE;
 		}
 	}
-	if (!dma_complete(state.data_buffer)) {
+	if (!dma_device_complete(state.data_buffer)) {
 		__atomic_store_n(&state.available, false, __ATOMIC_RELEASE);
 		(void)quiesce_and_release();
 		flags = irq_save();
@@ -729,27 +615,3 @@ virtio_rng_shutdown(void)
 	state.initialized = false;
 	return VIRTIO_RNG_OK;
 }
-
-#ifdef VIRTIO_RNG_TESTING
-bool
-virtio_rng_test_init(const struct pci_device_info *device,
-	const struct virtio_rng_test_ops *ops, void *context)
-{
-	if (ops == NULL || ops->pci_read == NULL || ops->pci_write == NULL ||
-	    ops->in8 == NULL || ops->in16 == NULL || ops->in32 == NULL ||
-	    ops->out8 == NULL || ops->out16 == NULL || ops->out32 == NULL ||
-	    ops->dma_alloc == NULL || ops->dma_acquire == NULL ||
-	    ops->dma_complete == NULL || ops->dma_pin == NULL ||
-	    ops->dma_unpin == NULL || ops->dma_free == NULL || state.initialized)
-		return false;
-	state.test_ops = *ops;
-	state.test_context = context;
-	return initialize(device) == VIRTIO_RNG_OK;
-}
-
-void
-virtio_rng_test_reset_state(void)
-{
-	state = (struct virtio_rng_state){0};
-}
-#endif
