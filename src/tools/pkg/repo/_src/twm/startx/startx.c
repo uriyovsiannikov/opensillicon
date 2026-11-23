@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -45,6 +46,10 @@ static pid_t launch(char *const argv[])
 
 int main(void)
 {
+	if (setenv("DISPLAY", ":0", 1) < 0) {
+		perror("startx: set DISPLAY");
+		return 1;
+	}
 	char *server_args[] = {"/usr/bin/X", ":0", NULL};
 	char *wm_args[] = {"/usr/bin/twm", "-display", ":0", "-f", "/usr/etc/twmrc", NULL};
 	char *wallpaper_args[] = {"/usr/bin/feh", "--no-fehbg", "--bg-fill",

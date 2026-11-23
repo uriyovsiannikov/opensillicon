@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot the packaged startx session, find XTerm, and verify signal cleanup."""
+"""Boot the packaged startx session, verify XTerm, wallpaper, and signal cleanup."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,7 +51,7 @@ try:
             break
         time.sleep(.2)
     assert 'STARTX_PASS' in text and '/sbin/init exited with status 0' in text, text
-    print('STARTX_PASS: desktop windows and session signal cleanup')
+    print('STARTX_PASS: XTerm, decoded wallpaper without inherited DISPLAY, and signal cleanup')
 finally:
     guest.terminate()
     guest.wait(timeout=5)
