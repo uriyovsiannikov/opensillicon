@@ -133,13 +133,6 @@ syscall_error(struct interrupt_frame *frame, uint64_t error)
 	frame->rflags |= 1U;
 }
 
-static bool
-syscall_private_memory(uint64_t number)
-{
-	return number == SYSCALL_MMAP || number == SYSCALL_MUNMAP ||
-	    number == SYSCALL_MPROTECT;
-}
-
 struct interrupt_frame *
 syscall_dispatch(struct interrupt_frame *frame)
 {
@@ -154,21 +147,9 @@ syscall_dispatch(struct interrupt_frame *frame)
 		if ((frame->cs & 3U) == 3U && cpu->current_process != NULL) {
 			uint64_t flags = frame->rflags;
 			frame->rflags &= ~1ULL;
-			bool private_memory = syscall_private_memory(number);
-			bool shared_memory = number == SYSCALL_SHM_CREATE ||
-			    number == SYSCALL_SHM_DETACH;
 			process_channel_wait_begin();
 			if (route != NULL && route->local != NULL &&
 			    route->local(&frame)) {
-				if ((number == SYSCALL_SIGACTION ||
-				    number == SYSCALL_SIGPROCMASK) &&
-				    (frame->rflags & 1U) == 0)
-					__atomic_store_n(&cpu->user_signal_calls, true, __ATOMIC_RELAXED);
-				if (shared_memory && (frame->rflags & 1U) == 0)
-					__atomic_store_n(&cpu->user_shared_memory_calls, true, __ATOMIC_RELAXED);
-				if (private_memory && (frame->rflags & 1U) == 0)
-					__atomic_store_n(&cpu->user_private_memory_calls, true, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&cpu->user_local_syscalls, 1, __ATOMIC_RELAXED);
 				return frame;
 			}
 			frame->rflags = flags;

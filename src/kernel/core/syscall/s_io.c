@@ -575,15 +575,10 @@ syscall_io_local(struct interrupt_frame **result_frame)
 		{
 			struct fd_object *object = fd_object_for_descriptor(current_fd_table(), frame->rdi);
 			bool reading = frame->rax == SYSCALL_READV || frame->rax == SYSCALL_READ;
-			bool scalar = scalar_io(frame);
 			if (reading ? !pipe_is_read_endpoint(object) : !pipe_is_write_endpoint(object))
 				return false;
 			*result_frame = reading ? syscall_readv(frame) : syscall_writev(frame);
-			struct smp_cpu *cpu = smp_current_cpu();
-			if (cpu != NULL && !cpu->bsp && ((*result_frame)->rflags & 1U) == 0 &&
-			    (*result_frame)->rax != 0)
-				__atomic_store_n(scalar ? &cpu->user_pipe_io :
-				    &cpu->user_pipe_vectors, true, __ATOMIC_RELAXED);
+
 		}
 		return true;
 	case SYSCALL_CLOSE:

@@ -31,7 +31,6 @@ enum smp_user_slot_state {
 struct smp_user_slot {
 	struct process *process;
 	uint32_t state;
-	bool stolen;
 };
 struct smp_cpu {
 	struct smp_cpu *self;
@@ -53,22 +52,6 @@ struct smp_cpu {
 	struct smp_user_slot user_queue[SMP_USER_QUEUE_CAPACITY];
 	size_t user_queue_cursor;
 	size_t user_steal_cursor;
-	bool user_current_stolen;
-	bool user_stolen_run;
-	uint64_t user_last_pid;
-	bool user_last_slice_local;
-	bool user_queue_rotation;
-	uint64_t user_local_syscalls;
-	bool user_private_memory_calls;
-	bool user_shared_memory_calls;
-	bool user_signal_calls;
-	bool user_signal_delivery;
-	bool user_signal_return;
-	bool user_pipe_io;
-	bool user_pipe_vectors;
-	bool user_local_wait_resume;
-	bool user_timer_wait;
-	bool user_timer_resume;
 	bool user_entry_probe_active;
 	uint64_t user_kernel_stack;
 	struct scheduler_cpu *scheduler_context;

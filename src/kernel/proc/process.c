@@ -85,8 +85,6 @@ struct process {
 	int64_t nanosleep_nanoseconds;
 	uint64_t nanosleep_remaining_address;
 	bool nanosleep_active;
-	bool timer_wait_on_ap;
-	bool timer_resume_pending;
 	void *blocked_channel;
 	enum process_block_reason block_reason;
 	bool local_syscall_pending;
@@ -118,28 +116,9 @@ static struct process *process_head;
 static struct process *ap_dispatch_cursor;
 static struct process *fallback_current_process;
 static uint64_t next_process_id = 1;
-static unsigned int reported_ap_stops;
-static uint64_t reported_ap_local_syscalls;
-static uint64_t reported_ap_private_memory;
-static uint64_t reported_ap_shared_memory;
-static uint64_t reported_ap_signal_calls;
-static uint64_t reported_ap_signal_delivery;
-static uint64_t reported_ap_signal_return;
-static uint64_t reported_ap_pipe_io;
-static uint64_t reported_ap_pipe_vectors;
-static bool reported_reschedule_ipi;
-static uint64_t reported_ap_queue_rotation;
-static uint64_t reported_ap_stolen_run;
-static bool reported_bsp_steal;
 static size_t ap_steal_cpu_cursor;
 static uint32_t remote_channel_wake;
 static uint64_t channel_wake_generation;
-static bool reported_ap_local_wait;
-static bool reported_local_wait_race;
-static uint64_t reported_ap_wait_resume;
-static uint64_t reported_ap_timer_wait;
-static uint64_t reported_ap_timer_resume;
-static bool reported_remote_channel_wake;
 static bool initialized;
 /* Protect signal queues, masks and action pairs across BSP senders and APs.
  * No scheduler operation may run while this lock is held. */
@@ -214,8 +193,6 @@ complete_timer_wait(struct process *process)
 	process->nanosleep_remaining_address = 0;
 	process->blocked_channel = NULL;
 	process->block_reason = PROCESS_BLOCK_NONE;
-	process->timer_resume_pending = process->timer_wait_on_ap;
-	process->timer_wait_on_ap = false;
 	process->state = PROCESS_READY;
 }
 
@@ -265,8 +242,6 @@ process_set_interrupted_result(struct process *process)
 	process->wake_tick = 0;
 	process->select_deadline = 0;
 	process->nanosleep_active = false;
-	process->timer_wait_on_ap = false;
-	process->timer_resume_pending = false;
 	process->nanosleep_remaining_address = 0;
 	process->blocked_channel = NULL;
 	process->block_reason = PROCESS_BLOCK_NONE;
@@ -293,7 +268,7 @@ process_wake_retry(struct process *process)
 /* Called only after the BSP owns the process again. The generation covers
  * notifications consumed before an AP's block request was collected. */
 static bool
-publish_local_wait(struct process *process, bool from_ap)
+publish_local_wait(struct process *process)
 {
 	if (process_has_pending_signal(process)) {
 		process_set_interrupted_result(process);
@@ -305,10 +280,6 @@ publish_local_wait(struct process *process, bool from_ap)
 		process->block_reason = PROCESS_BLOCK_NONE;
 		process->wake_tick = 0;
 		process->state = PROCESS_READY;
-		if (from_ap && !reported_local_wait_race) {
-			reported_local_wait_race = true;
-			klog("smp readiness raced with AP wait publication\n");
-		}
 		return false;
 	}
 	process->state = PROCESS_BLOCKED;
@@ -353,10 +324,6 @@ drain_remote_channel_wakes(void)
 		}
 		process = process->next;
 	} while (process != process_head);
-	if (woke && !reported_remote_channel_wake) {
-		reported_remote_channel_wake = true;
-		klog("smp channel waiter woken by AP\n");
-	}
 	return woke;
 }
 
@@ -424,15 +391,6 @@ process_capture_user_fs_base(uint64_t base)
 void
 process_restore_user_fs_base(void)
 {
-	struct smp_cpu *cpu = smp_current_cpu();
-	if (current_process != NULL && cpu != NULL && !cpu->bsp && cpu->user_current_stolen)
-		__atomic_store_n(&cpu->user_stolen_run, true, __ATOMIC_RELAXED);
-	if (current_process != NULL && current_process->timer_resume_pending) {
-		struct smp_cpu *cpu = smp_current_cpu();
-		if (cpu != NULL && !cpu->bsp)
-			__atomic_store_n(&cpu->user_timer_resume, true, __ATOMIC_RELAXED);
-		current_process->timer_resume_pending = false;
-	}
 	arch_fs_base_write(current_process == NULL ? 0 :
 	    current_process->user_fs_base);
 }
@@ -579,7 +537,6 @@ steal_for_ap(struct smp_cpu *target)
 			    false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
 				continue;
 			struct process *process = __atomic_load_n(&slot->process, __ATOMIC_RELAXED);
-			destination->stolen = true;
 			__atomic_store_n(&destination->process, process, __ATOMIC_RELAXED);
 			/* No process dereference after publication: the destination can
 			 * already be reclaimed by the BSP and eventually reaped there. */
@@ -616,11 +573,8 @@ process_ap_run_assignment(void)
 	if (slot == NULL)
 		return;
 	struct process *process = __atomic_load_n(&slot->process, __ATOMIC_RELAXED);
-	if (cpu->user_last_slice_local && cpu->user_last_pid != process->id)
-		__atomic_store_n(&cpu->user_queue_rotation, true, __ATOMIC_RELAXED);
 
 	__asm__ volatile ("cli" : : : "memory");
-	cpu->user_current_stolen = slot->stolen;
 	current_process = process;
 	if (!address_space_activate(process->address_space)) {
 		klog("panic: AP cannot load process address space\n");
@@ -636,10 +590,7 @@ process_ap_run_assignment(void)
 		kernel_halt();
 	}
 	current_process = NULL;
-	cpu->user_current_stolen = false;
 	bool local = process->ap_stop_reason == PROCESS_SLICE_TIMER;
-	cpu->user_last_pid = process->id;
-	cpu->user_last_slice_local = local;
 	/* No process access after this release: another CPU may reclaim it. */
 	__atomic_store_n(&slot->state,
 	    local ? SMP_USER_SLOT_RUNNABLE : SMP_USER_SLOT_COMPLETE, __ATOMIC_RELEASE);
@@ -670,20 +621,6 @@ collect_ap_processes(void)
 
 	for (size_t i = 1; i < smp_discovered_count(); i++) {
 		struct smp_cpu *cpu = smp_cpu_at(i);
-		if ((reported_ap_queue_rotation & (UINT64_C(1) << i)) == 0 &&
-		    __atomic_load_n(&cpu->user_queue_rotation, __ATOMIC_RELAXED)) {
-			reported_ap_queue_rotation |= UINT64_C(1) << i;
-			klog("smp AP switched local user queue on CPU ");
-			klog_u64(i);
-			klog("\n");
-		}
-		if ((reported_ap_stolen_run & (UINT64_C(1) << i)) == 0 &&
-		    __atomic_load_n(&cpu->user_stolen_run, __ATOMIC_RELAXED)) {
-			reported_ap_stolen_run |= UINT64_C(1) << i;
-			klog("smp stolen user process resumed on AP ");
-			klog_u64(i);
-			klog("\n");
-		}
 		for (size_t q = 0; q < SMP_USER_QUEUE_CAPACITY; q++) {
 			struct smp_user_slot *slot = &cpu->user_queue[q];
 			uint32_t state = __atomic_load_n(&slot->state, __ATOMIC_ACQUIRE);
@@ -702,108 +639,18 @@ collect_ap_processes(void)
 			process->state = PROCESS_READY;
 			if (process->ap_stop_reason == PROCESS_SLICE_SLEEP)
 				publish_timer_wait(process);
-			if (process->ap_stop_reason == PROCESS_SLICE_BLOCK &&
-			    publish_local_wait(process, true) && !reported_ap_local_wait) {
-				reported_ap_local_wait = true;
-				klog("smp local channel wait published from AP\n");
-			}
+			if (process->ap_stop_reason == PROCESS_SLICE_BLOCK)
+				(void)publish_local_wait(process);
 
-			uint64_t cpu_bit = UINT64_C(1) << i;
-			if ((reported_ap_local_syscalls & cpu_bit) == 0 &&
-			    __atomic_load_n(&cpu->user_local_syscalls, __ATOMIC_RELAXED) != 0) {
-				reported_ap_local_syscalls |= cpu_bit;
-				klog("smp process-local syscall completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_private_memory & cpu_bit) == 0 &&
-			    __atomic_load_n(&cpu->user_private_memory_calls, __ATOMIC_RELAXED)) {
-				reported_ap_private_memory |= cpu_bit;
-				klog("smp private memory syscall completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_shared_memory & cpu_bit) == 0 &&
-			    __atomic_load_n(&cpu->user_shared_memory_calls, __ATOMIC_RELAXED)) {
-				reported_ap_shared_memory |= cpu_bit;
-				klog("smp shared memory syscall completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_signal_calls & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_calls, __ATOMIC_RELAXED)) {
-				reported_ap_signal_calls |= cpu_bit;
-				klog("smp signal syscall completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_signal_delivery & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_delivery, __ATOMIC_RELAXED)) {
-				reported_ap_signal_delivery |= cpu_bit;
-				klog("smp signal delivered on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
-			if ((reported_ap_signal_return & cpu_bit) == 0 && __atomic_load_n(&cpu->user_signal_return, __ATOMIC_RELAXED)) {
-				reported_ap_signal_return |= cpu_bit;
-				klog("smp signal returned on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_pipe_io & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_io, __ATOMIC_RELAXED)) {
-				reported_ap_pipe_io |= cpu_bit;
-				klog("smp pipe I/O completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_pipe_vectors & cpu_bit) == 0 && __atomic_load_n(&cpu->user_pipe_vectors, __ATOMIC_RELAXED)) {
-				reported_ap_pipe_vectors |= cpu_bit;
-				klog("smp pipe vector I/O completed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_wait_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_local_wait_resume, __ATOMIC_RELAXED)) {
-				reported_ap_wait_resume |= cpu_bit;
-				klog("smp blocked syscall resumed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			if ((reported_ap_timer_wait & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_wait, __ATOMIC_RELAXED)) {
-				reported_ap_timer_wait |= cpu_bit;
-				klog("smp timer wait submitted on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
-			if ((reported_ap_timer_resume & cpu_bit) == 0 && __atomic_load_n(&cpu->user_timer_resume, __ATOMIC_RELAXED)) {
-				reported_ap_timer_resume |= cpu_bit;
-				klog("smp timer wait resumed on AP ");
-				klog_u64(i);
-				klog("\n");
-			}
 
-			unsigned int reason_bit = 1U << process->ap_stop_reason;
-			if ((reported_ap_stops & reason_bit) == 0) {
-				static const char *const reasons[] = {
-					[PROCESS_SLICE_TIMER] = "timer",
-					[PROCESS_SLICE_SYSCALL] = "syscall",
-					[PROCESS_SLICE_FAULT] = "fault",
-					[PROCESS_SLICE_EXIT] = "exit",
-					[PROCESS_SLICE_BLOCK] = "block",
-					[PROCESS_SLICE_SLEEP] = "sleep"
-				};
-				reported_ap_stops |= reason_bit;
-				klog("smp user slice ended on AP ");
-				klog_u64(i);
-				klog(" via ");
-				klog(reasons[process->ap_stop_reason]);
-				klog("\n");
-			}
 		}
 	}
 	return running;
@@ -856,7 +703,6 @@ dispatch_ap_processes(void)
 			continue;
 		ap_dispatch_cursor = process->next;
 		process->state = PROCESS_RUNNING;
-		target->user_queue[target_slot].stolen = false;
 		__atomic_store_n(&target->user_queue[target_slot].process, process, __ATOMIC_RELAXED);
 		__atomic_store_n(&target->user_queue[target_slot].state, SMP_USER_SLOT_RUNNABLE, __ATOMIC_RELEASE);
 		(void)smp_kick_cpu(target->logical_id);
@@ -897,10 +743,6 @@ steal_ap_process(bool need_work)
 			__atomic_store_n(&slot->state, SMP_USER_SLOT_EMPTY, __ATOMIC_RELEASE);
 			process->state = PROCESS_READY;
 			ap_steal_cpu_cursor = 1 + (i % (count - 1));
-			if (!reported_bsp_steal) {
-				reported_bsp_steal = true;
-				klog("smp bsp stole a queued user process\n");
-			}
 			return process;
 		}
 	}
@@ -1170,28 +1012,9 @@ process_system_init(void)
 	ap_dispatch_cursor = NULL;
 	current_process = NULL;
 	next_process_id = 1;
-	reported_ap_stops = 0;
-	reported_ap_local_syscalls = 0;
-	reported_ap_private_memory = 0;
-	reported_ap_shared_memory = 0;
-	reported_ap_signal_calls = 0;
-	reported_ap_signal_delivery = 0;
-	reported_ap_signal_return = 0;
-	reported_ap_pipe_io = 0;
-	reported_ap_pipe_vectors = 0;
-	reported_reschedule_ipi = false;
-	reported_ap_queue_rotation = 0;
-	reported_ap_stolen_run = 0;
-	reported_bsp_steal = false;
 	ap_steal_cpu_cursor = 1;
 	__atomic_store_n(&remote_channel_wake, 0, __ATOMIC_RELAXED);
 	__atomic_store_n(&channel_wake_generation, 0, __ATOMIC_RELAXED);
-	reported_remote_channel_wake = false;
-	reported_ap_local_wait = false;
-	reported_local_wait_race = false;
-	reported_ap_wait_resume = 0;
-	reported_ap_timer_wait = 0;
-	reported_ap_timer_resume = 0;
 	initialized = true;
 }
 
@@ -1713,9 +1536,6 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			} else {
 				current_process->local_syscall_pending = false;
 				frame = syscall_dispatch(frame);
-				struct smp_cpu *cpu = smp_current_cpu();
-				if (cpu != NULL && !cpu->bsp && (frame->rflags & 1U) == 0)
-					__atomic_store_n(&cpu->user_local_wait_resume, true, __ATOMIC_RELAXED);
 				continue;
 			}
 		}
@@ -1793,9 +1613,6 @@ process_prepare_user_return(struct interrupt_frame *frame)
 			frame->rip = action.handler;
 			frame->rdi = signo;
 			frame->user_rsp = new_stack;
-			struct smp_cpu *cpu = smp_current_cpu();
-			if (cpu != NULL && !cpu->bsp)
-				__atomic_store_n(&cpu->user_signal_delivery, true, __ATOMIC_RELAXED);
 			return frame;
 		}
 	}
@@ -1847,9 +1664,6 @@ process_sigreturn(struct interrupt_frame *frame, uint64_t *error)
 	 * this process's kernel stack, never inside the heap process object. */
 	*frame = context->frame;
 	arch_fpu_restore(context->fpu_state);
-	struct smp_cpu *cpu = smp_current_cpu();
-	if (cpu != NULL && !cpu->bsp)
-		__atomic_store_n(&cpu->user_signal_return, true, __ATOMIC_RELAXED);
 	return frame;
 }
 
@@ -1895,8 +1709,6 @@ process_run_elf_internal(const void *image, size_t image_size,
 	root->nanosleep_nanoseconds = 0;
 	root->nanosleep_remaining_address = 0;
 	root->nanosleep_active = false;
-	root->timer_wait_on_ap = false;
-	root->timer_resume_pending = false;
 	root->blocked_channel = NULL;
 	root->block_reason = PROCESS_BLOCK_NONE;
 	root->local_syscall_pending = false;
@@ -2029,10 +1841,6 @@ process_reschedule_ipi(struct interrupt_frame *frame)
 		for (size_t q = 0; q < SMP_USER_QUEUE_CAPACITY; q++) {
 			if (__atomic_load_n(&cpu->user_queue[q].state, __ATOMIC_ACQUIRE) != SMP_USER_SLOT_COMPLETE)
 				continue;
-			if (!reported_reschedule_ipi) {
-				reported_reschedule_ipi = true;
-				klog("smp bsp preempted by ap completion ipi\n");
-			}
 			return process_timer_preempt(frame);
 		}
 	}
@@ -2096,8 +1904,6 @@ process_fork(struct interrupt_frame *frame, uint64_t *error)
 	child->nanosleep_nanoseconds = 0;
 	child->nanosleep_remaining_address = 0;
 	child->nanosleep_active = false;
-	child->timer_wait_on_ap = false;
-	child->timer_resume_pending = false;
 	child->blocked_channel = NULL;
 	child->block_reason = PROCESS_BLOCK_NONE;
 	child->local_syscall_pending = false;
@@ -2205,8 +2011,6 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	process->initial_user_stack = stack_top;
 	os_signal_exec_state(&process->signals);
 	process->signal_depth = 0;
-	process->timer_wait_on_ap = false;
-	process->timer_resume_pending = false;
 	process->block_reason = PROCESS_BLOCK_NONE;
 	process->local_syscall_pending = false;
 	process->retry_pending = false;
@@ -2375,8 +2179,6 @@ park_timer_wait(struct interrupt_frame *frame, uint64_t deadline, uint64_t *erro
 	process->local_syscall_pending = false;
 	process->retry_pending = false;
 	process->retry_in_progress = false;
-	process->timer_wait_on_ap = !process_table_owned_here();
-	process->timer_resume_pending = false;
 	frame->rax = 0;
 	frame->rflags &= ~1ULL;
 	*error = 0;
@@ -2385,7 +2187,6 @@ park_timer_wait(struct interrupt_frame *frame, uint64_t deadline, uint64_t *erro
 		return frame;
 	}
 	if (!process_table_owned_here()) {
-		__atomic_store_n(&smp_current_cpu()->user_timer_wait, true, __ATOMIC_RELAXED);
 		process_ap_stop(frame, PROCESS_SLICE_SLEEP);
 	}
 	publish_timer_wait(process);
@@ -2443,7 +2244,7 @@ process_block_local_on_channel(struct interrupt_frame *frame, void *channel)
 	process->saved_frame = frame;
 	if (!process_table_owned_here())
 		process_ap_stop(frame, PROCESS_SLICE_BLOCK);
-	(void)publish_local_wait(process, false);
+	(void)publish_local_wait(process);
 	return schedule_from(process);
 }
 
