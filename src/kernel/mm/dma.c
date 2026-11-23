@@ -67,12 +67,6 @@ dma_init(const struct dma_boot_contract *contract)
 	return true;
 }
 
-enum dma_addressing_mode
-dma_get_addressing_mode(void)
-{
-	return addressing_mode;
-}
-
 bool
 dma_identity_addressing_available(void)
 {

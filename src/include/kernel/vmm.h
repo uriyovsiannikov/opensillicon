@@ -134,8 +134,6 @@ uint64_t vmm_vmalloc_start(void);
 uint64_t vmm_vmalloc_end(void);
 uint64_t vmm_vmalloc_device_start(void);
 uint64_t vmm_vmalloc_device_end(void);
-uint64_t vmm_module_arena_start(void);
-uint64_t vmm_module_arena_end(void);
 /* Accepts a range wholly covered by Limine RESERVED memory or wholly absent
  * from the memory map; all overlaps with described RAM/boot memory are denied. */
 bool vmm_physical_range_mmio_safe(uint64_t physical_address, uint64_t length);

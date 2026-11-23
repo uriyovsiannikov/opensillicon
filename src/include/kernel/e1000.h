@@ -39,7 +39,6 @@ bool e1000_initialize(void);
 struct net_device *e1000_network_device(void);
 bool e1000_wait_transmit(struct netbuf_ref packet, uint32_t poll_limit);
 bool e1000_shutdown(void);
-enum e1000_lifecycle_state e1000_state(void);
 enum e1000_failure e1000_last_failure(void);
 
 /* Register definitions shared with the isolated reset-state tests. */

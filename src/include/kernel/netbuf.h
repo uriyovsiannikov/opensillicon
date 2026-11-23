@@ -31,6 +31,5 @@ size_t netbuf_capacity(struct netbuf_ref reference, enum netbuf_owner owner);
 size_t netbuf_length(struct netbuf_ref reference, enum netbuf_owner owner);
 bool netbuf_set_length(struct netbuf_ref reference, enum netbuf_owner owner,
 	size_t length);
-size_t netbuf_pool_available(void);
 
 #endif

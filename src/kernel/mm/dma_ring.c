@@ -80,18 +80,6 @@ dma_ring_reclaim(struct dma_descriptor_ring *ring, size_t index,
 }
 
 bool
-dma_ring_owner_get(const struct dma_descriptor_ring *ring, size_t index,
-	enum dma_ring_owner *owner)
-{
-	if (ring == NULL || ring->owners == NULL || owner == NULL ||
-	    index >= ring->count ||
-	    ring->owners[index] > DMA_RING_DEVICE_OWNED)
-		return false;
-	*owner = (enum dma_ring_owner)ring->owners[index];
-	return true;
-}
-
-bool
 dma_ring_quiesce(struct dma_descriptor_ring *ring, bool hardware_stopped)
 {
 	if (ring == NULL || ring->owners == NULL || ring->count == 0 ||

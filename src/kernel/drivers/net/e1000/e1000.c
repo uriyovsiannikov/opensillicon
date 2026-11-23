@@ -1028,13 +1028,6 @@ e1000_network_device(void)
 	return device.discovered ? &device.network_device : NULL;
 }
 
-
-enum e1000_lifecycle_state
-e1000_state(void)
-{
-	return device.state;
-}
-
 enum e1000_failure
 e1000_last_failure(void)
 {

@@ -2278,17 +2278,7 @@ vmm_vmalloc_device_end(void)
 	return VMALLOC_END;
 }
 
-uint64_t
-vmm_module_arena_start(void)
-{
-	return VMM_MODULE_ARENA_START;
-}
 
-uint64_t
-vmm_module_arena_end(void)
-{
-	return VMM_MODULE_ARENA_END;
-}
 
 bool
 vmm_physical_range_mmio_safe(uint64_t physical_address, uint64_t length)

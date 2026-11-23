@@ -53,7 +53,6 @@ bool dma_boot_contract_allows_identity(
 /* Initializes the subsystem even when the contract is insufficient; in that
  * case DMA remains unavailable and allocations fail closed. */
 bool dma_init(const struct dma_boot_contract *contract);
-enum dma_addressing_mode dma_get_addressing_mode(void);
 bool dma_identity_addressing_available(void);
 bool dma_alloc(size_t size, size_t alignment, unsigned int address_bits,
 	struct dma_buffer *buffer);

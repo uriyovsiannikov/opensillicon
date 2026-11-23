@@ -126,16 +126,3 @@ netbuf_set_length(struct netbuf_ref reference, enum netbuf_owner owner,
 	slot->length = length;
 	return true;
 }
-
-size_t
-netbuf_pool_available(void)
-{
-	size_t available = 0;
-
-	if (!initialized)
-		return 0;
-	for (size_t i = 0; i < NETBUF_POOL_CAPACITY; i++)
-		if (slots[i].owner == NETBUF_OWNER_NONE)
-			available++;
-	return available;
-}

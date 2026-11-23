@@ -34,8 +34,6 @@ bool dma_ring_publish(struct dma_descriptor_ring *ring, size_t index);
  * completion leaves ownership unchanged. */
 bool dma_ring_reclaim(struct dma_descriptor_ring *ring, size_t index,
 	bool hardware_completion_observed);
-bool dma_ring_owner_get(const struct dma_descriptor_ring *ring, size_t index,
-	enum dma_ring_owner *owner);
 /* hardware_stopped must mean device-specific reset/idle was verified. */
 bool dma_ring_quiesce(struct dma_descriptor_ring *ring,
 	bool hardware_stopped);
