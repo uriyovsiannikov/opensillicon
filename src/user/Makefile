@@ -1,16 +1,10 @@
 # Internal file rules; included from the root build graph.
-$(BUILD_DIR)/user_start.o: src/user/start.S src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h | $(BUILD_DIR)
-	$(CC) $(USER_ASFLAGS) -Isrc/include -c $< -o $@
-
-$(BUILD_DIR)/user_os.o: src/user/include/os.c src/user/include/os.h src/include/abi/syscall.h src/include/abi/syscall_list.h src/include/abi/fcntl.h src/include/abi/framebuffer.h src/include/abi/input.h | $(BUILD_DIR)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/user_init.o: src/user/init/init.c src/include/common/logo_pixels.h \
-		src/user/init/service.h src/user/include/os.h other/logo.png | $(BUILD_DIR)
+		src/user/init/service.h $(LIBC_ARCHIVE) other/logo.png | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/service.o: src/user/init/service.c src/user/init/service.h \
-		src/user/include/os.h src/include/abi/syscall.h src/include/abi/exec.h | $(BUILD_DIR)
+		$(LIBC_ARCHIVE) src/include/abi/exec.h | $(BUILD_DIR)
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 $(BUILD_DIR)/doas.o: src/user/doas/doas.c | $(BUILD_DIR)
@@ -49,7 +43,7 @@ $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/include/abi/exec.h $(LIBC_
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 # Utilities using the public POSIX runtime need libc startup and headers.
-POSIX_COREUTILS := ls rm uname sleep tail cat head wc stat which pwd mkdir kill basename dirname echo clear seq touch true false host ifconfig ping ps
+POSIX_COREUTILS := ls rm uname sleep tail cat head wc stat which pwd mkdir kill basename dirname echo clear seq touch true false host ifconfig ping ps kldload kldunload poweroff reboot
 DEVICECONF_COREUTILS := cpuconf usbconf pciconf blkconf audioconf netconf kldstat
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(DEVICECONF_COREUTILS) deviceconf)): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/coreutils/deviceconf.h $(LIBC_ARCHIVE) src/user/Makefile
 	mkdir -p $(@D)
@@ -65,11 +59,6 @@ $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(POSIX_COREUTILS))): $(BUILD
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .elf,$(POSIX_COREUTILS))): $(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/coreutils/%.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $< $(LIBC_ARCHIVE) -lgcc -o $@
 
-$(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/include/os.h \
-		src/user/coreutils/deviceconf.h | $(BUILD_DIR)
-	mkdir -p $(@D)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/coreutils/fetch.o: src/tools/pkg/repo/_src/fetch/fetch.c $(LIBC_ARCHIVE) src/user/Makefile | $(BUILD_DIR)
 	mkdir -p $(@D)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
@@ -77,16 +66,9 @@ $(BUILD_DIR)/coreutils/fetch.o: src/tools/pkg/repo/_src/fetch/fetch.c $(LIBC_ARC
 $(BUILD_DIR)/coreutils/fetch.elf: $(BUILD_DIR)/coreutils/fetch.o $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) src/user/c_linker.ld
 	$(CC) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/coreutils/fetch.o $(LIBC_ARCHIVE) -lgcc -o $@
 
-$(BUILD_DIR)/coreutils/%.elf: $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o \
-		$(BUILD_DIR)/coreutils/%.o src/user/c_linker.ld
-	$(LD) $(USER_C_LDFLAGS) $(BUILD_DIR)/user_start.o \
-		$(BUILD_DIR)/user_os.o \
-		$(BUILD_DIR)/coreutils/$*.o -o $@
-
-$(BUILD_DIR)/init.elf: $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/user_os.o \
+$(BUILD_DIR)/init.elf: $(LIBC_BUILD_DIR)/crt1.o \
         $(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) src/user/c_linker.ld
-	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o $(BUILD_DIR)/user_os.o \
+	$(LD) $(USER_C_LDFLAGS) $(LIBC_BUILD_DIR)/crt1.o \
 		$(BUILD_DIR)/user_init.o $(BUILD_DIR)/service.o $(LIBC_ARCHIVE) -o $@
 
 $(BUILD_DIR)/shell.elf: $(LIBC_BUILD_DIR)/crt1.o $(LIBC_ARCHIVE) \

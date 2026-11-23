@@ -10,12 +10,13 @@ flock 9
 # Preserve timestamps so repeated builds remain incremental.
 tar -C "$source" --exclude=./opensillicon -cf - . | tar -C "$build/source" -xf -
 cp -p "$port/include/sys/icmp.h" "$build/source/include/sys/icmp.h"
+cp -p "$port/include/sys/opensillicon.h" "$build/source/include/sys/opensillicon.h"
 cp -p "$port/include/sys/sysctl.h" "$build/source/include/sys/sysctl.h"
 cp -p "$port/overlay/getrlimit.c" "$build/source/src/misc/getrlimit.c"
 cp -p "$port/overlay/uname.c" "$build/source/src/misc/uname.c"
 cp -p "$port/overlay/resolvconf.c" "$build/source/src/network/resolvconf.c"
 cp -p "$port/overlay/syscall_arch.h" "$build/source/arch/x86_64/syscall_arch.h"
-cp -p "$port/overlay/opensillicon.c" "$port/overlay/thread.c" "$port/overlay/network.c" "$port/overlay/sysctl.c" "$port/overlay/icmp_echo.c" "$build/source/src/misc/"
+cp -p "$port/overlay/opensillicon.c" "$port/overlay/thread.c" "$port/overlay/network.c" "$port/overlay/sysctl.c" "$port/overlay/icmp_echo.c" "$port/overlay/native_control.c" "$build/source/src/misc/"
 mkdir -p "$build/source/src/misc/x86_64"
 cp -p "$port/overlay/raw.s" "$port/overlay/cp.s" "$build/source/src/misc/x86_64/"
 # These Linux assembly entry points bypass syscall_arch.h.
@@ -39,7 +40,7 @@ fi
 # Upstream musl does not track headers outside its source tree. The native
 # adapters must be recompiled when their shared kernel ABI changes.
 cat > opensillicon-abi.mk <<EOF
-obj/src/conf/sysconf.o obj/src/network/sendmmsg.o obj/src/network/recvmmsg.o obj/src/misc/opensillicon.o obj/src/misc/network.o obj/src/misc/sysctl.o obj/src/misc/uname.o obj/src/misc/getrlimit.o obj/src/misc/icmp_echo.o obj/src/network/resolvconf.o: $(printf '%s ' "$root"/src/include/abi/*.h)
+obj/src/conf/sysconf.o obj/src/network/sendmmsg.o obj/src/network/recvmmsg.o obj/src/misc/opensillicon.o obj/src/misc/network.o obj/src/misc/sysctl.o obj/src/misc/uname.o obj/src/misc/getrlimit.o obj/src/misc/icmp_echo.o obj/src/misc/native_control.o obj/src/network/resolvconf.o: $(printf '%s ' "$root"/src/include/abi/*.h)
 EOF
 make -f Makefile -f opensillicon-abi.mk -j"${JOBS:-4}" > build.log 2>&1 || { tail -60 build.log; exit 1; }
 make install > install.log 2>&1
@@ -54,6 +55,8 @@ install -D -m 644 "$root/src/include/abi/socket.h" "$build/sysroot/include/abi/s
 install -D -m 644 "$root/src/include/abi/unix_socket.h" "$build/sysroot/include/abi/unix_socket.h"
 install -D -m 644 "$root/src/include/abi/icmp.h" "$build/sysroot/include/abi/icmp.h"
 install -D -m 644 "$root/src/include/abi/ioctl.h" "$build/sysroot/include/abi/ioctl.h"
+install -D -m 644 "$root/src/include/abi/framebuffer.h" "$build/sysroot/include/abi/framebuffer.h"
+install -D -m 644 "$root/src/include/abi/power.h" "$build/sysroot/include/abi/power.h"
 install -D -m 644 "$root/src/include/abi/uio.h" "$build/sysroot/include/abi/uio.h"
 install -D -m 644 "$root/src/include/abi/poll.h" "$build/sysroot/include/abi/poll.h"
 install -D -m 644 "$root/src/include/abi/exec.h" "$build/sysroot/include/abi/exec.h"

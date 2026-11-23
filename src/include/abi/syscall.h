@@ -23,7 +23,6 @@ enum os_syscall_number {
 #define OS_SOCKET_KIND_UNIX 1U
 #define OS_SOCKET_KIND_TCP 2U
 #define OS_SOCKET_KIND_UDP 3U
-#define POWER_CONTROL_POWEROFF 1U
-#define POWER_CONTROL_REBOOT 2U
+#include "abi/power.h"
 
 #endif

@@ -1,19 +1,16 @@
-#include "../include/os.h"
+#include <stdio.h>
+#include <sys/opensillicon.h>
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
-	long result;
 	(void)argv;
 	if (argc != 1) {
-		u_puts("usage: poweroff\n");
+		fputs("usage: poweroff\n", stderr);
 		return 2;
 	}
-	result = u_power_control(U_POWER_CONTROL_POWEROFF);
-	if (result < 0) {
-		u_puts("poweroff: system shutdown failed (error ");
-		u_put_u64((uint64_t)-result);
-		u_puts(")\n");
+	if (os_power_control(POWER_CONTROL_POWEROFF) < 0) {
+		perror("poweroff");
 		return 1;
 	}
 	return 0;

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "include/os.h"
+#include <sys/opensillicon.h>
 #include "common/logo_pixels.h"
 #include "service.h"
 
@@ -50,7 +50,7 @@ show_init_banner(void)
 	struct os_framebuffer_rect rect;
 	char processor[48];
 	size_t processor_length = cpu_brand(processor, sizeof(processor));
-	if (u_framebuffer_info(&info) == 0 && info.bits_per_pixel == 32 &&
+	if (os_framebuffer_info(&info) == 0 && info.bits_per_pixel == 32 &&
 	    info.red_mask_size != 0 && info.red_mask_size <= 8 &&
 	    info.green_mask_size != 0 && info.green_mask_size <= 8 &&
 	    info.blue_mask_size != 0 && info.blue_mask_size <= 8 &&
@@ -75,7 +75,7 @@ show_init_banner(void)
 			.height = OS_LOGO_HEIGHT,
 			.source_pitch = OS_LOGO_WIDTH * sizeof(uint32_t)
 		};
-		(void)u_framebuffer_present_rect(&rect);
+		(void)os_framebuffer_present_rect(&rect);
 	}
 	fputs("\033[3;16H\033[36mWelcome! Running on ", stdout);
 	if (processor_length != 0)

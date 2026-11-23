@@ -18,6 +18,7 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <sys/opensillicon.h>
 #include <limits.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -590,11 +591,15 @@ static int shell_path_check(void)
 }
 static int power_permissions_check(void)
 {
+ CHECK(os_power_control(0)==-1 && errno==EINVAL);
+ CHECK(os_framebuffer_info((void *)1)==-1 && errno==EFAULT);
+ CHECK(os_framebuffer_present_rect((void *)1)==-1 && errno==EFAULT);
  CHECK(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)==-EINVAL);
  CHECK(__os_raw(SYSCALL_POWER_CONTROL,-1,0,0,0,0,0)==-EINVAL);
  pid_t child=fork(); CHECK(child>=0);
  if(!child) {
   if(!isatty(0) || setgid(1000) || setuid(1000)) _exit(120);
+  if(os_power_control(0)!=-1 || errno!=EPERM) _exit(123);
   /* An invalid request tests authorization without invoking firmware. */
   if(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(121);
   if(close(0) || __os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(122);
@@ -609,6 +614,11 @@ static int module_file_check(void)
 {
  const char *path="/boot/modules/module_file_probe.ko";
  const char *name="module_file_probe";
+ CHECK(os_module_load("/missing-module.ko")==-1 && errno==ENOENT);
+ CHECK(os_module_load(path)==0);
+ CHECK(os_module_load(path)==-1 && errno==EEXIST);
+ CHECK(os_module_unload(name)==0);
+ CHECK(os_module_unload(name)==-1 && errno==ENOENT);
  CHECK(__os_raw(SYSCALL_KLDLOAD,1,0,0,0,0,0)==-EFAULT);
  CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/missing-module.ko",0,0,0,0,0)==-ENOENT);
  CHECK(__os_raw(SYSCALL_KLDLOAD,(long)"/boot/modules",0,0,0,0,0)==-EINVAL);
@@ -626,6 +636,8 @@ static int module_file_check(void)
  pid_t child=fork(); CHECK(child>=0);
  if(!child) {
   if(setgid(1000) || setuid(1000)) _exit(120);
+  if(os_module_load(path)!=-1 || errno!=EPERM ||
+      os_module_unload(name)!=-1 || errno!=EPERM) _exit(122);
   if(__os_raw(SYSCALL_KLDLOAD,(long)path,0,0,0,0,0)!=-EPERM ||
       __os_raw(SYSCALL_KLDUNLOAD,(long)name,0,0,0,0,0)!=-EPERM) _exit(121);
   _exit(0);

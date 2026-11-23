@@ -1,0 +1,7 @@
+#ifndef ABI_POWER_H
+#define ABI_POWER_H
+
+#define POWER_CONTROL_POWEROFF 1U
+#define POWER_CONTROL_REBOOT 2U
+
+#endif
