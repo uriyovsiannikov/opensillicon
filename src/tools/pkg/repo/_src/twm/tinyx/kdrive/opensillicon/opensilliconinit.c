@@ -12,7 +12,7 @@
 #include "kkeymap.h"
 #include "abi/input.h"
 #include "abi/ioctl.h"
-#include "abi/syscall.h"
+#include <sys/opensillicon.h>
 
 #define OPENSILLICON_MAX_SCAN_CODE 0x6fU
 
@@ -227,16 +227,12 @@ opensilliconPollEvents(void)
 	struct os_keyboard_event event;
 	struct os_mouse_event mouse_event;
 	unsigned int scan;
-	uint64_t result;
-	unsigned char failed;
+	int result;
 
 	for (unsigned int count = 0; count < 32; count++) {
-		result = SYSCALL_KEYBOARD_POLL;
-		__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
-		    "D" ((uintptr_t)&event), "S" (0) : "rcx", "r11", "memory");
-		if (failed)
-			FatalError("OpenSillicon: keyboard polling failed (errno %lu)\n",
-			    (unsigned long)result);
+		result = os_keyboard_poll(&event);
+		if (result < 0)
+			FatalError("OpenSillicon: keyboard polling failed (errno %d)\n", errno);
 		if (result != 1)
 			break;
 		scan = opensilliconScanCode(&event);
@@ -251,13 +247,10 @@ opensilliconPollEvents(void)
 		}
 	}
 	for (unsigned int count = 0; count < 32; count++) {
-		result = SYSCALL_MOUSE_POLL;
-		__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
-		    "D" ((uintptr_t)&mouse_event), "S" (0) : "rcx", "r11", "memory");
-		if (failed && result != ENODEV)
-			FatalError("OpenSillicon: mouse polling failed (errno %lu)\n",
-			    (unsigned long)result);
-		if (failed || result != 1)
+		result = os_mouse_poll(&mouse_event);
+		if (result < 0 && errno != ENODEV)
+			FatalError("OpenSillicon: mouse polling failed (errno %d)\n", errno);
+		if (result != 1)
 			break;
 		if (kdMouseInfo != NULL) {
 			unsigned long buttons = 0;

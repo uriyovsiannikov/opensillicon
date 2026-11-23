@@ -7,18 +7,7 @@
 #include <stdlib.h>
 
 #include "opensillicon.h"
-#include "abi/syscall.h"
-
-static long
-os_syscall2(uint64_t number, uint64_t first, uint64_t second)
-{
-	uint64_t result = number;
-	unsigned char failed;
-
-	__asm__ volatile ("int $0x80; setc %1" : "+a" (result), "=qm" (failed) :
-	    "D" (first), "S" (second) : "rcx", "r11", "memory");
-	return failed ? -(long)result : (long)result;
-}
+#include <sys/opensillicon.h>
 
 static void
 opensilliconFramebufferPresent(ScreenPtr pScreen, shadowBufPtr pBuf)
@@ -55,8 +44,7 @@ opensilliconFramebufferPresent(ScreenPtr pScreen, shadowBufPtr pBuf)
 			.height = box->y2 - box->y1,
 			.source_pitch = card->info.pitch
 		};
-		if (os_syscall2(SYSCALL_FRAMEBUFFER_PRESENT_RECT,
-		    (uintptr_t)&rect, 0) < 0) {
+		if (os_framebuffer_present_rect(&rect) < 0) {
 			ErrorF("OpenSillicon: framebuffer present syscall failed\n");
 			return;
 		}
@@ -91,7 +79,7 @@ opensilliconCardInit(KdCardInfo *card)
 	if (priv == NULL)
 		return FALSE;
 	info = &priv->info;
-	if (os_syscall2(SYSCALL_FRAMEBUFFER_INFO, (uintptr_t)info, 0) < 0 ||
+	if (os_framebuffer_info(info) < 0 ||
 	    info->width == 0 || info->height == 0 ||
 	    info->width > INT_MAX || info->height > INT_MAX ||
 	    info->bits_per_pixel != 32 || info->pitch < info->width * 4 ||

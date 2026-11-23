@@ -56,6 +56,7 @@ install -D -m 644 "$root/src/include/abi/unix_socket.h" "$build/sysroot/include/
 install -D -m 644 "$root/src/include/abi/icmp.h" "$build/sysroot/include/abi/icmp.h"
 install -D -m 644 "$root/src/include/abi/ioctl.h" "$build/sysroot/include/abi/ioctl.h"
 install -D -m 644 "$root/src/include/abi/framebuffer.h" "$build/sysroot/include/abi/framebuffer.h"
+install -D -m 644 "$root/src/include/abi/input.h" "$build/sysroot/include/abi/input.h"
 install -D -m 644 "$root/src/include/abi/power.h" "$build/sysroot/include/abi/power.h"
 install -D -m 644 "$root/src/include/abi/uio.h" "$build/sysroot/include/abi/uio.h"
 install -D -m 644 "$root/src/include/abi/poll.h" "$build/sysroot/include/abi/poll.h"

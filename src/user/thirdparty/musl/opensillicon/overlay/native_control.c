@@ -33,3 +33,15 @@ os_framebuffer_present_rect(const struct os_framebuffer_rect *rect)
 {
 	return __syscall_ret(__os_native_call(SYSCALL_FRAMEBUFFER_PRESENT_RECT, (long)rect, 0, 0, 0, 0, 0));
 }
+
+int
+os_keyboard_poll(struct os_keyboard_event *event)
+{
+	return __syscall_ret(__os_native_call(SYSCALL_KEYBOARD_POLL, (long)event, 0, 0, 0, 0, 0));
+}
+
+int
+os_mouse_poll(struct os_mouse_event *event)
+{
+	return __syscall_ret(__os_native_call(SYSCALL_MOUSE_POLL, (long)event, 0, 0, 0, 0, 0));
+}

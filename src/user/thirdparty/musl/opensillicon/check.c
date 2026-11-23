@@ -594,12 +594,18 @@ static int power_permissions_check(void)
  CHECK(os_power_control(0)==-1 && errno==EINVAL);
  CHECK(os_framebuffer_info((void *)1)==-1 && errno==EFAULT);
  CHECK(os_framebuffer_present_rect((void *)1)==-1 && errno==EFAULT);
+ CHECK(os_keyboard_poll((void *)1)==-1 && errno==EFAULT);
+ CHECK(os_mouse_poll((void *)1)==-1 && errno==EFAULT);
  CHECK(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)==-EINVAL);
  CHECK(__os_raw(SYSCALL_POWER_CONTROL,-1,0,0,0,0,0)==-EINVAL);
  pid_t child=fork(); CHECK(child>=0);
  if(!child) {
   if(!isatty(0) || setgid(1000) || setuid(1000)) _exit(120);
   if(os_power_control(0)!=-1 || errno!=EPERM) _exit(123);
+  struct os_keyboard_event key;
+  struct os_mouse_event mouse;
+  if(os_keyboard_poll(&key)!=-1 || errno!=EPERM ||
+      os_mouse_poll(&mouse)!=-1 || errno!=EPERM) _exit(124);
   /* An invalid request tests authorization without invoking firmware. */
   if(__os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(121);
   if(close(0) || __os_raw(SYSCALL_POWER_CONTROL,0,0,0,0,0,0)!=-EPERM) _exit(122);
