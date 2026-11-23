@@ -248,44 +248,54 @@ syscall_net_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 		break;
 	}
-	case SYSCALL_TCP_ACCEPT:
-		{
-			struct os_ipv4_endpoint peer;
-			struct address_space *space = vmm_active_address_space();
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!tcp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			if (frame->rsi != 0 && !vmm_validate_user_write(space,
-			    frame->rsi, sizeof(peer))) {
-				syscall_error(frame, EFAULT);
-				break;
-			}
-			result = tcp_socket_accept(current_fd_table(), object,
-			    frame->rsi == 0 ? NULL : &peer);
-			if (result == -EAGAIN && !fd_object_nonblocking(object))
-				return process_block_on_channel(frame,
-				    fd_readiness_wait_channel());
-			if (result < 0) {
-				syscall_error(frame, errno_from_kernel(result));
-				break;
-			}
-			if (frame->rsi != 0 && !vmm_copy_to_user(space, frame->rsi,
-			    &peer, sizeof(peer))) {
-				(void)fd_close(current_fd_table(), (uint64_t)result);
-				syscall_error(frame, EFAULT);
-			} else {
-				frame->rax = (uint64_t)result;
-			}
+	case SYSCALL_ACCEPT: {
+		struct address_space *space = vmm_active_address_space();
+		struct fd_object *object = fd_object_for_descriptor(
+		    current_fd_table(), frame->rdi);
+		union { struct os_ipv4_endpoint inet; uint16_t family; } peer;
+		bool local = unix_socket_is_object(object);
+		bool tcp = tcp_socket_is_object(object);
+		uint32_t capacity = 0, actual = local ? sizeof(peer.family) : sizeof(peer.inet);
+		int result;
+		if (object == NULL) {
+			syscall_error(frame, EBADF);
+			break;
 		}
+		if (!local && !tcp) {
+			syscall_error(frame, udp_socket_is_object(object) ? EOPNOTSUPP : ENOTSOCK);
+			break;
+		}
+		if (frame->rsi != 0 &&
+		    (!vmm_copy_from_user(space, &capacity, frame->rdx, sizeof(capacity)) ||
+		    !vmm_validate_user_write(space, frame->rdx, sizeof(actual)) ||
+		    (capacity != 0 && !vmm_validate_user_write(space, frame->rsi,
+		    capacity < actual ? capacity : actual)))) {
+			syscall_error(frame, EFAULT);
+			break;
+		}
+		if (local) {
+			peer.family = OS_AF_UNIX;
+			result = unix_socket_accept(current_fd_table(), object);
+		} else
+			result = tcp_socket_accept(current_fd_table(), object,
+			    frame->rsi != 0 ? &peer.inet : NULL);
+		if (result == -EAGAIN && !fd_object_nonblocking(object))
+			return process_block_on_channel(frame, local ?
+			    unix_socket_wait_channel(object, true) : fd_readiness_wait_channel());
+		if (result < 0) {
+			syscall_error(frame, errno_from_kernel(result));
+			break;
+		}
+		if (frame->rsi != 0 &&
+		    ((capacity != 0 && !vmm_copy_to_user(space, frame->rsi, &peer,
+		    capacity < actual ? capacity : actual)) ||
+		    !vmm_copy_to_user(space, frame->rdx, &actual, sizeof(actual)))) {
+			(void)fd_close(current_fd_table(), (uint64_t)result);
+			syscall_error(frame, EFAULT);
+		} else
+			frame->rax = (uint64_t)result;
 		break;
+	}
 	case SYSCALL_SHUTDOWN: {
 		struct fd_object *object = fd_object_for_descriptor(
 		    current_fd_table(), frame->rdi);

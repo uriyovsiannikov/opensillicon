@@ -196,7 +196,7 @@ $(BUILD_DIR)/silliconfs.o: src/kernel/fs/silliconfs/silliconfs.c \
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 SYSCALL_SOURCES := s_dispatch s_device s_file s_io s_memory s_net s_proc \
-	s_system s_time s_unix
+	s_system s_time
 SYSCALL_OBJECTS := $(addprefix $(BUILD_DIR)/syscall/,$(addsuffix .o,$(SYSCALL_SOURCES)))
 
 $(BUILD_DIR)/syscall/%.o: src/kernel/core/syscall/%.c \

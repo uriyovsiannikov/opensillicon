@@ -121,11 +121,28 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
  }
  if(n==SYS_getsockopt || n==SYS_setsockopt)
   return call(n==SYS_getsockopt ? SYSCALL_GETSOCKOPT : SYSCALL_SETSOCKOPT,a,b,c,d,e,0);
+ if(n==SYS_accept || n==SYS_accept4) {
+  if(n==SYS_accept) d=0;
+  if(d & ~(SOCK_CLOEXEC|SOCK_NONBLOCK)) return -EINVAL;
+  if(!b) return set_flags(call(SYSCALL_ACCEPT,a,0,0,0,0,0),d);
+  if(!c) return -EFAULT;
+  long kind=call(SYSCALL_SOCKET_KIND,a,0,0,0,0,0);
+  if(kind<0) return kind;
+  if(kind==OS_SOCKET_KIND_UNIX)
+   return set_flags(call(SYSCALL_ACCEPT,a,b,c,0,0,0),d);
+  if(kind!=OS_SOCKET_KIND_TCP) return -EOPNOTSUPP;
+  struct os_ipv4_endpoint peer;
+  uint32_t size=sizeof peer;
+  long result=call(SYSCALL_ACCEPT,a,(long)&peer,(long)&size,0,0,0);
+  if(result<0) return result;
+  long converted=to_address(&peer,b,c);
+  if(converted<0) {call(SYSCALL_CLOSE,result,0,0,0,0,0);return converted;}
+  return set_flags(result,d);
+ }
  if(n==SYS_shutdown) return call(SYSCALL_SHUTDOWN,a,b,0,0,0,0);
  if(n==SYS_listen) return call(SYSCALL_LISTEN,a,b,0,0,0,0);
  switch(n) {
- case SYS_bind: case SYS_connect: case SYS_accept:
- case SYS_accept4:
+ case SYS_bind: case SYS_connect:
  case SYS_getsockname: case SYS_getpeername: case SYS_sendto: case SYS_recvfrom:
   break;
  default: return -ENOSYS;
@@ -141,18 +158,6 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   r=from_address(b,c,&ep); if(r<0)return r;
   op=n==SYS_bind ? SYSCALL_BIND : SYSCALL_CONNECT;
   return call(op,a,(long)&ep,sizeof ep,0,0,0);
- case SYS_accept: case SYS_accept4:
-  if(n==SYS_accept) d=0;
-  if(d & ~(SOCK_CLOEXEC|SOCK_NONBLOCK)) return -EINVAL;
-  if(!unix_socket && !tcp) return -EOPNOTSUPP;
-  if(b && !c) return -EFAULT;
-  r=unix_socket ? call(SYSCALL_UNIX_ACCEPT,a,b,c,0,0,0) :
-      call(SYSCALL_TCP_ACCEPT,a,b ? (long)&ep : 0,0,0,0,0);
-  if(r>=0 && tcp) {
-   long converted=to_address(&ep,b,c);
-   if(converted<0) {call(SYSCALL_CLOSE,r,0,0,0,0,0);return converted;}
-  }
-  return set_flags(r,d);
  case SYS_getsockname: case SYS_getpeername:
   if(!b || !c) return -EFAULT;
   op=n==SYS_getsockname ? SYSCALL_GETSOCKNAME : SYSCALL_GETPEERNAME;

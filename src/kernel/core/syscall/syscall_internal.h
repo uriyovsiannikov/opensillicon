@@ -33,6 +33,5 @@ bool syscall_proc_local(struct interrupt_frame **frame);
 struct interrupt_frame *syscall_proc_bsp(struct interrupt_frame *frame);
 struct interrupt_frame *syscall_system_bsp(struct interrupt_frame *frame);
 bool syscall_time_local(struct interrupt_frame **frame);
-struct interrupt_frame *syscall_unix_bsp(struct interrupt_frame *frame);
 
 #endif

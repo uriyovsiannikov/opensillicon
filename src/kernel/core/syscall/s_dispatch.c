@@ -73,7 +73,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_UDP_SENDTO] = { .bsp = syscall_net_bsp },
 	[SYSCALL_UDP_RECVFROM] = { .bsp = syscall_net_bsp },
 	[SYSCALL_LISTEN] = { .bsp = syscall_net_bsp },
-	[SYSCALL_TCP_ACCEPT] = { .bsp = syscall_net_bsp },
+	[SYSCALL_ACCEPT] = { .bsp = syscall_net_bsp },
 	[SYSCALL_SHUTDOWN] = { .bsp = syscall_net_bsp },
 	[SYSCALL_GETSOCKOPT] = { .bsp = syscall_net_bsp },
 	[SYSCALL_SETSOCKOPT] = { .bsp = syscall_net_bsp },
@@ -106,8 +106,6 @@ static const struct syscall_route syscall_routes[] = {
 	/* Time */
 	[SYSCALL_NANOSLEEP] = { .local = syscall_time_local },
 	[SYSCALL_CLOCK_GETTIME] = { .local = syscall_time_local },
-	/* Unix */
-	[SYSCALL_UNIX_ACCEPT] = { .bsp = syscall_unix_bsp },
 };
 
 int

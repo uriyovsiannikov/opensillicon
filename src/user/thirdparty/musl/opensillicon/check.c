@@ -997,11 +997,14 @@ static int socket_control_check(void)
 {
  CHECK(__os_raw(SYSCALL_LISTEN,-1,1,0,0,0,0)==-EBADF);
  CHECK(shutdown(-1,SHUT_RDWR)==-1 && errno==EBADF);
+ CHECK(accept(-1,NULL,NULL)==-1 && errno==EBADF);
  int fd=open("/dev/null",O_RDWR); CHECK(fd>=0);
  CHECK(listen(fd,1)==-1 && errno==ENOTSOCK);
+ CHECK(accept(fd,NULL,NULL)==-1 && errno==ENOTSOCK);
  CHECK(shutdown(fd,SHUT_RDWR)==-1 && errno==ENOTSOCK && close(fd)==0);
  fd=socket(AF_INET,SOCK_DGRAM,0); CHECK(fd>=0);
  CHECK(listen(fd,1)==-1 && errno==EOPNOTSUPP);
+ CHECK(accept(fd,NULL,NULL)==-1 && errno==EOPNOTSUPP);
  CHECK(shutdown(fd,SHUT_RDWR)==-1 && errno==EOPNOTSUPP && close(fd)==0);
  for(int domain=0;domain<2;domain++) {
   fd=socket(domain ? AF_INET : AF_UNIX,SOCK_STREAM,0); CHECK(fd>=0);
@@ -1327,7 +1330,15 @@ static int network_check(void)
  FD_ZERO(&reads); FD_SET(server,&reads);
  struct timeval timeout={2,0};
  CHECK(select(server+1,&reads,NULL,NULL,&timeout)==1 && FD_ISSET(server,&reads));
- int peer=accept4(server,NULL,NULL,SOCK_CLOEXEC);
+ socklen_t accepted_length=2;
+ CHECK(__os_raw(SYSCALL_ACCEPT,server,1,(long)&accepted_length,0,0,0)==-EFAULT);
+ static const socklen_t readonly_accept_length=2;
+ uint16_t accepted_family=0;
+ CHECK(__os_raw(SYSCALL_ACCEPT,server,(long)&accepted_family,
+     (long)&readonly_accept_length,0,0,0)==-EFAULT);
+ struct { unsigned char family,guard; } accepted_address={0,0xc9}; accepted_length=1;
+ int peer=accept4(server,(struct sockaddr *)&accepted_address,&accepted_length,SOCK_CLOEXEC);
+ CHECK(accepted_length==sizeof(uint16_t) && accepted_address.family==AF_UNIX && accepted_address.guard==0xc9);
  CHECK(peer>=0 && (fcntl(peer,F_GETFD)&FD_CLOEXEC));
  struct ucred credential;
  socklen_t credential_length=sizeof credential;
@@ -1729,7 +1740,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,50,51,53,58,63,67,69,81,82,83,84,86,87,88,89,90,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,47,49,50,51,53,58,63,67,69,81,82,83,84,85,86,87,88,89,90,91,92,93,94,101,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
