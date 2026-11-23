@@ -2153,9 +2153,6 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	struct address_space *old_space;
 	struct interrupt_frame *new_frame;
 	uintptr_t stack_top;
-#ifdef KERNEL_TEST_FS_BASE
-	bool had_user_fs_base;
-#endif
 
 	if (process == NULL || image == NULL || image_size == 0) {
 		*error = EINVAL;
@@ -2177,9 +2174,6 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	new_entry = replacement->entry;
 	old_image = process->loaded_image;
 	old_space = process->address_space;
-#ifdef KERNEL_TEST_FS_BASE
-	had_user_fs_base = process->user_fs_base != 0;
-#endif
 	if (!address_space_activate(&replacement->address_space)) {
 		release_loaded_image(replacement);
 		*error = ENOMEM;
@@ -2199,13 +2193,6 @@ replace_process_image(struct interrupt_frame *frame, const void *image,
 	process->user_fs_base = 0;
 	arch_fpu_init_process_state(process->fpu_state);
 	arch_fpu_restore(process->fpu_state);
-#ifdef KERNEL_TEST_FS_BASE
-	if (had_user_fs_base) {
-		if (process->user_fs_base != 0 || arch_fs_base_read() != 0)
-			kernel_halt();
-		klog("test: successful exec reset fs base\n");
-	}
-#endif
 	if (old_image != NULL) {
 		release_loaded_image(old_image);
 	} else {

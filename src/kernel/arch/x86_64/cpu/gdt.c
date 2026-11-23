@@ -38,17 +38,6 @@ static struct tss64 tss;
 static uint8_t kernel_stack[KERNEL_STACK_SIZE] __attribute__((aligned(16)));
 extern void gdt_load(const struct table_pointer *pointer);
 
-uint64_t
-arch_fs_base_read(void)
-{
-	uint32_t low;
-	uint32_t high;
-
-	__asm__ volatile ("rdmsr" : "=a" (low), "=d" (high) :
-	    "c" (IA32_FS_BASE));
-	return ((uint64_t)high << 32) | low;
-}
-
 void
 arch_fs_base_write(uint64_t base)
 {
