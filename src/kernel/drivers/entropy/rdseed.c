@@ -14,11 +14,6 @@ static enum kernel_rdseed_status provider_status =
 static bool request_active;
 static struct spinlock rdseed_lock = SPINLOCK_INITIALIZER;
 
-#ifdef RDSEED_TESTING
-static kernel_rdseed_test_cpuid_fn test_cpuid;
-static kernel_rdseed_test_instruction_fn test_instruction;
-static void *test_context;
-#endif
 
 static uint64_t
 rdseed_guard_enter(void)
@@ -44,10 +39,6 @@ static bool
 cpuid_query(uint32_t leaf, uint32_t subleaf,
 	struct kernel_rdseed_cpuid_result *result)
 {
-#ifdef RDSEED_TESTING
-	if (test_cpuid != NULL)
-		return test_cpuid(test_context, leaf, subleaf, result);
-#endif
 #ifdef OPEN_SILLICON_KERNEL
 	uint32_t eax = leaf, ebx, ecx = subleaf, edx;
 	__asm__ volatile ("cpuid" : "+a" (eax), "=b" (ebx), "+c" (ecx),
@@ -65,10 +56,6 @@ cpuid_query(uint32_t leaf, uint32_t subleaf,
 static bool
 rdseed_instruction(uint64_t *value, bool *carry)
 {
-#ifdef RDSEED_TESTING
-	if (test_instruction != NULL)
-		return test_instruction(test_context, value, carry);
-#endif
 #ifdef OPEN_SILLICON_KERNEL
 	uint64_t result;
 	unsigned char success;
@@ -237,29 +224,3 @@ done:
 	rdseed_guard_leave(flags);
 	return result;
 }
-
-#ifdef RDSEED_TESTING
-bool
-kernel_rdseed_test_set_backend(kernel_rdseed_test_cpuid_fn cpuid,
-	kernel_rdseed_test_instruction_fn instruction, void *context)
-{
-	if (init_attempted || cpuid == NULL || instruction == NULL)
-		return false;
-	test_cpuid = cpuid;
-	test_instruction = instruction;
-	test_context = context;
-	return true;
-}
-
-void
-kernel_rdseed_test_reset(void)
-{
-	init_attempted = false;
-	feature_supported = false;
-	provider_status = KERNEL_RDSEED_NOT_INITIALIZED;
-	__atomic_store_n(&request_active, false, __ATOMIC_RELEASE);
-	test_cpuid = NULL;
-	test_instruction = NULL;
-	test_context = NULL;
-}
-#endif

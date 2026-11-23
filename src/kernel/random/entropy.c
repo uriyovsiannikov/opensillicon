@@ -12,11 +12,6 @@
 
 struct source_entry {
 	enum kernel_entropy_source_status status;
-#ifdef KERNEL_ENTROPY_TESTING
-	kernel_entropy_test_reader test_reader;
-	void *test_context;
-	bool test_override;
-#endif
 };
 
 static bool manager_initialized;
@@ -94,39 +89,31 @@ kernel_entropy_init(enum boot_entropy_result limine_status,
 		sources[KERNEL_ENTROPY_SOURCE_LIMINE].status =
 		    KERNEL_ENTROPY_UNAVAILABLE;
 	}
-#ifdef KERNEL_ENTROPY_TESTING
-	if (!sources[KERNEL_ENTROPY_SOURCE_RDRAND].test_override)
-#endif
-	{
-		switch (kernel_random_status()) {
-		case KERNEL_RANDOM_NOT_INITIALIZED:
-			sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
-			    KERNEL_ENTROPY_NOT_INITIALIZED;
-			break;
-		case KERNEL_RANDOM_UNSUPPORTED:
-			sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
-			    KERNEL_ENTROPY_UNSUPPORTED;
-			break;
-		case KERNEL_RANDOM_AVAILABLE:
-			sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
-			    KERNEL_ENTROPY_CANDIDATE_AVAILABLE;
-			break;
-		case KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE:
-			sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
-			    KERNEL_ENTROPY_TEMPORARILY_FAILED;
-			break;
-		case KERNEL_RANDOM_PERMANENTLY_FAILED:
-		default:
-			sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
-			    KERNEL_ENTROPY_PERMANENTLY_DISABLED;
-			break;
-		}
-	}
-#ifdef KERNEL_ENTROPY_TESTING
-	if (!sources[KERNEL_ENTROPY_SOURCE_VIRTIO_RNG].test_override)
-#endif
-		sources[KERNEL_ENTROPY_SOURCE_VIRTIO_RNG].status =
+	switch (kernel_random_status()) {
+	case KERNEL_RANDOM_NOT_INITIALIZED:
+		sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
 		    KERNEL_ENTROPY_NOT_INITIALIZED;
+		break;
+	case KERNEL_RANDOM_UNSUPPORTED:
+		sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
+		    KERNEL_ENTROPY_UNSUPPORTED;
+		break;
+	case KERNEL_RANDOM_AVAILABLE:
+		sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
+		    KERNEL_ENTROPY_CANDIDATE_AVAILABLE;
+		break;
+	case KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE:
+		sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
+		    KERNEL_ENTROPY_TEMPORARILY_FAILED;
+		break;
+	case KERNEL_RANDOM_PERMANENTLY_FAILED:
+	default:
+		sources[KERNEL_ENTROPY_SOURCE_RDRAND].status =
+		    KERNEL_ENTROPY_PERMANENTLY_DISABLED;
+		break;
+	}
+	sources[KERNEL_ENTROPY_SOURCE_VIRTIO_RNG].status =
+	    KERNEL_ENTROPY_NOT_INITIALIZED;
 	switch (kernel_rdseed_status()) {
 	case KERNEL_RDSEED_SUPPORTED:
 		sources[KERNEL_ENTROPY_SOURCE_RDSEED].status =
@@ -213,11 +200,6 @@ kernel_entropy_retry_source(enum kernel_entropy_source source)
 		return false;
 	}
 	/* Keep the state protected while querying bounded provider status. */
-#ifdef KERNEL_ENTROPY_TESTING
-	if (sources[source].test_override)
-		available = sources[source].test_reader != NULL;
-	else
-#endif
 	if (source == KERNEL_ENTROPY_SOURCE_RDRAND)
 		available = kernel_random_retry();
 	else if (source == KERNEL_ENTROPY_SOURCE_VIRTIO_RNG)
@@ -280,14 +262,6 @@ read_source(enum kernel_entropy_source source, uint8_t *output,
 		}
 		return KERNEL_ENTROPY_OK;
 	}
-#ifdef KERNEL_ENTROPY_TESTING
-	if (sources[source].test_override) {
-		if (sources[source].test_reader == NULL)
-			return KERNEL_ENTROPY_SOURCE_UNAVAILABLE;
-		return sources[source].test_reader(sources[source].test_context,
-		    output, capacity, bytes_written);
-	}
-#endif
 	if (source == KERNEL_ENTROPY_SOURCE_RDRAND) {
 		if (kernel_random_bytes(output, capacity)) {
 			*bytes_written = capacity;
@@ -417,35 +391,3 @@ kernel_entropy_cryptographic_ready(void)
 {
 	return false;
 }
-
-#ifdef KERNEL_ENTROPY_TESTING
-bool
-kernel_entropy_test_set_source(enum kernel_entropy_source source,
-	enum kernel_entropy_source_status status,
-	kernel_entropy_test_reader reader, void *context)
-{
-	if (!valid_source(source) || status == KERNEL_ENTROPY_TRUSTED ||
-	    status > KERNEL_ENTROPY_TRUSTED ||
-	    (status == KERNEL_ENTROPY_CANDIDATE_AVAILABLE && reader == NULL))
-		return false;
-	sources[source].status = status;
-	sources[source].test_reader = reader;
-	sources[source].test_context = context;
-	sources[source].test_override = true;
-	return true;
-}
-
-void
-kernel_entropy_test_reset(void)
-{
-	volatile uint8_t *wipe = limine_candidate;
-	for (size_t i = 0; i < sizeof(limine_candidate); i++)
-		wipe[i] = 0;
-	manager_initialized = false;
-	manager_request_active = false;
-	limine_offset = 0;
-	limine_length = 0;
-	for (size_t i = 0; i < KERNEL_ENTROPY_SOURCE_COUNT; i++)
-		sources[i] = (struct source_entry){0};
-}
-#endif

@@ -16,11 +16,6 @@ static enum kernel_random_source_status provider_status =
 static bool request_active;
 static struct spinlock random_lock = SPINLOCK_INITIALIZER;
 
-#ifdef KERNEL_RANDOM_TEST
-static bool test_source_active;
-static kernel_random_test_word_fn test_source;
-static void *test_source_context;
-#endif
 
 static uint64_t
 random_guard_enter(void)
@@ -70,20 +65,10 @@ rdrand_word(uint64_t *word)
 }
 
 static bool
-source_word(uint64_t *word)
-{
-#ifdef KERNEL_RANDOM_TEST
-	if (test_source_active)
-		return test_source(test_source_context, word);
-#endif
-	return rdrand_word(word);
-}
-
-static bool
 source_word_bounded(uint64_t *word)
 {
 	for (unsigned int attempt = 0; attempt < RDRAND_RETRY_LIMIT; attempt++) {
-		if (source_word(word))
+		if (rdrand_word(word))
 			return true;
 		__asm__ volatile ("pause" : : : "memory");
 	}
@@ -97,11 +82,7 @@ initialize_locked(void)
 	if (init_attempted)
 		return provider_status == KERNEL_RANDOM_AVAILABLE;
 	init_attempted = true;
-#ifdef KERNEL_RANDOM_TEST
-	if (!test_source_active && !rdrand_supported()) {
-#else
 	if (!rdrand_supported()) {
-#endif
 		provider_status = KERNEL_RANDOM_UNSUPPORTED;
 		return false;
 	}
@@ -213,38 +194,3 @@ kernel_random_bytes(void *output, size_t length)
 	random_guard_leave(flags);
 	return success;
 }
-
-#ifdef KERNEL_RANDOM_TEST
-bool
-kernel_random_test_init_source(kernel_random_test_word_fn source,
-	void *context)
-{
-	uint64_t flags = random_guard_enter();
-	bool ready;
-	if (init_attempted || source == NULL) {
-		random_guard_leave(flags);
-		return false;
-	}
-	test_source = source;
-	test_source_context = context;
-	test_source_active = true;
-	ready = initialize_locked();
-	random_guard_leave(flags);
-	return ready;
-}
-
-void
-kernel_random_test_reset(void)
-{
-	uint64_t flags = random_guard_enter();
-	init_attempted = false;
-	source_ready = false;
-	feature_supported = false;
-	provider_status = KERNEL_RANDOM_NOT_INITIALIZED;
-	__atomic_store_n(&request_active, false, __ATOMIC_RELEASE);
-	test_source_active = false;
-	test_source = NULL;
-	test_source_context = NULL;
-	random_guard_leave(flags);
-}
-#endif

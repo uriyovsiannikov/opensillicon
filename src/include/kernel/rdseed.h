@@ -45,14 +45,4 @@ enum kernel_rdseed_result kernel_rdseed_word(uint64_t *output);
  * and feature detection. Not for interrupt context; current kernel is UP. */
 enum kernel_rdseed_result kernel_rdseed_bytes(void *output, size_t length);
 
-#ifdef RDSEED_TESTING
-typedef bool (*kernel_rdseed_test_cpuid_fn)(void *context, uint32_t leaf,
-	uint32_t subleaf, struct kernel_rdseed_cpuid_result *result);
-typedef bool (*kernel_rdseed_test_instruction_fn)(void *context,
-	uint64_t *value, bool *carry);
-bool kernel_rdseed_test_set_backend(kernel_rdseed_test_cpuid_fn cpuid,
-	kernel_rdseed_test_instruction_fn instruction, void *context);
-void kernel_rdseed_test_reset(void);
-#endif
-
 #endif

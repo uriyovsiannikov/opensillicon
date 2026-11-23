@@ -96,13 +96,4 @@ enum kernel_entropy_result kernel_entropy_get_candidate(
  * CSPRNG. */
 bool kernel_entropy_cryptographic_ready(void);
 
-#ifdef KERNEL_ENTROPY_TESTING
-typedef enum kernel_entropy_result (*kernel_entropy_test_reader)(
-	void *context, uint8_t *output, size_t capacity, size_t *bytes_written);
-bool kernel_entropy_test_set_source(enum kernel_entropy_source source,
-	enum kernel_entropy_source_status status,
-	kernel_entropy_test_reader reader, void *context);
-void kernel_entropy_test_reset(void);
-#endif
-
 #endif
