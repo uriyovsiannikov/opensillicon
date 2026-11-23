@@ -1,46 +1,40 @@
-#include "../include/os.h"
+#include <inttypes.h>
+#include <stdio.h>
+#include <sys/sysctl.h>
+#include "abi/process_info.h"
 
 static const char *
 state_name(uint32_t state)
 {
 	switch (state) {
-	case 0: return "ready";
-	case 1: return "running";
-	case 2: return "blocked";
-	case 3: return "zombie";
+	case OS_PROCESS_READY: return "ready";
+	case OS_PROCESS_RUNNING: return "running";
+	case OS_PROCESS_BLOCKED: return "blocked";
+	case OS_PROCESS_ZOMBIE: return "zombie";
 	default: return "unknown";
 	}
 }
 
 int
-user_main(uint64_t argc, char **argv)
+main(int argc, char **argv)
 {
 	struct os_process_info processes[OS_PROCESS_INFO_MAX];
-	long count;
-	long i;
+	size_t size = sizeof(processes);
 	(void)argv;
 	if (argc != 1) {
-		u_puts("usage: ps\n");
+		fputs("usage: ps\n", stderr);
 		return 1;
 	}
-	count = u_process_info(processes, OS_PROCESS_INFO_MAX);
-	if (count < 0) {
-		u_puts(count == -7 ? "ps: process list exceeds 128 entries\n" :
-		    "ps: process snapshot failed\n");
+	if (sysctlbyname("kern.proc.all", processes, &size, NULL, 0) < 0) {
+		perror("ps: process snapshot");
 		return 1;
 	}
-	u_puts("PID PPID UID STATE COMMAND\n");
-	for (i = 0; i < count; i++) {
-		u_put_u64(processes[i].pid);
-		u_puts(" ");
-		u_put_u64(processes[i].parent_pid);
-		u_puts(" ");
-		u_put_u64(processes[i].uid);
-		u_puts(" ");
-		u_puts(state_name(processes[i].state));
-		u_puts(" ");
-		u_puts(processes[i].name);
-		u_puts("\n");
+	puts("PID PPID UID STATE COMMAND");
+	for (size_t i = 0; i < size / sizeof(processes[0]); i++) {
+		const struct os_process_info *process = &processes[i];
+		printf("%" PRIu64 " %" PRIu64 " %" PRIu32 " %s %.*s\n",
+		    process->pid, process->parent_pid, process->uid,
+		    state_name(process->state), (int)sizeof(process->name), process->name);
 	}
-	return 0;
+	return fflush(stdout) == EOF || ferror(stdout) ? 1 : 0;
 }

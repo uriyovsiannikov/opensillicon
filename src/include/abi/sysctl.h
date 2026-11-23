@@ -21,6 +21,7 @@ enum os_sysctl_kind {
 	X(KERN_OSRELEASE, CTL_KERN, 2, "kern.osrelease", OS_SYSCTL_STRING) \
 	X(KERN_VERSION, CTL_KERN, 4, "kern.version", OS_SYSCTL_STRING) \
 	X(KERN_HOSTNAME, CTL_KERN, 10, "kern.hostname", OS_SYSCTL_STRING) \
+	X(KERN_PROC_ALL, CTL_KERN, 14, "kern.proc.all", OS_SYSCTL_BYTES) \
 	X(KERN_MAXFILESPERPROC, CTL_KERN, 28, "kern.maxfilesperproc", OS_SYSCTL_INT32) \
 	X(NET_INTERFACE, CTL_NET, 1, "net.interface", OS_SYSCTL_STRING) \
 	X(NET_IPV4_CONFIG, CTL_NET, 2, "net.inet.ip.config", OS_SYSCTL_BYTES) \

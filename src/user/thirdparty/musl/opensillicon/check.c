@@ -1395,7 +1395,12 @@ static int procfs_directory_check(void)
 static int sysctl_check(void)
 {
  struct os_process_info processes[OS_PROCESS_INFO_MAX];
- long process_count=__os_raw(SYSCALL_PROCESS_INFO,(long)processes,OS_PROCESS_INFO_MAX,0,0,0,0);
+ size_t process_bytes=0;
+ CHECK(sysctlbyname("kern.proc.all",NULL,&process_bytes,NULL,0)==0);
+ CHECK(process_bytes>0 && process_bytes<=sizeof processes && process_bytes%sizeof processes[0]==0);
+ process_bytes=sizeof processes;
+ CHECK(sysctlbyname("kern.proc.all",processes,&process_bytes,NULL,0)==0);
+ long process_count=(long)(process_bytes/sizeof processes[0]);
  CHECK(process_count>0 && process_count<=OS_PROCESS_INFO_MAX);
  int found_self=0;
  for(long i=0;i<process_count;i++) {
@@ -1409,11 +1414,21 @@ static int sysctl_check(void)
  CHECK(found_self);
  pid_t snapshot_child=fork(); CHECK(snapshot_child>=0);
  if(!snapshot_child) _exit(0);
- CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,1,0,0,0,0)==-E2BIG);
+ int process_mib[]={CTL_KERN,KERN_PROC_ALL};
+ struct { unsigned char bytes[sizeof(struct os_process_info)+1]; unsigned char guard; } short_snapshot;
+ memset(&short_snapshot,0xa5,sizeof short_snapshot);
+ process_bytes=sizeof short_snapshot.bytes;
+ CHECK(sysctl(process_mib,2,short_snapshot.bytes,&process_bytes,NULL,0)==-1 && errno==ENOMEM);
+ CHECK(process_bytes==sizeof short_snapshot.bytes && short_snapshot.guard==0xa5);
  CHECK(waitpid(snapshot_child,NULL,0)==snapshot_child);
- CHECK(__os_raw(SYSCALL_PROCESS_INFO,1,OS_PROCESS_INFO_MAX,0,0,0,0)==-EFAULT);
- CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,0,0,0,0,0)==-EINVAL);
- CHECK(__os_raw(SYSCALL_PROCESS_INFO,(long)processes,OS_PROCESS_INFO_MAX+1,0,0,0,0)==-EINVAL);
+ process_bytes=sizeof processes;
+ CHECK(sysctl(process_mib,2,(void *)1,&process_bytes,NULL,0)==-1 && errno==EFAULT);
+ CHECK(process_bytes==sizeof processes);
+ process_bytes=0;
+ CHECK(sysctl(process_mib,2,processes,&process_bytes,NULL,0)==-1 && errno==ENOMEM && process_bytes==0);
+ process_bytes=SIZE_MAX;
+ CHECK(sysctl(process_mib,2,processes,&process_bytes,NULL,0)==0 && process_bytes<=sizeof processes);
+ CHECK(sysctl(process_mib,2,NULL,&process_bytes,"x",1)==-1 && errno==EPERM);
  struct utsname identity;
  CHECK(uname(&identity)==0);
  CHECK(!strcmp(identity.sysname,"OpenSillicon") && !strcmp(identity.machine,"amd64"));

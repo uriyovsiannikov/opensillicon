@@ -23,6 +23,7 @@ struct sysctl_value {
 		uint64_t wide;
 		struct os_ipv4_config ipv4;
 		uint8_t dns[4];
+		struct os_process_info processes[OS_PROCESS_INFO_MAX];
 	} number;
 	const void *data;
 	size_t size;
@@ -38,6 +39,15 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 		case KERN_OSRELEASE: text = KERNEL_OSRELEASE; break;
 		case KERN_VERSION: text = KERNEL_VERSION; break;
 		case KERN_HOSTNAME: text = KERNEL_HOSTNAME; break;
+		case KERN_PROC_ALL: {
+			int count = process_info_snapshot(value->number.processes,
+			    OS_PROCESS_INFO_MAX);
+			if (count < 0)
+				return -count;
+			value->data = value->number.processes;
+			value->size = (size_t)count * sizeof(value->number.processes[0]);
+			return 0;
+		}
 		case KERN_MAXFILESPERPROC:
 			value->number.integer = FD_TABLE_CAPACITY;
 			break;

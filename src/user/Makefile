@@ -49,7 +49,7 @@ $(BUILD_DIR)/user_shell.o: src/user/shell/shell.c src/include/abi/exec.h $(LIBC_
 	$(CC) $(LIBC_CFLAGS) -Isrc/user -c $< -o $@
 
 # Utilities using the public POSIX runtime need libc startup and headers.
-POSIX_COREUTILS := ls rm uname sleep tail cat head wc stat which pwd mkdir kill basename dirname echo clear seq touch true false host ifconfig ping
+POSIX_COREUTILS := ls rm uname sleep tail cat head wc stat which pwd mkdir kill basename dirname echo clear seq touch true false host ifconfig ping ps
 DEVICECONF_COREUTILS := cpuconf usbconf pciconf blkconf audioconf netconf kldstat
 $(addprefix $(BUILD_DIR)/coreutils/,$(addsuffix .o,$(DEVICECONF_COREUTILS) deviceconf)): $(BUILD_DIR)/coreutils/%.o: src/user/coreutils/%.c src/user/coreutils/deviceconf.h $(LIBC_ARCHIVE) src/user/Makefile
 	mkdir -p $(@D)

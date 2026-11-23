@@ -57,3 +57,4 @@ install -D -m 644 "$root/src/include/abi/ioctl.h" "$build/sysroot/include/abi/io
 install -D -m 644 "$root/src/include/abi/uio.h" "$build/sysroot/include/abi/uio.h"
 install -D -m 644 "$root/src/include/abi/poll.h" "$build/sysroot/include/abi/poll.h"
 install -D -m 644 "$root/src/include/abi/exec.h" "$build/sysroot/include/abi/exec.h"
+install -D -m 644 "$root/src/include/abi/process_info.h" "$build/sysroot/include/abi/process_info.h"
