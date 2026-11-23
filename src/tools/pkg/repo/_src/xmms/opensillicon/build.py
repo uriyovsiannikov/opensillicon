@@ -9,6 +9,15 @@ PREFIX=BUILD/'prefix'
 CC=SRC/'opensillicon/cc'
 env=dict(os.environ,OPEN_SILLICON_ROOT=str(ROOT),CC=str(CC))
 for key,value in {'char':1,'short':2,'int':4,'long':8,'long_long':8,'void_p':8}.items():env['ac_cv_sizeof_'+key]=str(value)
+# x86-64 musl/GCC properties: configure must never execute target binaries.
+for key,value in {
+ 'ac_cv_c_bigendian':'no', 'glib_cv_has__inline':'yes',
+ 'glib_cv_has__inline__':'yes', 'glib_cv_hasinline':'yes',
+ 'glib_cv_sane_realloc':'yes', 'glib_cv_va_copy':'yes',
+ 'glib_cv___va_copy':'yes', 'glib_cv_va_val_copy':'no',
+ 'glib_cv_rtldglobal_broken':'no', 'glib_cv_uscore':'no',
+ 'ac_cv_func_getpwuid_r':'yes',
+}.items():env[key]=value
 env['ac_cv_func_atexit']='yes';env['ac_cv_func_vsnprintf']='yes'
 env['ac_cv_func_pthread_attr_init']='yes'
 JOBS=str(min(os.cpu_count() or 1,8))

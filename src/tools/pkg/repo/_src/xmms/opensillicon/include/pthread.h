@@ -1,5 +1,12 @@
 #ifndef XMMS_PTHREAD_H
 #define XMMS_PTHREAD_H
+/* The cooperative runtime owns these types, including when sys/types.h is
+ * included later. Keep musl from declaring a second, incompatible layout. */
+#define __DEFINED_pthread_t
+#define __DEFINED_pthread_attr_t
+#define __DEFINED_pthread_mutex_t
+#define __DEFINED_pthread_mutexattr_t
+#define __DEFINED_pthread_cond_t
 #include "tinycthread.h"
 typedef thrd_t pthread_t;
 typedef mtx_t pthread_mutex_t;

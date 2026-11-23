@@ -21,7 +21,7 @@ files += [(str(f),'/usr/share/fonts/'+str(f.relative_to(fonts))) for f in sorted
 headers=subprocess.check_output(['gcc','-print-file-name=include'],text=True).strip()
 run('gcc','-O2','-ffreestanding','-fno-builtin','-fno-pie','-fno-stack-protector','-mno-red-zone','-nostdinc','-Isrc/build/musl/sysroot/include','-Isrc/include','-I'+str(p),'-isystem',headers,'-c','src/tools/checks/xmms.c','-o',p/'init.o')
 run('gcc','-fno-pie','-c',p/'blobs.S','-o',p/'blobs.o')
-run('gcc','-nostdlib','-static','-no-pie','-Wl,-z,noexecstack','-T','src/user/c_linker.ld','src/build/musl/sysroot/lib/crt1.o',p/'init.o',p/'blobs.o','src/build/xmms/compat.o','-Wl,--start-group','src/build/xmms/player/libxmms/.libs/libxmms.a','src/build/xmms/prefix/lib/libglib.a','src/build/musl/sysroot/lib/libc.a','-lgcc','-Wl,--end-group','-o',p/'init.elf')
+run('gcc','-nostdlib','-static','-no-pie','-Wl,-z,noexecstack','-T','src/user/c_linker.ld','src/build/musl/sysroot/lib/crt1.o',p/'init.o',p/'blobs.o','-Wl,--start-group','src/build/xmms/player/libxmms/.libs/libxmms.a','src/build/xmms/prefix/lib/libglib.a','src/build/musl/sysroot/lib/libc.a','-lgcc','-Wl,--end-group','-o',p/'init.elf')
 (p/'screen.ppm').unlink(missing_ok=True)
 p=Path('src/build/xmms/check'); iso=p/'iso'
 (iso/'EFI/BOOT').mkdir(parents=True,exist_ok=True);(iso/'boot').mkdir(exist_ok=True)

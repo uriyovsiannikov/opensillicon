@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include "abi/ioctl.h"
 #include <sys/wait.h>
 #include <signal.h>
 #include <string.h>
@@ -19,14 +20,13 @@ static int launch(char *const args[]){int p=fork();if(!p){execv(args[0],args);pe
 #define REQUIRE(test) do{if(!(test)){printf("XMMS_FAIL: %s\n",#test);fflush(stdout);return 2;}}while(0)
 static int time_at_least(int minimum){for(int i=0;i<100;i++){if(xmms_remote_get_output_time(0)>=minimum)return 1;usleep(100000);}return 0;}
 int main(void){
- int console=open("/dev/console",O_WRONLY);if(console>=0){dup2(console,1);dup2(console,2);close(console);}
  for(unsigned i=0;i<sizeof(payload)/sizeof(*payload);i++){
   char path[256];strcpy(path,payload[i].name);for(char*p=path+1;*p;p++)if(*p=='/'){*p=0;mkdir(path,0755);*p='/';}
   FILE*f=fopen(path,"wb");REQUIRE(f);REQUIRE(fwrite(payload[i].start,1,payload[i].end-payload[i].start,f)==(size_t)(payload[i].end-payload[i].start));fclose(f);chmod(path,0755);
  }
  mkdir("/tmp/.xmms",0777);chmod("/tmp/.xmms",0777);mkdir("/tmp/.X11-unix",0777);setenv("HOME","/tmp",1);setenv("DISPLAY",":0",1);
  FILE*f=fopen("/tmp/.xmms/config","w");fputs("[xmms]\nshow_wm_decorations=TRUE\nuse_eplugins=FALSE\n",f);fclose(f);chmod("/tmp/.xmms/config",0666);
- ioctl(1,TIOCSFB,(void*)1);
+ int framebuffer_console=0; REQUIRE(ioctl(1,OS_TIOCSFB,&framebuffer_console)==0);
  char*x[]={"/usr/bin/X",":0","-ac",NULL};int server=launch(x);sleep(2);
  REQUIRE(setgid(1000)==0);REQUIRE(setuid(1000)==0);
  char*app[]={"/usr/bin/xmms","/tmp/test.wav","/tmp/test.mp3",NULL};int player=launch(app);printf("XMMS_TEST_PID=%d uid=%d\n",player,getuid());fflush(stdout);

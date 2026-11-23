@@ -1150,7 +1150,7 @@ EOF
 if { (eval echo configure:1151: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   ac_cv_prog_cc_works=yes
   # If we can't run a trivial program, we are probably using a cross compiler.
-  if (./conftest; exit) 2>/dev/null; then
+  if test "$host" = "$build" && (./conftest; exit) 2>/dev/null; then
     ac_cv_prog_cc_cross=no
   else
     ac_cv_prog_cc_cross=yes
@@ -1843,7 +1843,7 @@ EOF
 if { (eval echo configure:1844: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   ac_cv_prog_cc_works=yes
   # If we can't run a trivial program, we are probably using a cross compiler.
-  if (./conftest; exit) 2>/dev/null; then
+  if test "$host" = "$build" && (./conftest; exit) 2>/dev/null; then
     ac_cv_prog_cc_cross=no
   else
     ac_cv_prog_cc_cross=yes
@@ -2096,6 +2096,9 @@ fi
 
 echo $ac_n "checking for extra flags to get ANSI library prototypes""... $ac_c" 1>&6
 echo "configure:2099: checking for extra flags to get ANSI library prototypes" >&5
+if test "$cross_compiling" = yes; then
+  echo "$ac_t""none needed (ISO C target compiler)" 1>&6
+else
 glib_save_LIBS=$LIBS
 LIBS="$LIBS -lm"
 if test "$cross_compiling" = yes; then
@@ -2146,6 +2149,8 @@ rm -fr conftest*
 fi
 
 LIBS=$glib_save_LIBS
+fi
+
 
 echo $ac_n "checking for extra flags for POSIX compliance""... $ac_c" 1>&6
 echo "configure:2152: checking for extra flags for POSIX compliance" >&5
@@ -5600,7 +5605,13 @@ for glib_sysdef_input in POLLIN:1 POLLOUT:4 POLLPRI:2 POLLERR:8 POLLHUP:16 POLLN
 done
 echo "return 0; }" >>confrun.c
 if test "$cross_compiling" = yes; then
-    { echo "configure: error: can not run test program while cross compiling" 1>&2; exit 1; }
+    echo '#include <sys/poll.h>' >confsysdefs.c
+    for glib_sysdef in POLLIN POLLOUT POLLPRI POLLERR POLLHUP POLLNVAL; do
+      echo "GLIB_SYSDEF_$glib_sysdef =$glib_sysdef" >>confsysdefs.c
+    done
+    $CC $CPPFLAGS -E -P confsysdefs.c | sed -n 's/^GLIB_SYSDEF_/#define GLIB_SYSDEF_/p' >$glib_sysdefso
+    rm -f confsysdefs.c
+    echo "$ac_t""done (target preprocessor)" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
 #line 5607 "configure"
