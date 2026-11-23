@@ -20,7 +20,6 @@ struct syscall_route {
 static const struct syscall_route syscall_routes[] = {
 	/* Device */
 	[SYSCALL_FRAMEBUFFER_INFO] = { .bsp = syscall_device_bsp },
-	[SYSCALL_FRAMEBUFFER_PRESENT] = { .bsp = syscall_device_bsp },
 	[SYSCALL_FRAMEBUFFER_PRESENT_RECT] = { .bsp = syscall_device_bsp },
 	[SYSCALL_KEYBOARD_POLL] = { .bsp = syscall_device_bsp },
 	[SYSCALL_MOUSE_POLL] = { .bsp = syscall_device_bsp },

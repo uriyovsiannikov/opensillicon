@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v19.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v20.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -312,3 +312,8 @@ ABI v19 removes the zero-stride framebuffer rectangle format. Every
 `os_framebuffer_rect` source points to the rectangle's first pixel and supplies
 an explicit `source_pitch` of at least `width * 4` bytes. Destination x/y select
 only the framebuffer location. Rebuild native framebuffer clients and TinyX.
+
+ABI v20 retires the unused full-framebuffer presentation syscall (slot 41).
+All native framebuffer output uses `os_framebuffer_present_rect`; a full
+screen is a rectangle at (0, 0) with the framebuffer dimensions and explicit
+source stride. Slot 41 returns ENOSYS. Rebuild framebuffer clients.

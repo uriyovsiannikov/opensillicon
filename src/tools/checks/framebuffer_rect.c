@@ -9,7 +9,7 @@
 #include "kernel/errno.h"
 
 static struct address_space space;
-static unsigned char source[2 * 5184];
+static unsigned char source[4 * 5200];
 static unsigned char pixels[4 * 5200];
 static uint32_t uid;
 
@@ -65,6 +65,11 @@ int main(void)
 	assert(memcmp(saved, pixels, sizeof(saved)) == 0);
 	uid = 1000; rect.x = 1;
 	assert(framebuffer_device_present_rect(&rect) == -EPERM);
+	uid = 0;
+	rect = (struct os_framebuffer_rect){.source = (uintptr_t)source,
+	    .width = 1300, .height = 4, .source_pitch = 5200};
+	assert(framebuffer_device_present_rect(&rect) == 0);
+	assert(memcmp(source, pixels, sizeof(pixels)) == 0);
 	puts("FRAMEBUFFER_RECT_PASS: explicit stride, chunked rows, clipping, overflow and permissions");
 	return 0;
 }

@@ -43,17 +43,6 @@ syscall_device_bsp(struct interrupt_frame *frame)
 			frame->rax = 0;
 		}
 		break;
-	case SYSCALL_FRAMEBUFFER_PRESENT:
-		{
-			int result = framebuffer_device_present(frame->rdi,
-			    (size_t)frame->rsi);
-
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	case SYSCALL_FRAMEBUFFER_PRESENT_RECT:
 		{
 			struct os_framebuffer_rect rect;

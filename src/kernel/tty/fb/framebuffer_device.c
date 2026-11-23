@@ -97,38 +97,6 @@ framebuffer_device_boot_read(uint64_t offset, uint32_t *words, size_t count)
 }
 
 int
-framebuffer_device_present(uint64_t user_address, size_t length)
-{
-	uint8_t staging[FRAMEBUFFER_COPY_CHUNK];
-	uint8_t *destination;
-	struct address_space *space = vmm_active_address_space();
-	size_t offset = 0;
-
-	if (!may_present())
-		return -1;
-	if (active_framebuffer == NULL || space == NULL)
-		return -ENODEV;
-	if (length != active_framebuffer_size || user_address == 0 ||
-	    user_address > UINT64_MAX - length)
-		return -EINVAL;
-	if (!vmm_validate_user_read(space, user_address, length))
-		return -14;
-	destination = active_framebuffer->address;
-	while (offset < length) {
-		size_t amount = length - offset;
-		if (amount > sizeof(staging))
-			amount = sizeof(staging);
-		if (!vmm_copy_from_user(space, staging, user_address + offset,
-		    amount))
-			return -14;
-		for (size_t index = 0; index < amount; index++)
-			destination[offset + index] = staging[index];
-		offset += amount;
-	}
-	return 0;
-}
-
-int
 framebuffer_device_present_rect(const struct os_framebuffer_rect *rect)
 {
 	uint32_t staging[FRAMEBUFFER_COPY_CHUNK / sizeof(uint32_t)];
