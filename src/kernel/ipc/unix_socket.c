@@ -401,7 +401,7 @@ out:
 }
 
 int
-unix_socket_listen(struct fd_object *object, int backlog)
+unix_socket_listen(struct fd_object *object)
 {
 	struct unix_socket_state *state = socket_state(object);
 	struct os_credentials credentials;
@@ -414,7 +414,6 @@ unix_socket_listen(struct fd_object *object, int backlog)
 		state_guard_leave(flags);
 		return -EINVAL;
 	}
-	(void)backlog;
 	state->owner_pid = process_current_pid();
 	state->owner_uid = credentials.effective_uid;
 	state->owner_gid = credentials.effective_gid;

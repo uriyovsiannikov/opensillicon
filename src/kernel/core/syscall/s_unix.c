@@ -2,7 +2,6 @@
 #include "abi/socket.h"
 
 #include "kernel/process.h"
-#include "kernel/pty.h"
 #include "kernel/unix_socket.h"
 #include "kernel/vmm.h"
 
@@ -12,17 +11,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
-	case SYSCALL_UNIX_LISTEN:
-		{
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result = unix_socket_listen(object, (int)frame->rsi);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	case SYSCALL_UNIX_ACCEPT:
 		{
 			struct address_space *space = vmm_active_address_space();
@@ -56,7 +44,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 			}
 			if (result == -EAGAIN)
 				return process_block_on_channel(frame,
-				    pty_is_object(object) ? fd_readiness_wait_channel() :
 				    unix_socket_wait_channel(object, true));
 			if (result < 0)
 				syscall_error(frame, errno_from_kernel(result));

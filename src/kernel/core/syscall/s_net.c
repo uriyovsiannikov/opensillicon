@@ -227,26 +227,27 @@ syscall_net_bsp(struct interrupt_frame *frame)
 				frame->rax = 0;
 		}
 		break;
-	case SYSCALL_TCP_LISTEN:
-		{
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result;
-			if (object == NULL) {
-				syscall_error(frame, EBADF);
-				break;
-			}
-			if (!tcp_socket_is_object(object)) {
-				syscall_error(frame, ENOTSOCK);
-				break;
-			}
-			result = tcp_socket_listen(object, frame->rsi);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
+	case SYSCALL_LISTEN: {
+		struct fd_object *object = fd_object_for_descriptor(
+		    current_fd_table(), frame->rdi);
+		int result;
+		if (object == NULL)
+			result = -EBADF;
+		else if (tcp_socket_is_object(object) || unix_socket_is_object(object)) {
+			if (frame->rsi > INT32_MAX)
+				result = -EINVAL;
+			else if (tcp_socket_is_object(object))
+				result = tcp_socket_listen(object, frame->rsi);
 			else
-				frame->rax = 0;
-		}
+				result = unix_socket_listen(object);
+		} else
+			result = udp_socket_is_object(object) ? -EOPNOTSUPP : -ENOTSOCK;
+		if (result != 0)
+			syscall_error(frame, errno_from_kernel(result));
+		else
+			frame->rax = 0;
 		break;
+	}
 	case SYSCALL_TCP_ACCEPT:
 		{
 			struct os_ipv4_endpoint peer;

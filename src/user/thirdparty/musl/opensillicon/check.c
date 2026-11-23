@@ -904,6 +904,31 @@ static int curses_check(void)
  delscreen(screen);
  return 0;
 }
+static int listen_check(void)
+{
+ CHECK(__os_raw(SYSCALL_LISTEN,-1,1,0,0,0,0)==-EBADF);
+ int fd=open("/dev/null",O_RDWR); CHECK(fd>=0);
+ CHECK(listen(fd,1)==-1 && errno==ENOTSOCK && close(fd)==0);
+ fd=socket(AF_INET,SOCK_DGRAM,0); CHECK(fd>=0);
+ CHECK(listen(fd,1)==-1 && errno==EOPNOTSUPP && close(fd)==0);
+ for(int domain=0;domain<2;domain++) {
+  fd=socket(domain ? AF_INET : AF_UNIX,SOCK_STREAM,0); CHECK(fd>=0);
+  CHECK(listen(fd,-1)==-1 && errno==EINVAL);
+  CHECK(__os_raw(SYSCALL_LISTEN,fd,1ULL<<32,0,0,0,0)==-EINVAL);
+  if(domain) {
+   struct sockaddr_in address={.sin_family=AF_INET,.sin_port=htons(18769)};
+   CHECK(bind(fd,(struct sockaddr *)&address,sizeof address)==0);
+  } else {
+   struct sockaddr_un address={.sun_family=AF_UNIX,.sun_path="/tmp/native-listen"};
+   CHECK(bind(fd,(struct sockaddr *)&address,sizeof address)==0);
+  }
+  CHECK(listen(fd,1)==0);
+  CHECK(close(fd)==0);
+ }
+ CHECK(unlink("/tmp/native-listen")==0);
+ return 0;
+}
+
 static int poll_check(void)
 {
  int channel[2]; CHECK(pipe(channel)==0);
@@ -1570,7 +1595,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,46,53,58,63,81,82,84,88,89,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,53,58,63,81,82,83,84,88,89,91,92,93,94,101,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
@@ -1618,6 +1643,8 @@ int main(int argc, char **argv)
  if(terminal_result) return terminal_result;
  int curses_result=curses_check();
  if(curses_result) return curses_result;
+ int listen_result=listen_check();
+ if(listen_result) return listen_result;
  int poll_result=poll_check();
  if(poll_result) return poll_result;
  int flock_result=flock_check();

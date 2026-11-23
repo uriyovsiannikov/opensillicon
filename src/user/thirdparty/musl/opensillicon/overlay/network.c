@@ -109,8 +109,9 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   long type=b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK);
   return set_flags(call(SYSCALL_SOCKET,a,type,c,0,0,0),b);
  }
+ if(n==SYS_listen) return call(SYSCALL_LISTEN,a,b,0,0,0,0);
  switch(n) {
- case SYS_bind: case SYS_connect: case SYS_listen: case SYS_accept:
+ case SYS_bind: case SYS_connect: case SYS_accept:
  case SYS_accept4: case SYS_shutdown: case SYS_getsockopt: case SYS_setsockopt:
  case SYS_getsockname: case SYS_getpeername: case SYS_sendto: case SYS_recvfrom:
   break;
@@ -127,9 +128,6 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   r=from_address(b,c,&ep); if(r<0)return r;
   op=n==SYS_bind ? SYSCALL_BIND : SYSCALL_CONNECT;
   return call(op,a,(long)&ep,sizeof ep,0,0,0);
- case SYS_listen:
-  if(!unix_socket && !tcp) return -EOPNOTSUPP;
-  return call(unix_socket ? SYSCALL_UNIX_LISTEN : SYSCALL_TCP_LISTEN,a,b,0,0,0,0);
  case SYS_accept: case SYS_accept4:
   if(n==SYS_accept) d=0;
   if(d & ~(SOCK_CLOEXEC|SOCK_NONBLOCK)) return -EINVAL;

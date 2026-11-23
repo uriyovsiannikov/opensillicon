@@ -25,7 +25,7 @@ int unix_socket_bind(struct fd_object *object,
 	const struct os_unix_address *address, size_t length);
 int unix_socket_get_name(struct fd_object *object, bool peer,
 	struct os_unix_address *address, size_t *length);
-int unix_socket_listen(struct fd_object *object, int backlog);
+int unix_socket_listen(struct fd_object *object);
 int unix_socket_connect(struct fd_object *object,
 	const struct os_unix_address *address, size_t length);
 int unix_socket_accept(struct fd_table *table, struct fd_object *listener);

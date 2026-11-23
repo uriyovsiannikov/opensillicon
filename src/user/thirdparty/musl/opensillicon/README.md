@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v20.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v21.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -317,3 +317,8 @@ ABI v20 retires the unused full-framebuffer presentation syscall (slot 41).
 All native framebuffer output uses `os_framebuffer_present_rect`; a full
 screen is a rectangle at (0, 0) with the framebuffer dimensions and explicit
 source stride. Slot 41 returns ENOSYS. Rebuild framebuffer clients.
+
+ABI v21 replaces separate TCP/Unix listen syscalls (slots 83/45) with
+LISTEN (117). The kernel selects the stream implementation from the file
+object. Backlog must fit a nonnegative signed 32-bit integer for both types.
+UDP returns EOPNOTSUPP; other files return ENOTSOCK. Rebuild static clients.
