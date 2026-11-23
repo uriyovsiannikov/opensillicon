@@ -75,12 +75,6 @@ enum kernel_entropy_source_status kernel_entropy_source_state(
  * boot. This function never initializes or reads a device. */
 bool kernel_entropy_virtio_probe_complete(bool matching_device_found);
 
-/* Explicit caller-driven bounded retry after a temporary source failure.
- * RDSEED re-arms an explicit later read; RDRAND performs its bounded retry
- * probe; VirtIO only rechecks driver availability. It never clears a
- * permanently-disabled state or selects another source. */
-bool kernel_entropy_retry_source(enum kernel_entropy_source source);
-
 /* Reads from exactly the selected source; there is no fallback. Requests are
  * bounded by KERNEL_ENTROPY_MAX_REQUEST. Candidate metadata is initialized
  * deterministically on every call when non-null. On failure, output is left
@@ -90,10 +84,5 @@ bool kernel_entropy_retry_source(enum kernel_entropy_source source);
 enum kernel_entropy_result kernel_entropy_get_candidate(
 	enum kernel_entropy_source source, void *output, size_t capacity,
 	struct kernel_entropy_candidate *candidate);
-
-/* This is intentionally false: candidate source availability is not
- * cryptographic readiness, and this phase has no approved trust policy or
- * CSPRNG. */
-bool kernel_entropy_cryptographic_ready(void);
 
 #endif

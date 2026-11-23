@@ -14,7 +14,6 @@ static enum kernel_rdseed_status provider_status =
 static bool request_active;
 static struct spinlock rdseed_lock = SPINLOCK_INITIALIZER;
 
-
 static uint64_t
 rdseed_guard_enter(void)
 {
@@ -110,15 +109,6 @@ kernel_rdseed_init(void)
 	return supported;
 }
 
-bool
-kernel_rdseed_supported(void)
-{
-	uint64_t flags = rdseed_guard_enter();
-	bool supported = feature_supported;
-	rdseed_guard_leave(flags);
-	return supported;
-}
-
 enum kernel_rdseed_status
 kernel_rdseed_status(void)
 {
@@ -148,29 +138,6 @@ word_locked(uint64_t *output)
 	}
 	provider_status = KERNEL_RDSEED_TEMPORARILY_UNAVAILABLE;
 	return KERNEL_RDSEED_TEMPORARY_FAILURE;
-}
-
-enum kernel_rdseed_result
-kernel_rdseed_word(uint64_t *output)
-{
-	uint64_t flags;
-	enum kernel_rdseed_result result;
-	if (output == NULL)
-		return KERNEL_RDSEED_INVALID_ARGUMENT;
-	flags = rdseed_guard_enter();
-	if (!init_attempted) {
-		result = KERNEL_RDSEED_NOT_READY;
-	} else if (!feature_supported) {
-		result = KERNEL_RDSEED_UNSUPPORTED_RESULT;
-	} else if (__atomic_exchange_n(&request_active, true,
-	    __ATOMIC_ACQUIRE)) {
-		result = KERNEL_RDSEED_TEMPORARY_FAILURE;
-	} else {
-		result = word_locked(output);
-		__atomic_store_n(&request_active, false, __ATOMIC_RELEASE);
-	}
-	rdseed_guard_leave(flags);
-	return result;
 }
 
 enum kernel_rdseed_result

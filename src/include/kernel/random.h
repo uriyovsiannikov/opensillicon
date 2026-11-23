@@ -22,10 +22,6 @@ enum kernel_random_source_status {
  * This is not a trusted entropy pool or CSPRNG. Output is unchanged on error.
  * These calls are not for interrupt context and are UP-only, not SMP-safe. */
 bool kernel_random_init(void);
-/* Makes one bounded retry after a temporary RDRAND failure. This does not
- * change unsupported/permanent states and never waits for entropy. */
-bool kernel_random_retry(void);
-bool kernel_random_available(void);
 /* Reports only the raw RDRAND provider lifecycle; AVAILABLE is not a trust
  * decision or cryptographic-readiness indication. */
 enum kernel_random_source_status kernel_random_status(void);

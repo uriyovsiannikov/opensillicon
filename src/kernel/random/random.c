@@ -9,13 +9,10 @@
 #define RDRAND_RETRY_LIMIT 10U
 
 static bool init_attempted;
-static bool source_ready;
-static bool feature_supported;
 static enum kernel_random_source_status provider_status =
 	KERNEL_RANDOM_NOT_INITIALIZED;
 static bool request_active;
 static struct spinlock random_lock = SPINLOCK_INITIALIZER;
-
 
 static uint64_t
 random_guard_enter(void)
@@ -86,7 +83,6 @@ initialize_locked(void)
 		provider_status = KERNEL_RANDOM_UNSUPPORTED;
 		return false;
 	}
-	feature_supported = true;
 	if (!source_word_bounded(&probe)) {
 		provider_status = KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE;
 		zeroize(&probe, sizeof(probe));
@@ -94,7 +90,6 @@ initialize_locked(void)
 	}
 	/* RDRAND is itself the CPU's DRBG output; this probe is discarded. */
 	zeroize(&probe, sizeof(probe));
-	source_ready = true;
 	provider_status = KERNEL_RANDOM_AVAILABLE;
 	return true;
 }
@@ -104,40 +99,6 @@ kernel_random_init(void)
 {
 	uint64_t flags = random_guard_enter();
 	bool ready = initialize_locked();
-	random_guard_leave(flags);
-	return ready;
-}
-
-bool
-kernel_random_retry(void)
-{
-	uint64_t flags = random_guard_enter();
-	uint64_t probe = 0;
-	bool ready = false;
-	if (init_attempted && feature_supported &&
-	    provider_status == KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE &&
-	    !__atomic_exchange_n(&request_active, true, __ATOMIC_ACQUIRE)) {
-		if (source_word_bounded(&probe)) {
-			source_ready = true;
-			provider_status = KERNEL_RANDOM_AVAILABLE;
-			ready = true;
-		} else {
-			source_ready = false;
-			provider_status = KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE;
-		}
-		zeroize(&probe, sizeof(probe));
-		__atomic_store_n(&request_active, false, __ATOMIC_RELEASE);
-	}
-	random_guard_leave(flags);
-	return ready;
-}
-
-bool
-kernel_random_available(void)
-{
-	uint64_t flags = random_guard_enter();
-	bool ready = source_ready &&
-	    provider_status == KERNEL_RANDOM_AVAILABLE;
 	random_guard_leave(flags);
 	return ready;
 }
@@ -162,7 +123,7 @@ kernel_random_bytes(void *output, size_t length)
 	    length > KERNEL_RANDOM_MAX_REQUEST)
 		return false;
 	flags = random_guard_enter();
-	if (!source_ready || provider_status != KERNEL_RANDOM_AVAILABLE ||
+	if (provider_status != KERNEL_RANDOM_AVAILABLE ||
 	    __atomic_exchange_n(&request_active, true, __ATOMIC_ACQUIRE)) {
 		random_guard_leave(flags);
 		return false;
@@ -173,7 +134,6 @@ kernel_random_bytes(void *output, size_t length)
 		if (amount > sizeof(word))
 			amount = sizeof(word);
 		if (!source_word_bounded(&word)) {
-			source_ready = false;
 			provider_status = KERNEL_RANDOM_TEMPORARILY_UNAVAILABLE;
 			success = false;
 			zeroize(&word, sizeof(word));

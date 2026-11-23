@@ -185,41 +185,6 @@ kernel_entropy_virtio_probe_complete(bool matching_device_found)
 	return true;
 }
 
-bool
-kernel_entropy_retry_source(enum kernel_entropy_source source)
-{
-	uint64_t flags;
-	bool available = false;
-
-	if (!valid_source(source))
-		return false;
-	flags = entropy_guard_enter();
-	if (!manager_initialized || manager_request_active ||
-	    sources[source].status != KERNEL_ENTROPY_TEMPORARILY_FAILED) {
-		entropy_guard_leave(flags);
-		return false;
-	}
-	/* Keep the state protected while querying bounded provider status. */
-	if (source == KERNEL_ENTROPY_SOURCE_RDRAND)
-		available = kernel_random_retry();
-	else if (source == KERNEL_ENTROPY_SOURCE_VIRTIO_RNG)
-		available = virtio_rng_available();
-	else if (source == KERNEL_ENTROPY_SOURCE_RDSEED)
-		available = kernel_rdseed_supported();
-	if (available)
-		sources[source].status =
-		    (source == KERNEL_ENTROPY_SOURCE_RDSEED ||
-		    source == KERNEL_ENTROPY_SOURCE_VIRTIO_RNG) ?
-		    KERNEL_ENTROPY_SUPPORTED : KERNEL_ENTROPY_CANDIDATE_AVAILABLE;
-	else if ((source == KERNEL_ENTROPY_SOURCE_RDRAND &&
-	    kernel_random_status() == KERNEL_RANDOM_PERMANENTLY_FAILED) ||
-	    (source == KERNEL_ENTROPY_SOURCE_VIRTIO_RNG &&
-	    !virtio_rng_available()))
-		sources[source].status = KERNEL_ENTROPY_PERMANENTLY_DISABLED;
-	entropy_guard_leave(flags);
-	return available;
-}
-
 static enum kernel_entropy_result
 status_result(enum kernel_entropy_source_status status)
 {
@@ -384,10 +349,4 @@ kernel_entropy_get_candidate(enum kernel_entropy_source source,
 	manager_request_active = false;
 	entropy_guard_leave(flags);
 	return result;
-}
-
-bool
-kernel_entropy_cryptographic_ready(void)
-{
-	return false;
 }

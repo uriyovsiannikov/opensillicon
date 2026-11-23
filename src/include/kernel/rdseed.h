@@ -33,12 +33,7 @@ struct kernel_rdseed_cpuid_result {
  * means an instruction attempt is permitted. AVAILABLE is set only after a
  * recent CF=1 result and does not guarantee the next request will succeed. */
 bool kernel_rdseed_init(void);
-bool kernel_rdseed_supported(void);
 enum kernel_rdseed_status kernel_rdseed_status(void);
-
-/* Reads one 64-bit word, preserving output on every failure. A zero word is
- * valid when the instruction reports CF=1. Retry exhaustion is temporary. */
-enum kernel_rdseed_result kernel_rdseed_word(uint64_t *output);
 
 /* Bounded, all-or-nothing output. Length is at most 256 bytes; output is
  * unchanged on failure. A zero-length request is a no-op after initialization
