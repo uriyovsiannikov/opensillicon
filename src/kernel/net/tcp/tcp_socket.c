@@ -6,6 +6,7 @@
 #include "kernel/errno.h"
 #include "kernel/fd.h"
 #include "kernel/process.h"
+#include "kernel/spinlock.h"
 #include "kernel/tcp_socket.h"
 
 #include "core/net.h"
@@ -26,38 +27,9 @@ struct tcp_socket_state {
 
 static struct tcp_socket_state tcp_sockets[TCP_SOCKET_LIMIT];
 static bool tcp_sockets_ready;
-static uint32_t tcp_state_lock;
+static struct spinlock tcp_state_lock = SPINLOCK_INITIALIZER;
 
 static void tcp_socket_close(void *context);
-
-static uint64_t
-state_guard_enter(void)
-{
-#ifdef OPEN_SILLICON_KERNEL
-	uint64_t flags;
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-	while (__atomic_exchange_n(&tcp_state_lock, 1, __ATOMIC_ACQUIRE) != 0) {
-		while (__atomic_load_n(&tcp_state_lock, __ATOMIC_RELAXED) != 0)
-			__asm__ volatile ("pause" : : : "memory");
-	}
-	return flags;
-#else
-	while (__atomic_exchange_n(&tcp_state_lock, 1, __ATOMIC_ACQUIRE) != 0)
-		__asm__ volatile ("pause" : : : "memory");
-	return 0;
-#endif
-}
-
-static void
-state_guard_leave(uint64_t flags)
-{
-	__atomic_store_n(&tcp_state_lock, 0, __ATOMIC_RELEASE);
-#ifdef OPEN_SILLICON_KERNEL
-	__asm__ volatile ("pushq %0; popfq" : : "r" (flags) : "memory", "cc");
-#else
-	(void)flags;
-#endif
-}
 
 static int
 cyclone_error(error_t error)
@@ -130,9 +102,9 @@ tcp_socket_write_op(void *context, uint64_t offset, const void *buffer,
 	tcp_state = tcpGetState(state->socket);
 	if (tcp_state == TCP_STATE_LISTEN)
 		return -ENOTCONN;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	no_delay = state->no_delay;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	error = socketSend(state->socket, buffer, length, write_length,
 	    SOCKET_FLAG_DONT_WAIT |
 	    (no_delay ? SOCKET_FLAG_NO_DELAY : 0));
@@ -157,7 +129,7 @@ tcp_socket_poll_op(void *context, uint32_t events)
 	    SOCKET_EVENT_TX_READY | SOCKET_EVENT_ACCEPT);
 	flags = socketGetEvents(state->socket);
 	tcp_state = tcpGetState(state->socket);
-	state_flags = state_guard_enter();
+	state_flags = spinlock_lock_irqsave(&tcp_state_lock);
 	if (state->connect_pending && tcp_state == TCP_STATE_CLOSED) {
 		state->connect_pending = false;
 		state->connect_error = ECONNREFUSED;
@@ -181,25 +153,25 @@ tcp_socket_poll_op(void *context, uint32_t events)
 		    state->socket->resetFlag)
 			ready |= FD_POLL_ERROR;
 	}
-	state_guard_leave(state_flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, state_flags);
 	return ready & events;
 }
 
 static void
 tcp_socket_close(void *context)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 	for (size_t i = 0; i < TCP_SOCKET_LIMIT; i++) {
 		if (context != &tcp_sockets[i])
 			continue;
 		Socket *socket = tcp_sockets[i].socket;
 		tcp_sockets[i] = (struct tcp_socket_state){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		if (socket != NULL)
 			socketClose(socket);
 		return;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 }
 
 static const struct fd_operations tcp_socket_operations = {
@@ -212,15 +184,15 @@ static const struct fd_operations tcp_socket_operations = {
 int
 tcp_socket_system_init(void)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 	if (!cyclone_net_ready() || tcp_sockets_ready) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return -ENETDOWN;
 	}
 	for (size_t i = 0; i < TCP_SOCKET_LIMIT; i++)
 		tcp_sockets[i] = (struct tcp_socket_state){0};
 	tcp_sockets_ready = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	return 0;
 }
 
@@ -234,7 +206,7 @@ tcp_socket_create_fd(struct fd_table *table)
 	uint64_t flags;
 	if (!tcp_sockets_ready || table == NULL)
 		return -ENETDOWN;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	for (size_t i = 0; i < TCP_SOCKET_LIMIT; i++) {
 		if (!tcp_sockets[i].allocated) {
 			state = &tcp_sockets[i];
@@ -242,24 +214,24 @@ tcp_socket_create_fd(struct fd_table *table)
 			break;
 		}
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	if (state == NULL)
 		return -EMFILE;
 	socket = socketOpenEx(netGetDefaultContext(), SOCKET_TYPE_STREAM,
 	    SOCKET_IP_PROTO_TCP);
 	if (socket == NULL) {
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&tcp_state_lock);
 		*state = (struct tcp_socket_state){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return -ENOBUFS;
 	}
 	state->socket = socket;
 	object = fd_object_create(&tcp_socket_operations, state);
 	if (object == NULL) {
 		socketClose(socket);
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&tcp_state_lock);
 		*state = (struct tcp_socket_state){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return -ENOMEM;
 	}
 	descriptor = fd_install(table, object);
@@ -273,7 +245,7 @@ tcp_socket_create_fd(struct fd_table *table)
 bool
 tcp_socket_is_object(const struct fd_object *object)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 	bool result = false;
 	if (!tcp_sockets_ready || object == NULL ||
 	    object->operations != &tcp_socket_operations)
@@ -282,7 +254,7 @@ tcp_socket_is_object(const struct fd_object *object)
 		if (object->context == &tcp_sockets[i] && tcp_sockets[i].allocated)
 			result = true;
 out:
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	return result;
 }
 
@@ -339,29 +311,29 @@ tcp_socket_connect(struct fd_object *object,
 		return -ENOTSOCK;
 	if (endpoint == NULL || endpoint->port == 0)
 		return -EINVAL;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	connect_pending = state->connect_pending;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	if (connect_pending) {
 		TcpState tcp_state = tcpGetState(state->socket);
 		if (tcp_state == TCP_STATE_SYN_SENT ||
 		    tcp_state == TCP_STATE_SYN_RECEIVED)
 			return -EINPROGRESS;
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&tcp_state_lock);
 		state->connect_pending = false;
 		if (tcp_state == TCP_STATE_ESTABLISHED) {
-			state_guard_leave(flags);
+			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			return 0;
 		}
 		state->connect_error = ECONNREFUSED;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return -ECONNREFUSED;
 	}
 	if (!cyclone_net_can_route(endpoint->address))
 		return -EHOSTUNREACH;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	state->connect_error = 0;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	address.ipv4Addr = IPV4_ADDR(endpoint->address[0], endpoint->address[1],
 	    endpoint->address[2], endpoint->address[3]);
 	(void)socketSetTimeout(state->socket, 0);
@@ -369,9 +341,9 @@ tcp_socket_connect(struct fd_object *object,
 	if (error == ERROR_TIMEOUT &&
 	    (tcpGetState(state->socket) == TCP_STATE_SYN_SENT ||
 	    tcpGetState(state->socket) == TCP_STATE_SYN_RECEIVED)) {
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&tcp_state_lock);
 		state->connect_pending = true;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return -EINPROGRESS;
 	}
 	return cyclone_error(error);
@@ -397,7 +369,7 @@ tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
 	if (descriptor < 0)
 		return descriptor;
 	/* Reserve wrapper resources before Cyclone removes a queued peer. */
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	for (size_t i = 0; i < TCP_SOCKET_LIMIT; i++) {
 		if (!tcp_sockets[i].allocated) {
 			child = &tcp_sockets[i];
@@ -410,7 +382,7 @@ tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
 			break;
 		}
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	if (child == NULL)
 		return -EMFILE;
 	object = fd_object_create(&tcp_socket_operations, child);
@@ -428,9 +400,9 @@ tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
 		(void)fd_close(table, (uint64_t)descriptor);
 		return -EAGAIN;
 	}
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&tcp_state_lock);
 	child->socket = socket;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	if (peer != NULL) {
 		peer->address[0] = (uint8_t)address.ipv4Addr;
 		peer->address[1] = (uint8_t)(address.ipv4Addr >> 8);
@@ -465,12 +437,12 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 		return -EINVAL;
 	if (level == TCP_SOCKET_SOL_SOCKET) {
 		if (option == TCP_SOCKET_SO_ERROR) {
-			uint64_t flags = state_guard_enter();
+			uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 			bool pending = state->connect_pending;
-			state_guard_leave(flags);
+			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			if (pending) {
 				tcp_state = tcpGetState(state->socket);
-				flags = state_guard_enter();
+				flags = spinlock_lock_irqsave(&tcp_state_lock);
 				if (tcp_state == TCP_STATE_ESTABLISHED) {
 					state->connect_pending = false;
 					state->connect_error = 0;
@@ -478,20 +450,20 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 					state->connect_pending = false;
 					state->connect_error = ECONNREFUSED;
 				}
-				state_guard_leave(flags);
+				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			}
-			flags = state_guard_enter();
+			flags = spinlock_lock_irqsave(&tcp_state_lock);
 			*(int *)value = state->connect_error;
 			state->connect_error = 0;
-			state_guard_leave(flags);
+			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		} else if (option == TCP_SOCKET_SO_SNDBUF ||
 		    option == TCP_SOCKET_SO_RCVBUF ||
 		    option == TCP_SOCKET_SO_KEEPALIVE) {
 			int result;
 			if (option == TCP_SOCKET_SO_KEEPALIVE) {
-				uint64_t flags = state_guard_enter();
+				uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 				result = state->keep_alive ? 1 : 0;
-				state_guard_leave(flags);
+				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			} else {
 				netLock(state->socket->netContext);
 				if (option == TCP_SOCKET_SO_SNDBUF)
@@ -502,9 +474,9 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 			}
 			*(int *)value = result;
 		} else if (option == TCP_SOCKET_SO_REUSEADDR) {
-			uint64_t flags = state_guard_enter();
+			uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 			*(int *)value = state->reuse_address ? 1 : 0;
-			state_guard_leave(flags);
+			spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		} else {
 			return -EOPNOTSUPP;
 		}
@@ -529,9 +501,9 @@ tcp_socket_get_option(struct fd_object *object, uint64_t level,
 		return 0;
 	} else if (level == TCP_SOCKET_SOL_TCP &&
 	    option == TCP_SOCKET_TCP_NODELAY) {
-		uint64_t flags = state_guard_enter();
+		uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 		*(int *)value = state->no_delay ? 1 : 0;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	} else {
 		return -EOPNOTSUPP;
 	}
@@ -560,18 +532,18 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 		case TCP_SOCKET_SO_REUSEADDR:
 			/* Cyclone does not reject address reuse during bind. */
 			{
-				uint64_t flags = state_guard_enter();
+				uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 				state->reuse_address = setting != 0;
-				state_guard_leave(flags);
+				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			}
 			return 0;
 		case TCP_SOCKET_SO_KEEPALIVE:
 			error = socketEnableKeepAlive(state->socket,
 			    setting ? TRUE : FALSE);
 			if (error == NO_ERROR) {
-				uint64_t flags = state_guard_enter();
+				uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 				state->keep_alive = setting != 0;
-				state_guard_leave(flags);
+				spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 			}
 			return cyclone_error(error);
 		case TCP_SOCKET_SO_SNDBUF:
@@ -594,9 +566,9 @@ tcp_socket_set_option(struct fd_object *object, uint64_t level,
 	}
 	if (level == TCP_SOCKET_SOL_TCP &&
 	    option == TCP_SOCKET_TCP_NODELAY) {
-		uint64_t flags = state_guard_enter();
+		uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
 		state->no_delay = setting != 0;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 		return 0;
 	}
 	return -EOPNOTSUPP;

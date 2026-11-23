@@ -8,6 +8,7 @@
 #include "kernel/netbuf.h"
 #include "kernel/netdev.h"
 #include "kernel/process.h"
+#include "kernel/spinlock.h"
 #include "kernel/timer.h"
 #include "kernel/udp_socket.h"
 
@@ -37,10 +38,7 @@ static bool system_ready;
 static bool receive_poll_active;
 static bool echo_call_active;
 static uint16_t next_ephemeral = UDP_SOCKET_EPHEMERAL_FIRST;
-static uint32_t socket_state_lock;
-
-static uint64_t state_guard_enter(void);
-static void state_guard_leave(uint64_t flags);
+static struct spinlock socket_state_lock = SPINLOCK_INITIALIZER;
 
 static void
 cyclone_udp_receive(void *context, const uint8_t source[4],
@@ -54,17 +52,17 @@ cyclone_udp_receive(void *context, const uint8_t source[4],
 		return;
 	if (length > UDP_SOCKET_PAYLOAD_LIMIT)
 		return;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (!system_ready || !state->allocated || !state->bound ||
 	    state->queue_count == UDP_SOCKET_QUEUE_LIMIT) {
 		if (state->allocated && state->queue_count == UDP_SOCKET_QUEUE_LIMIT)
 			state->dropped_datagrams++;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return;
 	}
 	if (state->connected && (state->remote.port != source_port ||
 	    memcmp(state->remote.address, source, 4) != 0)) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return;
 	}
 	entry = &state->queue[(state->queue_head + state->queue_count) %
@@ -75,51 +73,20 @@ cyclone_udp_receive(void *context, const uint8_t source[4],
 	if (length != 0)
 		memcpy(entry->payload, payload, length);
 	state->queue_count++;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	fd_readiness_wake();
-}
-
-/* Protect short socket-state transitions; never hold this across a wait or
- * user-memory copy. */
-static uint64_t
-state_guard_enter(void)
-{
-#ifdef OPEN_SILLICON_KERNEL
-	uint64_t flags;
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-	while (__atomic_exchange_n(&socket_state_lock, 1, __ATOMIC_ACQUIRE) != 0) {
-		while (__atomic_load_n(&socket_state_lock, __ATOMIC_RELAXED) != 0)
-			__asm__ volatile ("pause" : : : "memory");
-	}
-	return flags;
-#else
-	while (__atomic_exchange_n(&socket_state_lock, 1, __ATOMIC_ACQUIRE) != 0)
-		__asm__ volatile ("pause" : : : "memory");
-	return 0;
-#endif
-}
-
-static void
-state_guard_leave(uint64_t flags)
-{
-	__atomic_store_n(&socket_state_lock, 0, __ATOMIC_RELEASE);
-#ifdef OPEN_SILLICON_KERNEL
-	__asm__ volatile ("pushq %0; popfq" : : "r" (flags) : "memory", "cc");
-#else
-	(void)flags;
-#endif
 }
 
 static uint32_t
 udp_poll_op(void *context, uint32_t events)
 {
  struct udp_socket_state *state = context;
- uint64_t flags = state_guard_enter();
+ uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
  uint32_t ready = 0;
  if (state->queue_count != 0) ready |= FD_POLL_READ;
  if (system_ready) ready |= FD_POLL_WRITE;
  else ready |= FD_POLL_ERROR;
- state_guard_leave(flags);
+ spinlock_unlock_irqrestore(&socket_state_lock, flags);
  return ready & events;
 }
 
@@ -157,7 +124,7 @@ socket_state(struct fd_object *object)
 bool
 udp_socket_is_object(const struct fd_object *object)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	bool result = false;
 	if (!system_ready || object == NULL ||
 	    object->operations != &socket_operations)
@@ -166,51 +133,49 @@ udp_socket_is_object(const struct fd_object *object)
 		if (object->context == &sockets[i] && sockets[i].allocated)
 			result = true;
 out:
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return result;
 }
 
 static void
 socket_close(void *context)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++) {
 		if (context != &sockets[i])
 			continue;
 		bool unregister = sockets[i].bound && cyclone_net_ready();
 		uint16_t port = sockets[i].local.port;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		if (unregister)
 			(void)cyclone_net_udp_unregister(port);
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&socket_state_lock);
 		for (size_t q = 0; q < UDP_SOCKET_QUEUE_LIMIT; q++)
 			sockets[i].queue[q] = (struct udp_queue_entry){0};
 		sockets[i] = (struct udp_socket_state){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 }
 
 int
 udp_socket_system_init(struct net_device *device)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (system_ready || device == NULL ||
 	    device->state != NET_DEVICE_UP ||
 	    !cyclone_net_ready()) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EINVAL;
 	}
-	state_guard_leave(flags);
-	flags = state_guard_enter();
 	for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++)
 		sockets[i] = (struct udp_socket_state){0};
 	echo_call_active = false;
 	network_device = device;
 	next_ephemeral = UDP_SOCKET_EPHEMERAL_FIRST;
 	system_ready = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }
 
@@ -220,31 +185,25 @@ udp_socket_create_fd(struct fd_table *table)
 	struct fd_object *object;
 	size_t slot;
 	int descriptor;
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (!system_ready || table == NULL) {
-		state_guard_leave(flags);
-		return -ENETDOWN;
-	}
-	state_guard_leave(flags);
-	flags = state_guard_enter();
-	if (!system_ready) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENETDOWN;
 	}
 	for (slot = 0; slot < UDP_SOCKET_LIMIT; slot++)
 		if (!sockets[slot].allocated)
 			break;
 	if (slot == UDP_SOCKET_LIMIT) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EMFILE;
 	}
 	sockets[slot] = (struct udp_socket_state){.allocated = true};
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	object = fd_object_create(&socket_operations, &sockets[slot]);
 	if (object == NULL) {
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&socket_state_lock);
 		sockets[slot] = (struct udp_socket_state){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOMEM;
 	}
 	descriptor = fd_install(table, object);
@@ -280,7 +239,7 @@ bind_socket(struct udp_socket_state *state,
 	if (!address_is_zero(endpoint.address) &&
 	    !address_is_local(endpoint.address))
 		return -EADDRNOTAVAIL;
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (state->bound)
 		goto already_bound;
 	if (endpoint.port == 0) {
@@ -300,22 +259,22 @@ bind_socket(struct udp_socket_state *state,
 	}
 	state->local = endpoint;
 	state->bound = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	if (cyclone_net_ready() && !cyclone_net_udp_register(endpoint.port,
 	    cyclone_udp_receive, state)) {
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&socket_state_lock);
 		state->bound = false;
 		state->local = (struct os_ipv4_endpoint){0};
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EIO;
 	}
 	return 0;
 
 address_in_use:
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return -EADDRINUSE;
 already_bound:
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return -EINVAL;
 }
 
@@ -323,16 +282,16 @@ static int
 ensure_bound(struct udp_socket_state *state)
 {
 	struct os_ipv4_endpoint local = {0};
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	bool bound = state->bound;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	if (bound)
 		return 0;
 	int result = bind_socket(state, &local);
 	if (result == -EINVAL) {
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&socket_state_lock);
 		bound = state->bound;
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		if (bound)
 			return 0;
 	}
@@ -343,17 +302,17 @@ int
 udp_socket_bind(struct fd_object *object,
 	const struct os_ipv4_endpoint *endpoint)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (endpoint == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EINVAL;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	if (endpoint->port != 0 && endpoint->port < 1024U) {
 		struct os_credentials credentials;
 		if (!process_current_credentials(&credentials))
@@ -374,24 +333,24 @@ udp_socket_connect(struct fd_object *object,
 	if (endpoint == NULL || endpoint->port == 0 ||
 	    !cyclone_net_can_route(endpoint->address))
 		return -EHOSTUNREACH;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (state->send_busy) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	result = ensure_bound(state);
 	if (result != 0)
 		return result;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	state->remote = *endpoint;
 	state->connected = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }
 
@@ -400,18 +359,18 @@ udp_socket_send(struct fd_object *object, const uint8_t *payload,
 	size_t length)
 {
 	struct os_ipv4_endpoint destination;
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (!state->connected) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EDESTADDRREQ;
 	}
 	destination = state->remote;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return udp_socket_sendto(object, &destination, payload, length);
 }
 
@@ -419,23 +378,23 @@ udp_socket_send(struct fd_object *object, const uint8_t *payload,
 int
 udp_socket_poll(void)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (receive_poll_active) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
 	if (!system_ready || network_device == NULL ||
 	    !cyclone_net_ready()) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENETDOWN;
 	}
 	receive_poll_active = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	size_t processed = cyclone_net_poll(CYCLONE_RX_BUDGET);
 	bool link_up = cyclone_net_link_up();
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	receive_poll_active = false;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return link_up ? (int)processed : -ENETDOWN;
 }
 
@@ -447,25 +406,25 @@ network_icmp_echo(struct os_icmp_echo_request *request)
 	if (request == NULL || request->reserved != 0 ||
 	    request->payload_length > OS_ICMP_ECHO_PAYLOAD_MAX)
 		return -EINVAL;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (!system_ready || network_device == NULL ||
 	    !cyclone_net_ready()) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENETDOWN;
 	}
 	if (echo_call_active) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
 	echo_call_active = true;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	result = cyclone_net_icmp_echo(request->destination,
 	    request->identifier, request->sequence, request->payload,
 	    request->payload_length, request->reply_source,
 	    &request->elapsed_ns, 5U * TIMER_TICK_HZ);
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	echo_call_active = false;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	if (result == 0)
 		return 0;
 	return result == -2 ? -ETIMEDOUT :
@@ -482,13 +441,13 @@ udp_socket_sendto(struct fd_object *object,
 	uint16_t source_port;
 	uint64_t flags;
 	int result;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	if (destination == NULL || destination->port == 0 ||
 	    (length != 0 && payload == NULL))
 		return -EINVAL;
@@ -496,13 +455,13 @@ udp_socket_sendto(struct fd_object *object,
 		return -EMSGSIZE;
 	if (!cyclone_net_can_route(destination->address))
 		return -EHOSTUNREACH;
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	result = ensure_bound(state);
 	if (result != 0)
 		return result;
@@ -512,7 +471,7 @@ udp_socket_sendto(struct fd_object *object,
 		uint8_t source_address[4], netmask[4], gateway[4];
 		if (!cyclone_net_ipv4_config(source_address, netmask, gateway))
 			return -ENETDOWN;
-		flags = state_guard_enter();
+		flags = spinlock_lock_irqsave(&socket_state_lock);
 		if (!address_is_zero(state->local.address))
 			memcpy(source_address, state->local.address, 4);
 		for (size_t i = 0; i < UDP_SOCKET_LIMIT; i++) {
@@ -535,42 +494,42 @@ udp_socket_sendto(struct fd_object *object,
 			peer->queue_count++;
 			break;
 		}
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		fd_readiness_wake();
 		return (int)length;
 	}
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	if (state->send_busy) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
 	state->send_busy = true;
 	source_port = state->local.port;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	result = cyclone_net_udp_send(source_port, destination->address,
 	    destination->port, payload, length);
-	flags = state_guard_enter();
+	flags = spinlock_lock_irqsave(&socket_state_lock);
 	state->send_busy = false;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return result == 0 ? (int)length : -EIO;
 }
 
 int
 udp_socket_peek(struct fd_object *object, struct udp_socket_datagram *datagram)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	const struct udp_queue_entry *entry;
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (datagram == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EINVAL;
 	}
 	if (state->queue_count == 0) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
 	entry = &state->queue[state->queue_head];
@@ -578,27 +537,27 @@ udp_socket_peek(struct fd_object *object, struct udp_socket_datagram *datagram)
 	datagram->length = entry->length;
 	for (size_t i = 0; i < entry->length; i++)
 		datagram->payload[i] = entry->payload[i];
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }
 
 int
 udp_socket_consume(struct fd_object *object)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (state->queue_count == 0) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -EAGAIN;
 	}
 	state->queue[state->queue_head] = (struct udp_queue_entry){0};
 	state->queue_head = (state->queue_head + 1) % UDP_SOCKET_QUEUE_LIMIT;
 	state->queue_count--;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }
 
@@ -606,14 +565,14 @@ int
 udp_socket_local_endpoint(struct fd_object *object,
 	struct os_ipv4_endpoint *endpoint)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	*endpoint = state->local;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }
 
@@ -621,17 +580,17 @@ int
 udp_socket_peer_endpoint(struct fd_object *object,
 	struct os_ipv4_endpoint *endpoint)
 {
-	uint64_t flags = state_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&socket_state_lock);
 	struct udp_socket_state *state = socket_state(object);
 	if (state == NULL) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTSOCK;
 	}
 	if (!state->connected) {
-		state_guard_leave(flags);
+		spinlock_unlock_irqrestore(&socket_state_lock, flags);
 		return -ENOTCONN;
 	}
 	*endpoint = state->remote;
-	state_guard_leave(flags);
+	spinlock_unlock_irqrestore(&socket_state_lock, flags);
 	return 0;
 }

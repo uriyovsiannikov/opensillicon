@@ -4,6 +4,7 @@
 #include "kernel/errno.h"
 #include "kernel/fd.h"
 #include "kernel/network_service.h"
+#include "kernel/spinlock.h"
 #include "kernel/udp_socket.h"
 
 static enum network_service_event event_queue[NETWORK_SERVICE_EVENT_CAPACITY];
@@ -11,39 +12,12 @@ static size_t event_head;
 static size_t event_count;
 static bool initialized;
 static bool service_running;
-static uint32_t service_lock;
-
-static uint64_t
-service_guard_enter(void)
-{
-	uint64_t flags;
-#ifdef OPEN_SILLICON_KERNEL
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-#else
-	flags = 0;
-#endif
-	while (__atomic_exchange_n(&service_lock, 1, __ATOMIC_ACQUIRE) != 0) {
-		while (__atomic_load_n(&service_lock, __ATOMIC_RELAXED) != 0)
-			__asm__ volatile ("pause" : : : "memory");
-	}
-	return flags;
-}
-
-static void
-service_guard_leave(uint64_t flags)
-{
-	__atomic_store_n(&service_lock, 0, __ATOMIC_RELEASE);
-#ifdef OPEN_SILLICON_KERNEL
-	__asm__ volatile ("pushq %0; popfq" : : "r" (flags) : "memory", "cc");
-#else
-	(void)flags;
-#endif
-}
+static struct spinlock service_lock = SPINLOCK_INITIALIZER;
 
 bool
 network_service_init(void)
 {
-	uint64_t flags = service_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&service_lock);
 	bool success = !initialized;
 	if (success) {
 		event_head = 0;
@@ -51,23 +25,23 @@ network_service_init(void)
 		service_running = false;
 		initialized = true;
 	}
-	service_guard_leave(flags);
+	spinlock_unlock_irqrestore(&service_lock, flags);
 	return success;
 }
 
 bool
 network_service_request(enum network_service_event event)
 {
-	uint64_t flags = service_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&service_lock);
 	if (!initialized || event != NETWORK_SERVICE_POLL_RX ||
 	    event_count == NETWORK_SERVICE_EVENT_CAPACITY) {
-		service_guard_leave(flags);
+		spinlock_unlock_irqrestore(&service_lock, flags);
 		return false;
 	}
 	event_queue[(event_head + event_count) %
 	    NETWORK_SERVICE_EVENT_CAPACITY] = event;
 	event_count++;
-	service_guard_leave(flags);
+	spinlock_unlock_irqrestore(&service_lock, flags);
 	return true;
 }
 
@@ -75,11 +49,11 @@ bool
 network_service_run(size_t budget, struct network_service_result *result)
 {
 	struct network_service_result local = {0};
-	uint64_t flags = service_guard_enter();
+	uint64_t flags = spinlock_lock_irqsave(&service_lock);
 	if (result != NULL)
 		*result = local;
 	if (!initialized) {
-		service_guard_leave(flags);
+		spinlock_unlock_irqrestore(&service_lock, flags);
 		return false;
 	}
 	if (service_running) {
@@ -87,27 +61,27 @@ network_service_run(size_t budget, struct network_service_result *result)
 		local.events_pending = event_count;
 		if (result != NULL)
 			*result = local;
-		service_guard_leave(flags);
+		spinlock_unlock_irqrestore(&service_lock, flags);
 		return true;
 	}
 	if (budget > NETWORK_SERVICE_MAX_EVENTS)
 		budget = NETWORK_SERVICE_MAX_EVENTS;
 	service_running = true;
-	service_guard_leave(flags);
+	spinlock_unlock_irqrestore(&service_lock, flags);
 
 	while (local.events_processed < budget) {
 		enum network_service_event event;
 		int poll_result;
 
-		flags = service_guard_enter();
+		flags = spinlock_lock_irqsave(&service_lock);
 		if (event_count == 0) {
-			service_guard_leave(flags);
+			spinlock_unlock_irqrestore(&service_lock, flags);
 			break;
 		}
 		event = event_queue[event_head];
 		event_head = (event_head + 1) % NETWORK_SERVICE_EVENT_CAPACITY;
 		event_count--;
-		service_guard_leave(flags);
+		spinlock_unlock_irqrestore(&service_lock, flags);
 
 		local.events_processed++;
 		if (event != NETWORK_SERVICE_POLL_RX) {
@@ -122,10 +96,10 @@ network_service_run(size_t budget, struct network_service_result *result)
 			local.errors++;
 	}
 
-	flags = service_guard_enter();
+	flags = spinlock_lock_irqsave(&service_lock);
 	service_running = false;
 	local.events_pending = event_count;
-	service_guard_leave(flags);
+	spinlock_unlock_irqrestore(&service_lock, flags);
 	if (result != NULL)
 		*result = local;
 	return true;

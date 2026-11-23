@@ -387,18 +387,18 @@ $(BUILD_DIR)/udp_socket.o: src/kernel/net/udp/udp_socket.c \
 		src/include/kernel/cyclone_net.h \
 		src/include/kernel/netdev.h src/include/kernel/netbuf.h \
 		src/include/kernel/fd.h src/include/kernel/timer.h src/include/kernel/errno.h \
-		src/include/kernel/icmp_echo.h | $(BUILD_DIR)
+		src/include/kernel/icmp_echo.h src/include/kernel/spinlock.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/tcp_socket.o: src/kernel/net/tcp/tcp_socket.c \
 		src/include/kernel/tcp_socket.h src/include/kernel/cyclone_net.h \
-		src/include/kernel/errno.h src/include/kernel/fd.h | $(BUILD_DIR)
+		src/include/kernel/errno.h src/include/kernel/fd.h src/include/kernel/spinlock.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/network_service.o: src/kernel/net/service/network_service.c \
 		src/include/kernel/network_service.h src/include/kernel/udp_socket.h \
-		src/include/kernel/errno.h | $(BUILD_DIR)
-	$(CC) $(KERNEL_CFLAGS) -DOPEN_SILLICON_KERNEL -Iinclude -c $< -o $@
+		src/include/kernel/errno.h src/include/kernel/spinlock.h | $(BUILD_DIR)
+	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/e1000_profile.o: src/kernel/drivers/net/e1000/e1000_profile.c \
 		src/include/kernel/e1000_profile.h src/include/arch/x86_64/pci.h | $(BUILD_DIR)
