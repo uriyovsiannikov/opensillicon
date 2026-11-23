@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "abi/socket.h"
 #include "abi/tcp_diag.h"
 #include "abi/inet.h"
 #include "kernel/fd.h"
@@ -18,6 +19,7 @@
 #define TCP_SOCKET_TCP_NODELAY 1U
 
 int tcp_socket_system_init(void);
+void tcp_socket_service(void);
 int tcp_socket_create_fd(struct fd_table *table);
 bool tcp_socket_is_object(const struct fd_object *object);
 int tcp_socket_bind(struct fd_object *object,

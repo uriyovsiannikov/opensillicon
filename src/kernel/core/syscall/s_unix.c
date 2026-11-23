@@ -59,17 +59,6 @@ syscall_unix_bsp(struct interrupt_frame *frame)
 				frame->rax = (uint64_t)result;
 		}
 		break;
-	case SYSCALL_UNIX_SHUTDOWN:
-		{
-			struct fd_object *object = fd_object_for_descriptor(
-			    current_fd_table(), frame->rdi);
-			int result = unix_socket_shutdown(object, (int)frame->rsi);
-			if (result != 0)
-				syscall_error(frame, errno_from_kernel(result));
-			else
-				frame->rax = 0;
-		}
-		break;
 	case SYSCALL_UNIX_GETSOCKOPT:
 		{
 			uint8_t value[16] = {0};

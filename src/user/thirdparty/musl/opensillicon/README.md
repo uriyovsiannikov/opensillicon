@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v21.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v22.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -322,3 +322,17 @@ ABI v21 replaces separate TCP/Unix listen syscalls (slots 83/45) with
 LISTEN (117). The kernel selects the stream implementation from the file
 object. Backlog must fit a nonnegative signed 32-bit integer for both types.
 UDP returns EOPNOTSUPP; other files return ENOTSOCK. Rebuild static clients.
+
+ABI v22 replaces TCP/Unix shutdown syscalls (slots 86/49) with SHUTDOWN
+(118). The kernel validates the full-width mode before dispatch; values other
+than OS_SHUT_RD, OS_SHUT_WR and OS_SHUT_RDWR return EINVAL for streams.
+UDP returns EOPNOTSUPP; other files return ENOTSOCK. Rebuild static clients.
+
+TCP shutdown disables the selected local direction immediately: reads return
+EOF after SHUT_RD and writes fail with EPIPE after SHUT_WR, including through
+duplicated descriptors. SHUT_WR preserves reception. The network service
+flushes queued output before sending FIN, without waiting in the syscall for
+peer acknowledgment; it also drains discarded input after SHUT_RD.
+
+Partial TCP writes report the bytes already accepted by the transport even
+when its remaining send buffer fills, so callers retry only the unsent suffix.

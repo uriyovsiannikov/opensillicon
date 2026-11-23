@@ -6,6 +6,7 @@
 #include "kernel/network_service.h"
 #include "kernel/spinlock.h"
 #include "kernel/udp_socket.h"
+#include "kernel/tcp_socket.h"
 
 static enum network_service_event event_queue[NETWORK_SERVICE_EVENT_CAPACITY];
 static size_t event_head;
@@ -89,6 +90,7 @@ network_service_run(size_t budget, struct network_service_result *result)
 			continue;
 		}
 		poll_result = udp_socket_poll();
+		tcp_socket_service();
 		fd_readiness_wake();
 		if (poll_result > 0)
 			local.frames_processed++;

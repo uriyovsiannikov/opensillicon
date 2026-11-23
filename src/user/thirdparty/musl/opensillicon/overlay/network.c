@@ -15,6 +15,9 @@
 _Static_assert(sizeof(struct sockaddr_un) == sizeof(struct os_unix_address) &&
     offsetof(struct sockaddr_un, sun_path) == offsetof(struct os_unix_address, path), "Unix address layout");
 
+_Static_assert(SHUT_RD == OS_SHUT_RD && SHUT_WR == OS_SHUT_WR &&
+    SHUT_RDWR == OS_SHUT_RDWR, "shutdown modes");
+
 _Static_assert(AF_UNIX == OS_AF_UNIX && AF_INET == OS_AF_INET, "socket families");
 _Static_assert(SOCK_STREAM == OS_SOCK_STREAM && SOCK_DGRAM == OS_SOCK_DGRAM, "socket types");
 _Static_assert(IPPROTO_TCP == OS_IPPROTO_TCP && IPPROTO_UDP == OS_IPPROTO_UDP, "socket protocols");
@@ -109,10 +112,11 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
   long type=b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK);
   return set_flags(call(SYSCALL_SOCKET,a,type,c,0,0,0),b);
  }
+ if(n==SYS_shutdown) return call(SYSCALL_SHUTDOWN,a,b,0,0,0,0);
  if(n==SYS_listen) return call(SYSCALL_LISTEN,a,b,0,0,0,0);
  switch(n) {
  case SYS_bind: case SYS_connect: case SYS_accept:
- case SYS_accept4: case SYS_shutdown: case SYS_getsockopt: case SYS_setsockopt:
+ case SYS_accept4: case SYS_getsockopt: case SYS_setsockopt:
  case SYS_getsockname: case SYS_getpeername: case SYS_sendto: case SYS_recvfrom:
   break;
  default: return -ENOSYS;
@@ -140,9 +144,6 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
    if(converted<0) {call(SYSCALL_CLOSE,r,0,0,0,0,0);return converted;}
   }
   return set_flags(r,d);
- case SYS_shutdown:
-  if(!unix_socket && !tcp) return -EOPNOTSUPP;
-  return call(unix_socket ? SYSCALL_UNIX_SHUTDOWN : SYSCALL_TCP_SHUTDOWN,a,b,0,0,0,0);
  case SYS_getsockopt:
   if(b==SOL_SOCKET && (c==SO_TYPE || c==SO_DOMAIN || c==SO_PROTOCOL)) {
    if(!d || !e) return -EFAULT;

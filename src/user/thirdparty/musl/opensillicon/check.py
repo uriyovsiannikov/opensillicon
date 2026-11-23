@@ -21,13 +21,18 @@ def tcp_echo():
  try:
   with tcp.accept()[0] as peer:
    peer.settimeout(10)
+   expected=b'hello'+bytes((i*13+7)&255 for i in range(8192))
    message=b''
-   while len(message)<5:
-    chunk=peer.recv(5-len(message))
+   while len(message)<len(expected):
+    chunk=peer.recv(len(expected)-len(message))
     if not chunk: raise RuntimeError('early TCP EOF')
     message+=chunk
-   if message!=b'hello': raise RuntimeError(repr(message))
-   peer.sendall(b'world')
+   if message!=expected:
+    at=next(i for i in range(len(expected)) if message[i]!=expected[i])
+    raise RuntimeError(f'TCP payload mismatch at {at}: {message[at:at+16].hex()} expected {expected[at:at+16].hex()}')
+   if peer.recv(1): raise RuntimeError('TCP shutdown did not deliver EOF')
+   time.sleep(0.05)
+   peer.sendall(b'world'+b'ignored'*32)
  except Exception as error: peer_errors.append(str(error))
 def udp_echo():
  try:
@@ -54,7 +59,7 @@ try:
   text=log.read_text(errors='replace') if log.exists() else ''
   if '/sbin/init exited' in text or q.poll() is not None:break
   time.sleep(.5)
- assert 'MUSL_PASS' in text and '/sbin/init exited with status 0' in text,text
+ assert 'MUSL_PASS' in text and '/sbin/init exited with status 0' in text,(text,peer_errors)
  for thread in threads: thread.join(timeout=1)
  assert not peer_errors,peer_errors
  assert not any(thread.is_alive() for thread in threads),'network peer unfinished'

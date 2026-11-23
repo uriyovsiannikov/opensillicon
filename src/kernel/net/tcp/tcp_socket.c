@@ -17,6 +17,8 @@
 
 struct tcp_socket_state {
 	bool allocated;
+	bool read_shutdown;
+	bool write_shutdown;
 	bool connect_pending;
 	bool no_delay;
 	bool reuse_address;
@@ -78,6 +80,13 @@ tcp_socket_read_op(void *context, uint64_t offset, void *buffer,
 	tcp_state = tcpGetState(state->socket);
 	if (tcp_state == TCP_STATE_LISTEN)
 		return -ENOTCONN;
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
+	bool shutdown = state->read_shutdown;
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
+	if (shutdown) {
+		*read_length = 0;
+		return 0;
+	}
 	error = socketReceive(state->socket, buffer, length, read_length,
 	    SOCKET_FLAG_DONT_WAIT);
 	if (error == ERROR_END_OF_STREAM) {
@@ -103,11 +112,19 @@ tcp_socket_write_op(void *context, uint64_t offset, const void *buffer,
 	if (tcp_state == TCP_STATE_LISTEN)
 		return -ENOTCONN;
 	flags = spinlock_lock_irqsave(&tcp_state_lock);
+	if (state->write_shutdown) {
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
+		return -EPIPE;
+	}
 	no_delay = state->no_delay;
 	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
 	error = socketSend(state->socket, buffer, length, write_length,
 	    SOCKET_FLAG_DONT_WAIT |
 	    (no_delay ? SOCKET_FLAG_NO_DELAY : 0));
+	/* Cyclone may fill the available buffer before reporting a timeout.
+	 * Those bytes are already queued and must not be sent a second time. */
+	if (*write_length != 0)
+		return 0;
 	return cyclone_error(error);
 }
 
@@ -138,12 +155,12 @@ tcp_socket_poll_op(void *context, uint32_t events)
 		if ((flags & SOCKET_EVENT_ACCEPT) != 0)
 			ready |= FD_POLL_READ;
 	} else {
-		if ((flags & (SOCKET_EVENT_RX_READY | SOCKET_EVENT_RX_SHUTDOWN |
-		    SOCKET_EVENT_CLOSED)) != 0)
+		if (state->read_shutdown || (flags & (SOCKET_EVENT_RX_READY |
+		    SOCKET_EVENT_RX_SHUTDOWN | SOCKET_EVENT_CLOSED)) != 0)
 			ready |= FD_POLL_READ;
-		if ((tcp_state == TCP_STATE_ESTABLISHED ||
+		if (state->write_shutdown || ((tcp_state == TCP_STATE_ESTABLISHED ||
 		    tcp_state == TCP_STATE_CLOSE_WAIT) &&
-		    (flags & SOCKET_EVENT_TX_READY) != 0)
+		    (flags & SOCKET_EVENT_TX_READY) != 0))
 			ready |= FD_POLL_WRITE;
 		if ((flags & SOCKET_EVENT_CLOSED) != 0)
 			ready |= FD_POLL_HANGUP;
@@ -413,16 +430,62 @@ tcp_socket_accept(struct fd_table *table, struct fd_object *listener,
 	return descriptor;
 }
 
+/* Called with tcp_state_lock held. Cyclone's graceful shutdown waits for
+ * peer acknowledgments. Keep that transport work in the network service:
+ * the descriptor becomes locally shut down as soon as shutdown succeeds. */
+static void
+tcp_socket_shutdown_progress(struct tcp_socket_state *state)
+{
+	if (state->read_shutdown) {
+		unsigned char discard[512];
+		size_t received;
+		(void)socketReceive(state->socket, discard, sizeof(discard),
+		    &received, SOCKET_FLAG_DONT_WAIT);
+	}
+	if (state->write_shutdown) {
+		TcpState status = tcpGetState(state->socket);
+		if (status == TCP_STATE_ESTABLISHED || status == TCP_STATE_CLOSE_WAIT)
+			(void)socketShutdown(state->socket, SOCKET_SD_SEND);
+	}
+}
+
+void
+tcp_socket_service(void)
+{
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
+	for (size_t i = 0; i < TCP_SOCKET_LIMIT; i++) {
+		struct tcp_socket_state *state = &tcp_sockets[i];
+		if (state->allocated && state->socket != NULL &&
+		    (state->read_shutdown || state->write_shutdown))
+			tcp_socket_shutdown_progress(state);
+	}
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
+}
+
 int
 tcp_socket_shutdown(struct fd_object *object, uint64_t how)
 {
 	struct tcp_socket_state *state = socket_state(object);
 	if (state == NULL)
 		return -ENOTSOCK;
-	if (how > SOCKET_SD_BOTH ||
-	    tcpGetState(state->socket) == TCP_STATE_LISTEN)
+	if (how > OS_SHUT_RDWR)
 		return -EINVAL;
-	return cyclone_error(socketShutdown(state->socket, (uint_t)how));
+	uint64_t flags = spinlock_lock_irqsave(&tcp_state_lock);
+	TcpState status = tcpGetState(state->socket);
+	if (status == TCP_STATE_LISTEN || status == TCP_STATE_SYN_SENT ||
+	    (status == TCP_STATE_CLOSED &&
+	    !state->read_shutdown && !state->write_shutdown)) {
+		spinlock_unlock_irqrestore(&tcp_state_lock, flags);
+		return -ENOTCONN;
+	}
+	if (how == OS_SHUT_RD || how == OS_SHUT_RDWR)
+		state->read_shutdown = true;
+	if (how == OS_SHUT_WR || how == OS_SHUT_RDWR)
+		state->write_shutdown = true;
+	tcp_socket_shutdown_progress(state);
+	spinlock_unlock_irqrestore(&tcp_state_lock, flags);
+	fd_readiness_wake();
+	return 0;
 }
 
 int

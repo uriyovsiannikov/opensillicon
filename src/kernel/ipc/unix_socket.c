@@ -552,26 +552,26 @@ unix_socket_accept(struct fd_table *table, struct fd_object *object)
 }
 
 int
-unix_socket_shutdown(struct fd_object *object, int how)
+unix_socket_shutdown(struct fd_object *object, uint64_t how)
 {
 	struct unix_socket_state *state = socket_state(object);
 	if (state == NULL)
 		return -ENOTSOCK;
-	if (how < UNIX_SOCKET_SHUT_RD || how > UNIX_SOCKET_SHUT_RDWR)
+	if (how > OS_SHUT_RDWR)
 		return -EINVAL;
 	uint64_t flags = state_guard_enter();
 	if (!state->connected || state->listener) {
 		state_guard_leave(flags);
 		return -ENOTCONN;
 	}
-	if (how == UNIX_SOCKET_SHUT_RD || how == UNIX_SOCKET_SHUT_RDWR) {
+	if (how == OS_SHUT_RD || how == OS_SHUT_RDWR) {
 		state->read_shutdown = true;
 		state->head = 0;
 		state->count = 0;
 		if (state->peer != NULL)
 			process_wake_channel(&state->peer->write_wait);
 	}
-	if (how == UNIX_SOCKET_SHUT_WR || how == UNIX_SOCKET_SHUT_RDWR) {
+	if (how == OS_SHUT_WR || how == OS_SHUT_RDWR) {
 		state->write_shutdown = true;
 		if (state->peer != NULL)
 			process_wake_channel(&state->peer->read_wait);

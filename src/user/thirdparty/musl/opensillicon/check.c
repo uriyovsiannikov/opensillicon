@@ -904,15 +904,22 @@ static int curses_check(void)
  delscreen(screen);
  return 0;
 }
-static int listen_check(void)
+static int socket_control_check(void)
 {
  CHECK(__os_raw(SYSCALL_LISTEN,-1,1,0,0,0,0)==-EBADF);
+ CHECK(shutdown(-1,SHUT_RDWR)==-1 && errno==EBADF);
  int fd=open("/dev/null",O_RDWR); CHECK(fd>=0);
- CHECK(listen(fd,1)==-1 && errno==ENOTSOCK && close(fd)==0);
+ CHECK(listen(fd,1)==-1 && errno==ENOTSOCK);
+ CHECK(shutdown(fd,SHUT_RDWR)==-1 && errno==ENOTSOCK && close(fd)==0);
  fd=socket(AF_INET,SOCK_DGRAM,0); CHECK(fd>=0);
- CHECK(listen(fd,1)==-1 && errno==EOPNOTSUPP && close(fd)==0);
+ CHECK(listen(fd,1)==-1 && errno==EOPNOTSUPP);
+ CHECK(shutdown(fd,SHUT_RDWR)==-1 && errno==EOPNOTSUPP && close(fd)==0);
  for(int domain=0;domain<2;domain++) {
   fd=socket(domain ? AF_INET : AF_UNIX,SOCK_STREAM,0); CHECK(fd>=0);
+  CHECK(shutdown(fd,SHUT_RDWR)==-1 && errno==ENOTCONN);
+  CHECK(shutdown(fd,-1)==-1 && errno==EINVAL);
+  CHECK(shutdown(fd,3)==-1 && errno==EINVAL);
+  CHECK(__os_raw(SYSCALL_SHUTDOWN,fd,1ULL<<32,0,0,0,0)==-EINVAL);
   CHECK(listen(fd,-1)==-1 && errno==EINVAL);
   CHECK(__os_raw(SYSCALL_LISTEN,fd,1ULL<<32,0,0,0,0)==-EINVAL);
   if(domain) {
@@ -1221,6 +1228,9 @@ static int network_check(void)
    used+=(size_t)got;
   }
   if(send(client,large,sizeof large,0)!=sizeof large) _exit(99);
+  if(shutdown(client,SHUT_WR)) _exit(100);
+  char end[3];
+  if(recv(client,end,sizeof end,0)!=sizeof end || memcmp(end,"end",sizeof end)) _exit(101);
   close(client);
   _exit(0);
  }
@@ -1267,6 +1277,7 @@ static int network_check(void)
  }
  CHECK(!memcmp(large_message,large_reply,sizeof large_reply));
  CHECK(recv(peer,message,sizeof message,0)==0);
+ CHECK(send(peer,"end",3,0)==3);
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && !WEXITSTATUS(status));
  CHECK(shutdown(peer,SHUT_RDWR)==0 && close(peer)==0 && close(server)==0);
  CHECK(unlink(address.sun_path)==0);
@@ -1359,10 +1370,25 @@ static int network_check(void)
      !memcmp(native_endpoint.value.address,&remote.sin_addr,4) && native_endpoint.guard==0xabcd);
  CHECK(__os_raw(SYSCALL_GETSOCKNAME,tcp,1,sizeof native_endpoint.value,0,0,0)==-EFAULT);
  CHECK(send(tcp,"hello",5,0)==5);
+ size_t sent=0;
+ while(sent<sizeof large_message) {
+  ssize_t count=send(tcp,large_message+sent,sizeof large_message-sent,0);
+  CHECK(count>0 && (size_t)count<=sizeof large_message-sent);
+  sent+=(size_t)count;
+ }
+ CHECK(fcntl(tcp,F_SETFL,O_NONBLOCK)==0);
+ int shut_duplicate=dup(tcp); CHECK(shut_duplicate>=0);
+ CHECK(shutdown(shut_duplicate,SHUT_WR)==0 && close(shut_duplicate)==0);
+ CHECK(fcntl(tcp,F_SETFL,0)==0);
+ CHECK(send(tcp,"x",1,0)==-1 && errno==EPIPE);
  memset(message,0,sizeof message);
  int total=0;
  while(total<5) { int got=recv(tcp,message+total,5-total,0); CHECK(got>0); total+=got; }
- CHECK(!strcmp(message,"world") && close(tcp)==0);
+ CHECK(!strcmp(message,"world"));
+ CHECK(shutdown(tcp,SHUT_RD)==0);
+ struct pollfd shut_poll={.fd=tcp,.events=POLLIN|POLLOUT};
+ CHECK(poll(&shut_poll,1,0)==1 && (shut_poll.revents&(POLLIN|POLLOUT))==(POLLIN|POLLOUT));
+ CHECK(recv(tcp,message,sizeof message,0)==0 && close(tcp)==0);
  CHECK(socket(AF_INET6,SOCK_STREAM,0)==-1 && errno==EAFNOSUPPORT);
  return 0;
 }
@@ -1595,7 +1621,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,53,58,63,81,82,83,84,88,89,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,49,53,58,63,81,82,83,84,86,88,89,91,92,93,94,101,109};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
@@ -1643,8 +1669,8 @@ int main(int argc, char **argv)
  if(terminal_result) return terminal_result;
  int curses_result=curses_check();
  if(curses_result) return curses_result;
- int listen_result=listen_check();
- if(listen_result) return listen_result;
+ int control_result=socket_control_check();
+ if(control_result) return control_result;
  int poll_result=poll_check();
  if(poll_result) return poll_result;
  int flock_result=flock_check();

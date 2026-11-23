@@ -8,4 +8,8 @@
 #define OS_IPPROTO_TCP 6U
 #define OS_IPPROTO_UDP 17U
 
+#define OS_SHUT_RD 0U
+#define OS_SHUT_WR 1U
+#define OS_SHUT_RDWR 2U
+
 #endif
