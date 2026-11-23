@@ -5,7 +5,7 @@ cc=${CC:-gcc}
 port="$root/src/tools/pkg/repo/_src/nano/upstream"
 out="$root/src/build/nano"
 mkdir -p "$out/app"
-cflags='-O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
+cflags='-D_GNU_SOURCE -O2 -std=gnu11 -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -m64 -mno-red-zone'
 cppflags="-nostdinc -I$root/src/build/musl/sysroot/include -isystem $($cc -print-file-name=include)"
 cp "$port/config.h" "$out/app/config.h"
 printf '#define REVISION "9.3 (OpenSillicon)"\n' > "$out/app/revision.h"

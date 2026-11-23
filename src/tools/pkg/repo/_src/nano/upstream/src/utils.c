@@ -209,6 +209,27 @@ bool is_separate_word(size_t position, size_t length, const char *text)
 }
 #endif /* ENABLE_SPELLER */
 
+/* Search a NUL-terminated line from a byte offset using POSIX regexec.
+ * Keep match offsets relative to the original line and do not let ^ match
+ * the artificial start of a suffix. All callers search through line end. */
+static int line_regexec(const regex_t *expression, const char *line,
+		size_t count, regmatch_t matches[])
+{
+	regoff_t offset = matches[0].rm_so;
+	int flags = offset > 0 ? REG_NOTBOL : 0;
+	int result = regexec(expression, line + offset, count, matches, flags);
+
+	if (result == 0) {
+		for (size_t i = 0; i < count; i++) {
+			if (matches[i].rm_so >= 0) {
+				matches[i].rm_so += offset;
+				matches[i].rm_eo += offset;
+			}
+		}
+	}
+	return result;
+}
+
 /* Return the position of the needle in the haystack, or NULL if not found.
  * When searching backwards, we will find the last match that starts no later
  * than the given start; otherwise, we find the first match starting no earlier
@@ -244,14 +265,14 @@ const char *strstrwrapper(const char *haystack, const char *needle, const char *
 				next_rung = step_right(haystack, last_find);
 				regmatches[0].rm_so = next_rung;
 				regmatches[0].rm_eo = far_end;
-				if (regexec(&search_regexp, haystack, 1, regmatches, REG_STARTEND) != 0)
+				if (line_regexec(&search_regexp, haystack, 1, regmatches) != 0)
 					break;
 			}
 
 			/* Find the last match again, to get possible submatches. */
 			regmatches[0].rm_so = floor;
 			regmatches[0].rm_eo = far_end;
-			if (regexec(&search_regexp, haystack, 10, regmatches, REG_STARTEND) != 0)
+			if (line_regexec(&search_regexp, haystack, 10, regmatches) != 0)
 				return NULL;
 
 			return haystack + regmatches[0].rm_so;
@@ -260,7 +281,7 @@ const char *strstrwrapper(const char *haystack, const char *needle, const char *
 		/* Do a forward regex search from the starting point. */
 		regmatches[0].rm_so = start - haystack;
 		regmatches[0].rm_eo = strlen(haystack);
-		if (regexec(&search_regexp, haystack, 10, regmatches, REG_STARTEND) != 0)
+		if (line_regexec(&search_regexp, haystack, 10, regmatches) != 0)
 			return NULL;
 		else
 			return haystack + regmatches[0].rm_so;
