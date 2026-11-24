@@ -1,24 +1,30 @@
 <div align="center">
-  <img src="other/logo.png" alt="OpenSillicon logo" width="88">
+  <img src="other/logo.png" alt="logo" width="88">
   <h1>opensillicon</h1>
   <p>a small x86_64 operating system built from the ground up.</p>
-  <img src="other/screenshot2.png" alt="OpenSillicon shell" width="620">
+  <img src="other/screenshot2.png" alt="shell" width="620">
 </div>
 
 opensillicon is an experimental unix-like operating system with a modular
 monolithic kernel and a native userspace.
 
-## what works
+## architecture
 
-- ring 3 processes, elf loading, `fork`/`exec`/`wait`, preemptive scheduling,
-  virtual mem, shared mem, signals, pipes, and file descriptors.
-- vfs with ramfs, initramfs, devfs, and the native SilliconFS.
-- f/b terminal, ps/2 keyboard, shell, and core utilities.
-- musl libc port (migration in progress; signal/socket/thread adapters remain incomplete).
-- service supervision by `/sbin/init`, with per-service configuration and
-  control via [svctl](src/user/init/README.md).
-- tinyx session with `twm`, `xterm`, and `xeyes`.
-- network stack components for ethernet, arp, ipv4, icmp, udp, and tcp.
+```
+hardware - uefi - smp - pci - disk - nic - hda - gpu - usb
+    |
+    v
++----------------------------------------------------------------+
+| kernel                                                         |
+| boot/mm/sched / process/ipc / vfs / ctcp / drivers             |
++----------------------------------------------------------------+
+    | syscalls - sysctl - /dev
+    v
++----------------------------------------------------------------+
+| userspace                                                      |
+| init/svctl / sh / coreutils / pkg                              |
++----------------------------------------------------------------+
+```
 
 ## build and run
 
@@ -40,5 +46,5 @@ make run-gui   # graphical display
 
 ## license
 
-project code is available under the [BSD 2-Clause License](LICENSE). vendored
+project code is available under the [bsd 2-clause license](LICENSE). vendored
 and third-party components retain their respective licenses.
