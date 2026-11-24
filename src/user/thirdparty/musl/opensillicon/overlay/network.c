@@ -13,6 +13,11 @@
 #include "abi/uio.h"
 #include "abi/unix_socket.h"
 
+_Static_assert(sizeof(struct sockaddr_in) == sizeof(struct os_sockaddr_in) &&
+    offsetof(struct sockaddr_in, sin_family) == offsetof(struct os_sockaddr_in, family) &&
+    offsetof(struct sockaddr_in, sin_port) == offsetof(struct os_sockaddr_in, port) &&
+    offsetof(struct sockaddr_in, sin_addr) == offsetof(struct os_sockaddr_in, address), "IPv4 socket address layout");
+
 _Static_assert(sizeof(struct sockaddr_un) == sizeof(struct os_unix_address) &&
     offsetof(struct sockaddr_un, sun_path) == offsetof(struct os_unix_address, path), "Unix address layout");
 
@@ -124,20 +129,7 @@ long __os_network(long n,long a,long b,long c,long d,long e,long f)
  if(n==SYS_accept || n==SYS_accept4) {
   if(n==SYS_accept) d=0;
   if(d & ~(SOCK_CLOEXEC|SOCK_NONBLOCK)) return -EINVAL;
-  if(!b) return set_flags(call(SYSCALL_ACCEPT,a,0,0,0,0,0),d);
-  if(!c) return -EFAULT;
-  long kind=call(SYSCALL_SOCKET_KIND,a,0,0,0,0,0);
-  if(kind<0) return kind;
-  if(kind==OS_SOCKET_KIND_UNIX)
-   return set_flags(call(SYSCALL_ACCEPT,a,b,c,0,0,0),d);
-  if(kind!=OS_SOCKET_KIND_TCP) return -EOPNOTSUPP;
-  struct os_ipv4_endpoint peer;
-  uint32_t size=sizeof peer;
-  long result=call(SYSCALL_ACCEPT,a,(long)&peer,(long)&size,0,0,0);
-  if(result<0) return result;
-  long converted=to_address(&peer,b,c);
-  if(converted<0) {call(SYSCALL_CLOSE,result,0,0,0,0,0);return converted;}
-  return set_flags(result,d);
+  return set_flags(call(SYSCALL_ACCEPT,a,b,c,0,0,0),d);
  }
  if(n==SYS_shutdown) return call(SYSCALL_SHUTDOWN,a,b,0,0,0,0);
  if(n==SYS_listen) return call(SYSCALL_LISTEN,a,b,0,0,0,0);

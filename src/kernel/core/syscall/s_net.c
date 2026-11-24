@@ -1,4 +1,5 @@
 #include "syscall_internal.h"
+#include <string.h>
 #include "abi/socket.h"
 
 #include "kernel/icmp_echo.h"
@@ -252,7 +253,8 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		struct address_space *space = vmm_active_address_space();
 		struct fd_object *object = fd_object_for_descriptor(
 		    current_fd_table(), frame->rdi);
-		union { struct os_ipv4_endpoint inet; uint16_t family; } peer;
+		union { struct os_sockaddr_in inet; uint16_t family; } peer = {0};
+		struct os_ipv4_endpoint endpoint;
 		bool local = unix_socket_is_object(object);
 		bool tcp = tcp_socket_is_object(object);
 		uint32_t capacity = 0, actual = local ? sizeof(peer.family) : sizeof(peer.inet);
@@ -276,9 +278,16 @@ syscall_net_bsp(struct interrupt_frame *frame)
 		if (local) {
 			peer.family = OS_AF_UNIX;
 			result = unix_socket_accept(current_fd_table(), object);
-		} else
+		} else {
 			result = tcp_socket_accept(current_fd_table(), object,
-			    frame->rsi != 0 ? &peer.inet : NULL);
+			    frame->rsi != 0 ? &endpoint : NULL);
+			if (result >= 0 && frame->rsi != 0) {
+				peer.inet.family = OS_AF_INET;
+				peer.inet.port[0] = (uint8_t)(endpoint.port >> 8);
+				peer.inet.port[1] = (uint8_t)endpoint.port;
+				memcpy(peer.inet.address, endpoint.address, sizeof(endpoint.address));
+			}
+		}
 		if (result == -EAGAIN && !fd_object_nonblocking(object))
 			return process_block_on_channel(frame, local ?
 			    unix_socket_wait_channel(object, true) : fd_readiness_wait_channel());

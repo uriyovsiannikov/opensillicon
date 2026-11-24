@@ -1,6 +1,6 @@
 # musl migration — static runtime and files
 
-This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v23.
+This is an initial static x86-64 port of musl 1.2.5 to OpenSillicon ABI v26.
 musl is now the sole libc in the build graph; the former native libc sources
 and their implementation-specific tests have been removed. Existing binaries,
 libraries and packages from the old runtime must be rebuilt. The OS syscall
@@ -348,3 +348,7 @@ Unix SO_REUSEADDR/SO_KEEPALIVE and TCP SO_REUSEADDR no longer pretend to
 succeed: these paths had no effect on the socket implementation. Their setters
 and getters return ENOPROTOOPT. TCP keepalive and buffer controls remain real
 transport operations; Unix buffer capacities remain enforced.
+
+ABI v26 replaces ACCEPT (121) with ACCEPT (122), returning an IPv4 socket
+address in `os_sockaddr_in` format or an AF_UNIX family. The kernel validates
+output memory before dequeuing the connection. Rebuild static clients.

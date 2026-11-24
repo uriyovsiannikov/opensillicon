@@ -1022,6 +1022,21 @@ static int socket_control_check(void)
    CHECK(bind(fd,(struct sockaddr *)&address,sizeof address)==0);
   }
   CHECK(listen(fd,1)==0);
+  if(domain) {
+   struct pollfd pending={.fd=fd,.events=POLLIN};
+   CHECK(poll(&pending,1,15000)==1 && (pending.revents&POLLIN));
+   socklen_t peer_length=sizeof(struct sockaddr_in);
+   CHECK(accept(fd,(void *)1,&peer_length)==-1 && errno==EFAULT);
+   static const socklen_t readonly_length=sizeof(struct sockaddr_in);
+   struct sockaddr_in address;
+   CHECK(accept(fd,(struct sockaddr *)&address,(socklen_t *)&readonly_length)==-1 && errno==EFAULT);
+   struct { unsigned char bytes[3];unsigned char guard; } short_address={{0},0xc8};
+   peer_length=sizeof short_address.bytes;
+   int client=accept(fd,(struct sockaddr *)short_address.bytes,&peer_length);
+   CHECK(client>=0 && peer_length==sizeof(struct sockaddr_in) && short_address.guard==0xc8 &&
+       short_address.bytes[0]==AF_INET && short_address.bytes[1]==0);
+   char received=0;CHECK(read(client,&received,1)==1 && received=='Q');CHECK(close(client)==0);
+  }
   CHECK(close(fd)==0);
  }
  CHECK(unlink("/tmp/native-listen")==0);
@@ -1740,7 +1755,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,47,49,50,51,53,58,63,67,69,81,82,83,84,85,86,87,88,89,90,91,92,93,94,101,109};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,47,49,50,51,53,58,63,67,69,81,82,83,84,85,86,87,88,89,90,91,92,93,94,101,109,121};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
