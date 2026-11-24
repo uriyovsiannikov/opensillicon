@@ -1,3 +1,4 @@
+#include <sys/sysctl.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <mbedtls/pk.h>
@@ -41,18 +42,18 @@ static int memory_read(void *context, uint64_t offset, void *buffer, size_t size
 static int read_all(const char *path, char *buffer, size_t cap, size_t *length)
 {
 	int fd = open(path, O_RDONLY);
-	if (fd < 0) return -errno;
+	if (fd < 0) return -(errno ? errno : EIO);
 	ssize_t n = read(fd, buffer, cap - 1);
 	int saved = errno;
 	close(fd);
-	if (n < 0) return -saved;
+	if (n < 0) return -(saved ? saved : EIO);
 	buffer[n] = 0;
 	*length = (size_t)n;
 	return 0;
 }
 static int repository(char out[256])
 {
-	size_t n;
+	size_t n = 0;
 	if (read_all("/etc/pkg.conf", out, 256, &n) || !n) return -1;
 	while (n && (out[n - 1] == '\n' || out[n - 1] == '\r' || out[n - 1] == ' '))
 		out[--n] = 0;
@@ -185,34 +186,43 @@ static int verify_manifest(const struct pkg_archive *archive, struct release *ou
 	    .initramfs = init->data, .kernel_size = kernel->size, .init_size = init->size};
 	return 0;
 }
-static int proc_value(const char *key, char *out, size_t cap)
+static int bootarg_value(const char *key, char *out, size_t cap)
 {
-	char cmdline[2048]; size_t n;
-	if (read_all("/proc/cmdline", cmdline, sizeof(cmdline), &n)) return -1;
-	char wanted[64]; snprintf(wanted, sizeof(wanted), "%s=", key);
-	char *token = strtok(cmdline, " \n");
-	while (token) {
-		if (!strncmp(token, wanted, strlen(wanted))) {
-			size_t len = strlen(token + strlen(wanted));
-			if (!len || len >= cap) return -1;
-			memcpy(out, token + strlen(wanted), len + 1); return 0;
+	char cmdline[2048];
+	size_t length = sizeof(cmdline);
+	if (sysctlbyname("kern.bootargs", cmdline, &length, NULL, 0) != 0 ||
+	    length == 0 || cmdline[length - 1] != '\0')
+		return -1;
+	size_t key_length = strlen(key);
+	char *token = strtok(cmdline, " \t\r\n");
+	while (token != NULL) {
+		if (!strncmp(token, key, key_length) && token[key_length] == '=') {
+			const char *value = token + key_length + 1;
+			size_t value_length = strlen(value);
+			if (value_length == 0 || value_length >= cap)
+				return -1;
+			memcpy(out, value, value_length + 1);
+			return 0;
 		}
-		token = strtok(NULL, " \n");
+		token = strtok(NULL, " \t\r\n");
 	}
 	return -1;
 }
 static int running_driver_api(unsigned *major, unsigned *minor)
 {
-	char text[32]; size_t n;
-	int error = read_all("/proc/dapi", text, sizeof(text), &n);
-	if (error || sscanf(text, "%u.%u", major, minor) != 2)
+	unsigned version = 0;
+	size_t size = sizeof(version);
+	if (sysctlbyname("kern.driverapi", &version, &size, NULL, 0) != 0 ||
+	    size != sizeof(version))
 		return -1;
+	*major = version >> 16;
+	*minor = version & 0xffffU;
 	return 0;
 }
 static int locate_esp(char path[64], uint8_t root_uuid[16])
 {
 	char uuid[40];
-	if (proc_value("root", uuid, sizeof(uuid)) || strncmp(uuid, "PARTUUID=", 9) ||
+	if (bootarg_value("root", uuid, sizeof(uuid)) || strncmp(uuid, "PARTUUID=", 9) ||
 	    !uuid_parse(uuid + 9, strlen(uuid + 9), root_uuid)) return -1;
 	const uint8_t esp_type[16] = {0x28,0x73,0x2a,0xc1,0x1f,0xf8,0xd2,0x11,0xba,0x4b,0,0xa0,0xc9,0x3e,0xc9,0x3b};
 	char root_parent[32] = {0};

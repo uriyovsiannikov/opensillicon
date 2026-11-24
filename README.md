@@ -12,7 +12,7 @@ monolithic kernel and a native userspace.
 
 - ring 3 processes, elf loading, `fork`/`exec`/`wait`, preemptive scheduling,
   virtual mem, shared mem, signals, pipes, and file descriptors.
-- vfs with ramfs, initramfs, devfs, procfs, and the native SilliconFS.
+- vfs with ramfs, initramfs, devfs, and the native SilliconFS.
 - f/b terminal, ps/2 keyboard, shell, and core utilities.
 - musl libc port (migration in progress; signal/socket/thread adapters remain incomplete).
 - service supervision by `/sbin/init`, with per-service configuration and

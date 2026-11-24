@@ -10,5 +10,5 @@ main(int argc, char **argv)
 		fputs("usage: kldstat\n", stderr);
 		return 2;
 	}
-	return deviceconf_show("kldstat", "/proc/modules", NULL);
+	return deviceconf_show("kldstat", "kern.modules", NULL);
 }

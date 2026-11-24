@@ -13,3 +13,7 @@ executable basename. The header shows physical memory, process counts,
 and uptime. F9 can send signals allowed by the kernel. This port does not
 provide CPU utilization, memory usage per process, or persistent htop
 settings.
+
+Process enumeration uses the native `kern.proc.all` sysctl and shared
+`os_process_info` records. The port uses musl's math, integer-format,
+string, signal and time APIs directly; no replacement libc routines are linked.

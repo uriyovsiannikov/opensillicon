@@ -13,14 +13,14 @@ cd "$source"
 files=$(sed -n '/^myhtopsources = /,/^[^[:space:]]/p; /^unsupported_platform_sources = /,/^[^[:space:]]/p' Makefile.am |
     awk '$1 ~ /\.c$/ { print $1 }')
 set --
-for file in htop.c $files opensillicon/port.c; do
+for file in htop.c $files; do
     case "$file" in
         unsupported/Platform.c) file=opensillicon/Platform.c ;;
         unsupported/UnsupportedMachine.c) file=opensillicon/Machine.c ;;
         unsupported/UnsupportedProcessTable.c) file=opensillicon/ProcessTable.c ;;
     esac
     object="$out/$(printf '%s' "${file%.c}" | tr / _).o"
-    "$cc" -std=gnu11 -O2 -DNDEBUG -ffreestanding -fno-builtin -fno-stack-protector \
+    "$cc" -std=gnu11 -O2 -DNDEBUG -D_GNU_SOURCE -ffreestanding -fno-builtin -fno-stack-protector \
         -fno-pie -m64 -mno-red-zone -U__linux__ -nostdinc \
         -Iopensillicon -I. -Iunsupported -I"$root/src/include" \
         -I"$root/src/build/musl/sysroot/include" -I"$curses/include" \

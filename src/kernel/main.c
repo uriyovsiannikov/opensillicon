@@ -31,7 +31,7 @@
 #include "kernel/process.h"
 #include "kernel/vfs.h"
 #include "kernel/devfs.h"
-#include "kernel/procfs.h"
+#include "kernel/sysinfo.h"
 #include "kernel/block.h"
 #include "kernel/gpt.h"
 #include "kernel/root_device.h"
@@ -231,40 +231,26 @@ mount_system_root(const struct limine_file *live_root)
 	klog_status("SilliconFS", true, NULL);
 	klog(live_root != NULL ? "root: live image mounted\n" :
 	    "root: disk image mounted; initramfs at /init\n");
-	{
-		const char *paths[] = { "/dev", "/proc" };
-		const char *labels[] = { "devfs", "procfs" };
-		int (*mount_functions[])(const char *) = { devfs_mount, procfs_mount };
-
-		for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
-			struct vnode *mountpoint = NULL;
-
-			error = vfs_create_path(paths[i], VNODE_DIRECTORY, 0755,
-			    &mountpoint);
-			if (error == -MAIN_EEXIST) {
-				error = vfs_lookup(paths[i], &mountpoint);
-				if (error == 0 && mountpoint->type != VNODE_DIRECTORY) {
-					vnode_put(mountpoint);
-					mountpoint = NULL;
-					error = -MAIN_ENOTDIR;
-				}
-			}
+	struct vnode *mountpoint = NULL;
+	error = vfs_create_path("/dev", VNODE_DIRECTORY, 0755, &mountpoint);
+	if (error == -MAIN_EEXIST) {
+		error = vfs_lookup("/dev", &mountpoint);
+		if (error == 0 && mountpoint->type != VNODE_DIRECTORY) {
 			vnode_put(mountpoint);
-			if (error == 0)
-				error = mount_functions[i](paths[i]);
-			if (error == 0) {
-				klog_status(labels[i], true, NULL);
-			} else {
-				klog_status(labels[i], false,
-				    "mount failed; boot continues with mountpoint unchanged");
-				klog("OpenSillicon: ");
-				klog(labels[i]);
-				klog(" error ");
-				klog_u64((uint64_t)(-error));
-				klog("\n");
-			}
+			mountpoint = NULL;
+			error = -MAIN_ENOTDIR;
 		}
 	}
+	vnode_put(mountpoint);
+	if (error == 0)
+		error = devfs_mount("/dev");
+	if (error != 0) {
+		klog_status("devfs", false, "mount failed; boot continues with mountpoint unchanged");
+		klog("OpenSillicon: devfs error ");
+		klog_u64((uint64_t)(-error));
+		klog("\n");
+	} else
+		klog_status("devfs", true, NULL);
 }
 
 static uint64_t pci_device_count;
@@ -531,7 +517,7 @@ _start(void)
 		klog("\n");
 		kernel_halt();
 	}
-	procfs_set_cmdline(boot_cmdline());
+	kernel_info_set_bootargs(boot_cmdline());
 	entropy_result = boot_entropy_inspect(
 	    (const struct limine_entropy_response *)(uintptr_t)
 	    entropy_request.response, info.hhdm_offset, info.memmap,

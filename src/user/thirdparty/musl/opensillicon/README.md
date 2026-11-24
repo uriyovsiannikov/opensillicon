@@ -234,8 +234,7 @@ syscall numbers; it does not implement the complete FreeBSD sysctl tree.
 ABI v9 removes PROCESS_SNAPSHOT (slot 9). ps and the xload adapter use the
 shared PROCESS_INFO format with PID, parent PID, state, effective UID and name.
 The duplicate process-list traversal and compact userspace structures are
-removed. The internal current-process status used by procfs remains local to
-the kernel and is not a syscall wire format.
+removed. The former procfs-only current-process status helper has also been removed.
 
 ABI v10 removes SLEEP_TICKS (slot 8). All applications use nanosleep with
 seconds/nanoseconds; the old tick-count syscall, userspace wrapper, public
@@ -308,6 +307,14 @@ ABI v17 retires the debug kernel-halt syscall (slot 101) and removes the
 hidden `!(crash)` shell command and its private runtime wrapper. Slot 101
 returns ENOSYS. Shutdown and reboot continue through the power-control API.
 
+ABI v18 retires the process-snapshot syscall (slot 96). `kern.proc.all`
+returns an array of `os_process_info` records from `abi/process_info.h`.
+This native node uses the two-element MIB `{CTL_KERN, KERN_PROC_ALL}`;
+it does not expose the kinfo_proc layout of another BSD. A size-only query
+returns the current snapshot size. A short output buffer follows the common
+sysctl contract: copy the available prefix, report copied bytes, return ENOMEM.
+ps, xload and htop use this interface. Rebuild static programs for ABI v18.
+
 ABI v19 removes the zero-stride framebuffer rectangle format. Every
 `os_framebuffer_rect` source points to the rectangle's first pixel and supplies
 an explicit `source_pitch` of at least `width * 4` bytes. Destination x/y select
@@ -348,6 +355,24 @@ Unix SO_REUSEADDR/SO_KEEPALIVE and TCP SO_REUSEADDR no longer pretend to
 succeed: these paths had no effect on the socket implementation. Their setters
 and getters return ENOPROTOOPT. TCP keepalive and buffer controls remain real
 transport operations; Unix buffer capacities remain enforced.
+
+ABI v24 retires unused SETEUID/SETEGID entries (67/69); libc changes effective
+IDs through SETRESUID/SETRESGID. ABI v25 replaces Unix/TCP accept (47/85)
+with ACCEPT (121). Its optional native address buffer has a uint32_t length
+pointer, validated before a connection is consumed. Rebuild static clients.
+
+System information is available through sysctl instead of a procfs mount:
+`kern.bootargs`, `kern.driverapi`, `kern.modules`, `kern.uptime_ns`,
+`hw.cpuinfo`, `hw.pci`, `hw.netpci`, `hw.audiopci`, `hw.usb`, and `hw.disks`.
+Existing `hw.physmem`, `hw.pagesize`, and `vm.freepages` expose memory counts.
+Text reports include a terminating NUL and use OS_SYSCTL_REPORT_MAX as the
+maximum report size. Numeric values retain the kinds in abi/sysctl.h.
+
+`/dev/hda` is a root-only control device. OS_HDA_PROBE and OS_HDA_TONE
+(abi/hda.h) fill an os_hda_report; they explicitly request controller probing
+or the cached one-shot tone test. Opening or reading system information never
+runs these commands. Privilege and the entire output buffer are checked before
+hardware access. audioconf --codec/--tone use these commands.
 
 ABI v26 replaces ACCEPT (121) with ACCEPT (122), returning an IPv4 socket
 address in `os_sockaddr_in` format or an AF_UNIX family. The kernel validates

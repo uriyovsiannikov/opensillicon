@@ -9,9 +9,9 @@ in the source distribution for its full text.
 
 #include "UnsupportedMachine.h"
 
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/sysctl.h>
 
 #include "Machine.h"
 
@@ -53,19 +53,19 @@ void Machine_scan(Machine* super) {
    this->usedMem = 0;
    this->cachedMem = 0;
 
-   FILE* file = fopen("/proc/meminfo", "r");
-   if (file) {
-      char line[96];
-      unsigned long total = 0, free = 0;
-      while (fgets(line, sizeof(line), file)) {
-         if (strncmp(line, "MemTotal:", 9) == 0)
-            total = strtoul(line + 9, NULL, 10);
-         else if (strncmp(line, "MemFree:", 8) == 0)
-            free = strtoul(line + 8, NULL, 10);
+   uint64_t total = 0, freePages = 0;
+   int pageSize = 0;
+   size_t size = sizeof(total);
+   if (sysctlbyname("hw.physmem", &total, &size, NULL, 0) == 0) {
+      size = sizeof(freePages);
+      if (sysctlbyname("vm.freepages", &freePages, &size, NULL, 0) == 0) {
+         size = sizeof(pageSize);
+         if (sysctlbyname("hw.pagesize", &pageSize, &size, NULL, 0) == 0 && pageSize > 0) {
+            super->totalMem = total / 1024;
+            uint64_t freeBytes = freePages * (uint64_t)pageSize;
+            this->usedMem = freeBytes <= total ? (total - freeBytes) / 1024 : 0;
+         }
       }
-      fclose(file);
-      super->totalMem = total;
-      this->usedMem = free <= total ? total - free : 0;
    }
 }
 

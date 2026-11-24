@@ -2,7 +2,7 @@
 #define ABI_SYSCALL_H
 
 /* ABI v26. Retired slots: 4–10, 14, 17, 23, 33, 34, 41, 43–47, 49–51, 53, 58,
- * 63, 67, 69, 81–90, 91–94, 101, 109 and 121.
+ * 63, 67, 69, 81–90, 91–94, 96, 101, 109 and 121.
  * Slots are never reused; rebuild userspace after an ABI change. */
 #define SYSCALL_ABI_VERSION 26U
 

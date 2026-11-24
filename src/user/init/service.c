@@ -1,3 +1,4 @@
+#include <sys/sysctl.h>
 #include <sys/un.h>
 #include <sys/disk.h>
 #include <sys/ioctl.h>
@@ -63,14 +64,9 @@ static void
 configure_installer_console(void)
 {
 	char command[1024];
-	int fd = open("/proc/cmdline", O_RDONLY);
-	if (fd < 0)
+	size_t n = sizeof(command);
+	if (sysctlbyname("kern.bootargs", command, &n, NULL, 0) != 0 || n == 0)
 		return;
-	ssize_t n = read(fd, command, sizeof(command) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	command[n] = 0;
 	int requested = 0;
 	for (char *p = command; *p;) {
 		while (*p == ' ' || *p == '\t' || *p == '\n')
@@ -84,7 +80,7 @@ configure_installer_console(void)
 	}
 	if (!requested)
 		return;
-	fd = open("/dev/ram0", O_RDONLY);
+	int fd = open("/dev/ram0", O_RDONLY);
 	if (fd < 0)
 		return;
 	struct os_disk_partinfo info;

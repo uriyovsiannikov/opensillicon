@@ -1251,32 +1251,6 @@ process_resolve_path(const char *path, char *output, size_t capacity)
 }
 
 int
-process_current_status(struct process_status *entry)
-{
-	struct process *process;
-	uint64_t flags;
-	int result = 0;
-
-	if (entry == NULL)
-		return -(int)EINVAL;
-	__asm__ volatile ("pushfq; popq %0; cli" : "=r" (flags) : : "memory");
-	process = current_process;
-	if (process == NULL) {
-		result = -(int)ESRCH;
-	} else {
-		*entry = (struct process_status){
-			.pid = process->id,
-			.parent_pid = process->parent == NULL ? 0 : process->parent->id,
-			.state = (uint32_t)process->state,
-			.exit_status = process->exit_status
-		};
-	}
-	if ((flags & (1ULL << 9)) != 0)
-		__asm__ volatile ("sti" : : : "memory");
-	return result;
-}
-
-int
 process_info_snapshot(struct os_process_info *entries, size_t capacity)
 {
 	struct process *process = process_head;

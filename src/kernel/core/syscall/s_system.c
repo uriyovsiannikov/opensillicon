@@ -3,6 +3,10 @@
 #include "abi/inet.h"
 #include "kernel/cyclone_net.h"
 #include "kernel/pmm.h"
+#include "kernel/sysinfo.h"
+#include "kernel/heap.h"
+#include "kernel/timer.h"
+#include "kernel/driver_api.h"
 #include "kernel/fd.h"
 #include "kernel/smp.h"
 #include "kernel/version.h"
@@ -25,33 +29,70 @@ struct sysctl_value {
 		uint8_t dns[4];
 		struct os_process_info processes[OS_PROCESS_INFO_MAX];
 	} number;
+	void *allocated;
 	const void *data;
 	size_t size;
 };
 
-static int
-sysctl_value(const int name[2], struct sysctl_value *value)
+static int sysctl_report(enum kernel_info_kind kind, struct sysctl_value *value)
+{
+	struct kernel_info_report *report = kheap_alloc(sizeof(*report));
+	if (report == NULL)
+		return ENOMEM;
+	value->allocated = report;
+	int result = kernel_info_snapshot(kind, report);
+	if (result != 0)
+		return -result;
+	value->data = report->content;
+	value->size = report->content_length + 1;
+	return 0;
+}
+
+static int sysctl_value(const int name[2], struct sysctl_value *value)
 {
 	const char *text = NULL;
 	if (name[0] == CTL_KERN) {
 		switch (name[1]) {
-		case KERN_OSTYPE: text = KERNEL_OSTYPE; break;
-		case KERN_OSRELEASE: text = KERNEL_OSRELEASE; break;
-		case KERN_VERSION: text = KERNEL_VERSION; break;
-		case KERN_HOSTNAME: text = KERNEL_HOSTNAME; break;
+		case KERN_BOOTARGS:
+			text = kernel_info_bootargs();
+			break;
+		case KERN_DRIVERAPI:
+			value->number.integer = kernel_driver_api_version();
+			break;
+		case KERN_MODULES:
+			return sysctl_report(KERNEL_INFO_MODULES, value);
+		case KERN_UPTIME_NS:
+			value->number.wide = timer_monotonic_ns();
+			value->data = &value->number.wide;
+			value->size = sizeof(value->number.wide);
+			return 0;
+		case KERN_OSTYPE:
+			text = KERNEL_OSTYPE;
+			break;
+		case KERN_OSRELEASE:
+			text = KERNEL_OSRELEASE;
+			break;
+		case KERN_VERSION:
+			text = KERNEL_VERSION;
+			break;
+		case KERN_HOSTNAME:
+			text = KERNEL_HOSTNAME;
+			break;
 		case KERN_PROC_ALL: {
-			int count = process_info_snapshot(value->number.processes,
-			    OS_PROCESS_INFO_MAX);
+			int count = process_info_snapshot(
+			    value->number.processes, OS_PROCESS_INFO_MAX);
 			if (count < 0)
 				return -count;
 			value->data = value->number.processes;
-			value->size = (size_t)count * sizeof(value->number.processes[0]);
+			value->size =
+			    (size_t)count * sizeof(value->number.processes[0]);
 			return 0;
 		}
 		case KERN_MAXFILESPERPROC:
 			value->number.integer = FD_TABLE_CAPACITY;
 			break;
-		default: return ENOENT;
+		default:
+			return ENOENT;
 		}
 	} else if (name[0] == CTL_VM && name[1] == VM_FREEPAGES) {
 		value->number.wide = pmm_free_pages();
@@ -67,7 +108,8 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 			break;
 		case NET_IPV4_CONFIG:
 			if (!cyclone_net_ipv4_config(value->number.ipv4.address,
-			    value->number.ipv4.netmask, value->number.ipv4.gateway))
+				value->number.ipv4.netmask,
+				value->number.ipv4.gateway))
 				return EAGAIN;
 			value->data = &value->number.ipv4;
 			value->size = sizeof(value->number.ipv4);
@@ -83,6 +125,18 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 		}
 	} else if (name[0] == CTL_HW) {
 		switch (name[1]) {
+		case HW_CPUINFO:
+			return sysctl_report(KERNEL_INFO_CPU, value);
+		case HW_PCI:
+			return sysctl_report(KERNEL_INFO_PCI, value);
+		case HW_USB:
+			return sysctl_report(KERNEL_INFO_USB, value);
+		case HW_DISKS:
+			return sysctl_report(KERNEL_INFO_DISKS, value);
+		case HW_NETPCI:
+			return sysctl_report(KERNEL_INFO_NETPCI, value);
+		case HW_AUDIOPCI:
+			return sysctl_report(KERNEL_INFO_AUDIOPCI, value);
 		case HW_MACHINE:
 		case HW_MACHINE_ARCH:
 			text = KERNEL_MACHINE;
@@ -103,7 +157,8 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 			value->data = &value->number.wide;
 			value->size = sizeof(value->number.wide);
 			return 0;
-		default: return ENOENT;
+		default:
+			return ENOENT;
 		}
 	} else {
 		return ENOENT;
@@ -118,30 +173,11 @@ sysctl_value(const int name[2], struct sysctl_value *value)
 	return 0;
 }
 
-static struct interrupt_frame *
-syscall_sysctl(struct interrupt_frame *frame)
+static struct interrupt_frame *sysctl_copy_result(
+    struct interrupt_frame *frame, const struct sysctl_value *value)
 {
 	struct address_space *space = vmm_active_address_space();
-	int name[2];
-	struct sysctl_value value;
 	uint64_t capacity = 0;
-	if (frame->rsi != 2) {
-		syscall_error(frame, EINVAL);
-		return frame;
-	}
-	if (!vmm_copy_from_user(space, name, frame->rdi, sizeof(name))) {
-		syscall_error(frame, EFAULT);
-		return frame;
-	}
-	int error = sysctl_value(name, &value);
-	if (error != 0) {
-		syscall_error(frame, error);
-		return frame;
-	}
-	if (frame->r8 != 0 || frame->r9 != 0) {
-		syscall_error(frame, frame->r8 != 0 ? EPERM : EINVAL);
-		return frame;
-	}
 	if (frame->r10 == 0) {
 		if (frame->rdx != 0)
 			syscall_error(frame, EFAULT);
@@ -151,14 +187,15 @@ syscall_sysctl(struct interrupt_frame *frame)
 	}
 	if (!vmm_validate_user_write(space, frame->r10, sizeof(capacity)) ||
 	    (frame->rdx != 0 && !vmm_copy_from_user(space, &capacity,
-	    frame->r10, sizeof(capacity)))) {
+				    frame->r10, sizeof(capacity)))) {
 		syscall_error(frame, EFAULT);
 		return frame;
 	}
-	uint64_t amount = frame->rdx == 0 ? value.size :
-	    capacity < value.size ? capacity : value.size;
+	uint64_t amount = frame->rdx == 0	   ? value->size
+			  : capacity < value->size ? capacity
+						   : value->size;
 	if (frame->rdx != 0 && amount != 0 &&
-	    !vmm_copy_to_user(space, frame->rdx, value.data, (size_t)amount)) {
+	    !vmm_copy_to_user(space, frame->rdx, value->data, (size_t)amount)) {
 		syscall_error(frame, EFAULT);
 		return frame;
 	}
@@ -166,13 +203,41 @@ syscall_sysctl(struct interrupt_frame *frame)
 		syscall_error(frame, EFAULT);
 		return frame;
 	}
-	if (frame->rdx != 0 && capacity < value.size)
+	if (frame->rdx != 0 && capacity < value->size)
 		syscall_error(frame, ENOMEM);
 	else
 		frame->rax = 0;
 	return frame;
 }
 
+static struct interrupt_frame *syscall_sysctl(struct interrupt_frame *frame)
+{
+	int name[2];
+	struct sysctl_value value = {0};
+	if (frame->rsi != 2) {
+		syscall_error(frame, EINVAL);
+		return frame;
+	}
+	if (!vmm_copy_from_user(
+		vmm_active_address_space(), name, frame->rdi, sizeof(name))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	/* Writes must not cause even a read-only snapshot to enumerate
+	 * hardware. */
+	if (frame->r8 != 0 || frame->r9 != 0) {
+		syscall_error(frame, frame->r8 ? EPERM : EINVAL);
+		return frame;
+	}
+	int error = sysctl_value(name, &value);
+	if (error)
+		syscall_error(frame, error);
+	else
+		frame = sysctl_copy_result(frame, &value);
+	if (value.allocated != NULL)
+		kheap_free(value.allocated);
+	return frame;
+}
 static uint64_t
 errno_from_module(enum kernel_module_error error)
 {

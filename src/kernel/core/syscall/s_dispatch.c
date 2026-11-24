@@ -93,7 +93,6 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_SETRESUID] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_SETRESGID] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_UMASK] = { .bsp = syscall_proc_bsp },
-	[SYSCALL_PROCESS_INFO] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_FORK] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_EXECVE] = { .bsp = syscall_proc_bsp },
 	[SYSCALL_WAITPID] = { .bsp = syscall_proc_bsp },

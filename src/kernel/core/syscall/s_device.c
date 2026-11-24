@@ -1,4 +1,5 @@
 #include "syscall_internal.h"
+#include <string.h>
 
 #include "abi/disk.h"
 #include "abi/audio.h"
@@ -18,6 +19,8 @@
 #include "kernel/usb_host.h"
 #include "kernel/unix_socket.h"
 #include "kernel/vmm.h"
+#include "kernel/heap.h"
+#include "abi/hda.h"
 
 struct interrupt_frame *
 syscall_device_bsp(struct interrupt_frame *frame)
@@ -176,6 +179,40 @@ syscall_device_bsp(struct interrupt_frame *frame)
 
 			if (object == NULL) {
 				syscall_error(frame, 9);
+				break;
+			}
+			if (frame->rsi == OS_HDA_PROBE || frame->rsi == OS_HDA_TONE) {
+				struct os_credentials credentials;
+				if (!process_current_credentials(&credentials) ||
+				    credentials.effective_uid != 0) {
+					syscall_error(frame, EPERM);
+					break;
+				}
+				if (object->operations->ioctl == NULL) {
+					syscall_error(frame, ENOTTY);
+					break;
+				}
+				if (!vmm_validate_user_write(vmm_active_address_space(), frame->rdx,
+					sizeof(struct os_hda_report))) {
+					syscall_error(frame, EFAULT);
+					break;
+				}
+				struct os_hda_report *report = kheap_alloc(sizeof(*report));
+				if (report == NULL) {
+					syscall_error(frame, ENOMEM);
+					break;
+				}
+				memset(report, 0, sizeof(*report));
+				int error =
+				    object->operations->ioctl(object->context, frame->rsi, report);
+				if (error == 0 && !vmm_copy_to_user(vmm_active_address_space(),
+						      frame->rdx, report, sizeof(*report)))
+					error = -EFAULT;
+				kheap_free(report);
+				if (error)
+					syscall_error(frame, errno_from_kernel(error));
+				else
+					frame->rax = 0;
 				break;
 			}
             if (frame->rsi == OS_AUDIO_GETINFO || frame->rsi == OS_AUDIO_SETVOLUME ||

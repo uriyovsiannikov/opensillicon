@@ -54,6 +54,7 @@ install -D -m 644 "$root/src/include/abi/dirent.h" "$build/sysroot/include/abi/d
 install -D -m 644 "$root/src/include/abi/inet.h" "$build/sysroot/include/abi/inet.h"
 install -D -m 644 "$root/src/include/abi/socket.h" "$build/sysroot/include/abi/socket.h"
 install -D -m 644 "$root/src/include/abi/unix_socket.h" "$build/sysroot/include/abi/unix_socket.h"
+install -D -m 644 "$root/src/include/abi/hda.h" "$build/sysroot/include/abi/hda.h"
 install -D -m 644 "$root/src/include/abi/icmp.h" "$build/sysroot/include/abi/icmp.h"
 install -D -m 644 "$root/src/include/abi/ioctl.h" "$build/sysroot/include/abi/ioctl.h"
 install -D -m 644 "$root/src/include/abi/framebuffer.h" "$build/sysroot/include/abi/framebuffer.h"

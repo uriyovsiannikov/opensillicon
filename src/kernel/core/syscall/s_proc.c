@@ -181,26 +181,6 @@ syscall_proc_bsp(struct interrupt_frame *frame)
 		else
 			frame->rax = process_umask((uint32_t)frame->rdi);
 		break;
-	case SYSCALL_PROCESS_INFO:
-		{
-			struct os_process_info entries[OS_PROCESS_INFO_MAX];
-			struct address_space *space = vmm_active_address_space();
-			uint64_t capacity = frame->rsi;
-
-			if (capacity == 0 || capacity > OS_PROCESS_INFO_MAX) {
-				syscall_error(frame, EINVAL);
-				break;
-			}
-			int count = process_info_snapshot(entries, (size_t)capacity);
-			if (count < 0)
-				syscall_error(frame, (uint64_t)-count);
-			else if (!vmm_copy_to_user(space, frame->rdi, entries,
-			    (size_t)count * sizeof(entries[0])))
-				syscall_error(frame, EFAULT);
-			else
-				frame->rax = (uint64_t)count;
-		}
-		break;
 	case SYSCALL_FORK:
 		frame = process_fork(frame, &error);
 		break;

@@ -47,6 +47,7 @@
 #include "abi/unix_socket.h"
 #include <sys/icmp.h>
 #include "abi/ioctl.h"
+#include "abi/hda.h"
 extern long __os_raw(long,long,long,long,long,long,long);
 static _Thread_local int tls = 123;
 static int constructed;
@@ -1575,24 +1576,66 @@ static int nanosleep_check(void)
  CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
  return 0;
 }
-static int procfs_directory_check(void)
+static int system_info_check(void)
 {
- const char *names[]={"self","uptime","meminfo","cpuinfo","modules","pci","usb",
+ const char *retired[]={"self","uptime","meminfo","cpuinfo","modules","pci","usb",
      "disks","cmdline","netpci","dapi","audiopci","hdacodecs","hdatest"};
- DIR *directory=opendir("/proc"); CHECK(directory);
- uint64_t inodes[sizeof names/sizeof names[0]];
- for(size_t i=0;i<sizeof names/sizeof names[0];i++) {
-  struct dirent *entry=readdir(directory);
-  CHECK(entry && !strcmp(entry->d_name,names[i]) && entry->d_ino);
-  CHECK(entry->d_type==(i==0 ? DT_DIR : DT_REG));
-  inodes[i]=entry->d_ino;
-  for(size_t j=0;j<i;j++) CHECK(inodes[j]!=inodes[i]);
+ for(size_t i=0;i<sizeof retired/sizeof retired[0];i++) {
+  char path[64];snprintf(path,sizeof path,"/proc/%s",retired[i]);struct stat st;
+  CHECK(stat(path,&st)==-1 && errno==ENOENT);
  }
- errno=0;
- CHECK(!readdir(directory) && !errno && closedir(directory)==0);
- struct stat st;
- CHECK(stat("/proc/netif",&st)==-1 && errno==ENOENT);
- CHECK(stat("/proc/dapi",&st)==0 && st.st_ino==inodes[10]);
+ char bootargs[128];size_t bootargs_length=sizeof bootargs;
+ CHECK(sysctlbyname("kern.bootargs",bootargs,&bootargs_length,NULL,0)==0 &&
+     !strcmp(bootargs,"os_probe=bootargs token=verified") && bootargs_length==strlen(bootargs)+1);
+ uint64_t before,after;size_t length=sizeof before;
+ CHECK(sysctlbyname("kern.uptime_ns",&before,&length,NULL,0)==0 && length==sizeof before);
+ length=sizeof after;
+ CHECK(sysctlbyname("kern.uptime_ns",&after,&length,NULL,0)==0 && after>=before);
+ int version=0;length=sizeof version;
+ CHECK(sysctlbyname("kern.driverapi",&version,&length,NULL,0)==0 && version>0);
+ const char *reports[]={"hw.cpuinfo","hw.pci","hw.netpci","hw.audiopci","hw.usb","hw.disks","kern.modules"};
+ for(size_t i=0;i<sizeof reports/sizeof reports[0];i++) {
+  struct {char byte;unsigned char guard;} short_report={0,0xd6};length=1;
+  int result=sysctlbyname(reports[i],&short_report.byte,&length,NULL,0);
+  CHECK((result==0 || (result==-1 && errno==ENOMEM)) && length==1 && short_report.guard==0xd6);
+  CHECK(sysctlbyname(reports[i],NULL,&length,"x",1)==-1 && errno==EPERM);
+ }
+ char *snapshot=malloc(OS_SYSCTL_REPORT_MAX);CHECK(snapshot);
+ length=OS_SYSCTL_REPORT_MAX;
+ CHECK(sysctlbyname("hw.cpuinfo",snapshot,&length,NULL,0)==0 &&
+     length>1 && snapshot[length-1]==0);
+ unsigned eax,ebx,ecx,edx;char cpu_vendor[13];
+ __asm__ volatile("cpuid" : "=a"(eax),"=b"(ebx),"=c"(ecx),"=d"(edx) : "a"(0),"c"(0));
+ memcpy(cpu_vendor,&ebx,4);memcpy(cpu_vendor+4,&edx,4);memcpy(cpu_vendor+8,&ecx,4);cpu_vendor[12]=0;
+ char vendor_line[32];snprintf(vendor_line,sizeof vendor_line,"vendor_id: %s",cpu_vendor);
+ CHECK(strstr(snapshot,vendor_line)!=NULL && strstr(snapshot,"processors online: ")!=NULL);
+ length=OS_SYSCTL_REPORT_MAX;
+ CHECK(sysctlbyname("hw.netpci",snapshot,&length,NULL,0)==0 &&
+     strstr(snapshot,"Ethernet")!=NULL && strstr(snapshot,"8086")!=NULL);
+ length=OS_SYSCTL_REPORT_MAX;
+ CHECK(sysctlbyname("hw.disks",snapshot,&length,NULL,0)==0 &&
+     strstr(snapshot,"NAME SECTORS SECTOR_SIZE BYTES\n")!=NULL);
+ length=OS_SYSCTL_REPORT_MAX;
+ CHECK(sysctlbyname("kern.modules",snapshot,&length,NULL,0)==0 && strstr(snapshot,"e1000\n")!=NULL);
+ free(snapshot);
+ int fd=open("/dev/hda",O_RDWR);CHECK(fd>=0);
+ CHECK(ioctl(fd,OS_HDA_PROBE,(void *)1)==-1 && errno==EFAULT);
+ CHECK(ioctl(fd,OS_HDA_TONE,(void *)1)==-1 && errno==EFAULT);
+ struct os_hda_report *report=malloc(sizeof(*report));CHECK(report);
+ CHECK(ioctl(fd,OS_HDA_PROBE,report)==0 && report->length>0 && report->length<=sizeof report->text);
+ pid_t child=fork();CHECK(child>=0);
+ if(!child) {
+  if(setgid(1000) || setuid(1000))_exit(90);
+  if(ioctl(fd,OS_HDA_TONE,(void *)1)!=-1 || errno!=EPERM)_exit(91);
+  if(ioctl(fd,OS_HDA_PROBE,report)!=-1 || errno!=EPERM)_exit(92);
+  int control=open("/dev/hda",O_RDWR);
+  if(control!=-1 || errno!=EACCES)_exit(93);
+  _exit(0);
+ }
+ int status;CHECK(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ CHECK(close(fd)==0);fd=open("/dev/null",O_RDWR);CHECK(fd>=0);
+ CHECK(ioctl(fd,OS_HDA_PROBE,report)==-1 && errno==ENOTTY);
+ CHECK(close(fd)==0);free(report);
  return 0;
 }
 static int sysctl_check(void)
@@ -1651,8 +1694,9 @@ static int sysctl_check(void)
   if(nodes[i].kind==OS_SYSCTL_INT32) CHECK(bytes==sizeof(int32_t));
   if(nodes[i].kind==OS_SYSCTL_UINT64) CHECK(bytes==sizeof(uint64_t));
   if(nodes[i].kind==OS_SYSCTL_STRING) {
-   char text[128]; size_t capacity=sizeof text;
+   char *text=malloc(bytes); CHECK(text); size_t capacity=bytes;
    CHECK(sysctlbyname(nodes[i].name,text,&capacity,NULL,0)==0 && capacity==bytes && text[bytes-1]==0);
+   free(text);
   }
  }
  size_t length=0;
@@ -1755,7 +1799,7 @@ int main(int argc, char **argv)
  errno=0;
  if(syscall(SYS_ptrace,0,0,0)!=-1 || errno!=ENOSYS) return 6;
  CHECK(__os_raw(SYSCALL_GET_ABI_VERSION,0,0,0,0,0,0)==SYSCALL_ABI_VERSION);
- const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,47,49,50,51,53,58,63,67,69,81,82,83,84,85,86,87,88,89,90,91,92,93,94,101,109,121};
+ const long retired[]={4,5,6,7,8,9,10,14,17,23,33,34,41,43,44,45,46,47,49,50,51,53,58,63,67,69,81,82,83,84,85,86,87,88,89,90,91,92,93,94,96,101,109,121};
  for(size_t i=0;i<sizeof retired/sizeof retired[0];i++)
   CHECK(__os_raw(retired[i],0,0,0,0,0,0)==-78);
  CHECK(__os_raw(SYSCALL_EXECVE,(long)"/sbin/init",1,0,0,0,0)==-EFAULT);
@@ -1763,8 +1807,8 @@ int main(int argc, char **argv)
  if(clock_gettime(CLOCK_MONOTONIC,&t)) return 5;
  int sleep_result=nanosleep_check();
  if(sleep_result) return sleep_result;
- int procfs_result=procfs_directory_check();
- if(procfs_result) return procfs_result;
+ int info_result=system_info_check();
+ if(info_result) return info_result;
  int sysctl_result=sysctl_check();
  if(sysctl_result) return sysctl_result;
  int large_io_result=large_iovec_check();

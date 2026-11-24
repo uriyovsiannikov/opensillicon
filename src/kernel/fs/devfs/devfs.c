@@ -12,6 +12,8 @@
 #include "kernel/random.h"
 #include "kernel/tty.h"
 #include "kernel/hda_audio.h"
+#include "kernel/hda_probe.h"
+#include "abi/hda.h"
 
 enum devfs_device {
 	DEVFS_DIRECTORY,
@@ -22,7 +24,8 @@ enum devfs_device {
 	DEVFS_RANDOM,
 	DEVFS_URANDOM,
 	DEVFS_DISK,
-	DEVFS_AUDIO
+	DEVFS_AUDIO,
+	DEVFS_HDA_CONTROL
 };
 
 struct devfs_node {
@@ -41,6 +44,7 @@ static int devfs_read(struct vnode *, uint64_t, void *, size_t, size_t *);
 static int devfs_write(struct vnode *, uint64_t, const void *, size_t, size_t *);
 static int devfs_readdir(struct vnode *, uint64_t, struct vfs_dirent *);
 static void devfs_destroy(struct vnode *);
+static int devfs_control_ioctl(struct vnode *, uint64_t, void *);
 static int devfs_disk_ioctl(struct vnode *, uint64_t, void *);
 
 static const struct vnode_operations devfs_operations = {
@@ -48,7 +52,8 @@ static const struct vnode_operations devfs_operations = {
 	.read = devfs_read,
 	.write = devfs_write,
 	.readdir = devfs_readdir,
-	.destroy = devfs_destroy
+	.destroy = devfs_destroy,
+	.ioctl = devfs_control_ioctl
 };
 
 static const struct vnode_operations devfs_audio_operations = {
@@ -64,6 +69,22 @@ static const struct vnode_operations devfs_disk_operations = {
     .destroy = devfs_destroy,
 };
 
+static int devfs_control_ioctl(
+    struct vnode *vnode, uint64_t request, void *argument)
+{
+	struct devfs_node *node = vnode->private_data;
+	if (node->device != DEVFS_HDA_CONTROL ||
+	    (request != OS_HDA_PROBE && request != OS_HDA_TONE))
+		return -ENOTTY;
+	struct os_hda_report *report = argument;
+	size_t length = 0;
+	int error =
+	    (request == OS_HDA_TONE ? hda_tone_snapshot : hda_probe_snapshot)(
+		report->text, sizeof(report->text), &length);
+	if (error == 0)
+		report->length = length;
+	return error;
+}
 static int
 devfs_disk_ioctl(struct vnode *vnode, uint64_t request, void *argument)
 {
@@ -194,6 +215,7 @@ devfs_allocate(const char *name, enum devfs_device device)
 		.references = 1,
 		.private_data = node
 	};
+	if (device == DEVFS_HDA_CONTROL) node->vnode.mode = 0600;
     if (device == DEVFS_AUDIO) {
         node->vnode.operations = &devfs_audio_operations;
         node->vnode.mode = 0660;
@@ -283,6 +305,7 @@ devfs_read(struct vnode *vnode, uint64_t offset, void *buffer, size_t length,
 		return 0;
 	case DEVFS_DISK:
 		return devfs_disk_io(node, offset, buffer, length, read_length, false);
+	case DEVFS_HDA_CONTROL:
 	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
 		return -EINVAL;
@@ -318,6 +341,7 @@ devfs_write(struct vnode *vnode, uint64_t offset, const void *buffer,
 		return -EINVAL;
 	case DEVFS_DISK:
 		return devfs_disk_io(node, offset, (void *)buffer, length, write_length, true);
+	case DEVFS_HDA_CONTROL:
 	case DEVFS_AUDIO:
 	case DEVFS_DIRECTORY:
 		return -EINVAL;
@@ -413,7 +437,8 @@ devfs_create_root(void)
 		{ "zero", DEVFS_ZERO },
 		{ "random", DEVFS_RANDOM },
 		{ "urandom", DEVFS_URANDOM },
-		{ "audio", DEVFS_AUDIO }
+		{ "audio", DEVFS_AUDIO },
+		{ "hda", DEVFS_HDA_CONTROL }
 	};
 	struct devfs_node *root;
 	struct devfs_node **tail;

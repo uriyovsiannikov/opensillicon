@@ -23,7 +23,7 @@ playback. This is a bring-up test, not a general-purpose PCM device API.
 
 Codec and tone reports are separately cached for the boot. The tone plays only
 on the first `--tone` call after boot; later calls display its cached report.
-Reading `/proc/hdacodecs` or `/proc/hdatest` requires root. The image's doas
+The `/dev/hda` diagnostic ioctls require root. The image's doas
 policy permits UID 1000 to run these two exact audioconf commands.
 
 The QEMU test under `src/build/audio-check` booted the tone command via doas from

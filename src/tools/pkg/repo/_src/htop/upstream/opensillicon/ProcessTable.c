@@ -10,11 +10,11 @@ in the source distribution for its full text.
 #include "UnsupportedProcessTable.h"
 
 #include "abi/process_info.h"
-#include "abi/syscall.h"
 #include "UsersTable.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/sysctl.h>
 
 #include "ProcessTable.h"
 #include "UnsupportedProcess.h"
@@ -36,8 +36,6 @@ void ProcessTable_delete(Object* cast) {
    free(this);
 }
 
-extern long __libc_call(long, long, long, long, long, long, long);
-
 void ProcessTable_goThroughEntries(ProcessTable* super) {
    static const ProcessState states[] = {
       [OS_PROCESS_READY] = RUNNABLE,
@@ -46,16 +44,15 @@ void ProcessTable_goThroughEntries(ProcessTable* super) {
       [OS_PROCESS_ZOMBIE] = ZOMBIE,
    };
    struct os_process_info entries[OS_PROCESS_INFO_MAX];
-   long count = __libc_call(SYSCALL_PROCESS_INFO, (long)entries,
-                             OS_PROCESS_INFO_MAX, 0, 0, 0, 0);
-   if (count < 0) {
+   size_t size = sizeof(entries);
+   if (sysctlbyname("kern.proc.all", entries, &size, NULL, 0) < 0) {
       /* Keep the previous rows if a refresh fails. */
       for (int i = 0; i < Vector_size(super->super.rows); i++)
          ((Process*)Vector_get(super->super.rows, i))->super.updated = true;
       return;
    }
 
-   for (long i = 0; i < count; i++) {
+   for (size_t i = 0; i < size / sizeof(entries[0]); i++) {
       const struct os_process_info* entry = &entries[i];
       if (entry->pid > INT_MAX)
          continue;

@@ -19,13 +19,6 @@ enum process_state {
 	PROCESS_ZOMBIE = OS_PROCESS_ZOMBIE
 };
 
-struct process_status {
-	uint64_t pid;
-	uint64_t parent_pid;
-	uint32_t state;
-	uint8_t exit_status;
-};
-
 void process_system_init(void);
 uint64_t process_run_path(const char *path);
 struct fd_table *process_current_fd_table(void);
@@ -42,7 +35,6 @@ int process_chdir(const char *path);
 bool process_directory_busy(const char *canonical_path);
 int process_getcwd(char *buffer, size_t capacity);
 int process_resolve_path(const char *path, char *output, size_t capacity);
-int process_current_status(struct process_status *entry);
 int process_info_snapshot(struct os_process_info *entries, size_t capacity);
 void process_syscall_retry_begin(void);
 /* Snapshot readiness before a local I/O attempt; publish a wait only if

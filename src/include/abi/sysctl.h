@@ -2,6 +2,7 @@
 #define ABI_SYSCTL_H
 
 #define CTL_MAXNAME 2U
+#define OS_SYSCTL_REPORT_MAX 16384U
 #define CTL_KERN 1
 #define CTL_VM 2
 #define CTL_HW 6
@@ -23,6 +24,16 @@ enum os_sysctl_kind {
 	X(KERN_HOSTNAME, CTL_KERN, 10, "kern.hostname", OS_SYSCTL_STRING) \
 	X(KERN_PROC_ALL, CTL_KERN, 14, "kern.proc.all", OS_SYSCTL_BYTES) \
 	X(KERN_MAXFILESPERPROC, CTL_KERN, 28, "kern.maxfilesperproc", OS_SYSCTL_INT32) \
+	X(KERN_BOOTARGS, CTL_KERN, 38, "kern.bootargs", OS_SYSCTL_STRING) \
+	X(KERN_DRIVERAPI, CTL_KERN, 39, "kern.driverapi", OS_SYSCTL_INT32) \
+	X(KERN_MODULES, CTL_KERN, 40, "kern.modules", OS_SYSCTL_STRING) \
+	X(KERN_UPTIME_NS, CTL_KERN, 41, "kern.uptime_ns", OS_SYSCTL_UINT64) \
+	X(HW_CPUINFO, CTL_HW, 20, "hw.cpuinfo", OS_SYSCTL_STRING) \
+	X(HW_PCI, CTL_HW, 21, "hw.pci", OS_SYSCTL_STRING) \
+	X(HW_USB, CTL_HW, 22, "hw.usb", OS_SYSCTL_STRING) \
+	X(HW_DISKS, CTL_HW, 23, "hw.disks", OS_SYSCTL_STRING) \
+	X(HW_NETPCI, CTL_HW, 24, "hw.netpci", OS_SYSCTL_STRING) \
+	X(HW_AUDIOPCI, CTL_HW, 25, "hw.audiopci", OS_SYSCTL_STRING) \
 	X(NET_INTERFACE, CTL_NET, 1, "net.interface", OS_SYSCTL_STRING) \
 	X(NET_IPV4_CONFIG, CTL_NET, 2, "net.inet.ip.config", OS_SYSCTL_BYTES) \
 	X(NET_IPV4_DNS, CTL_NET, 3, "net.inet.ip.dns", OS_SYSCTL_BYTES) \

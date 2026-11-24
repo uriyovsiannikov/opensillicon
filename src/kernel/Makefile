@@ -58,7 +58,7 @@ $(BUILD_DIR)/main.o: src/kernel/main.c src/include/kernel/boot.h src/include/ker
 	src/include/kernel/smp.h \
 		src/include/arch/x86_64/ahci.h src/include/kernel/block.h \
 		src/include/kernel/block_silliconfs.h src/include/kernel/silliconfs.h \
-		src/include/kernel/devfs.h src/include/kernel/procfs.h \
+		src/include/kernel/devfs.h src/include/kernel/sysinfo.h \
 		src/include/arch/x86_64/fpu.h \
 		src/include/kernel/tty.h \
 		src/include/kernel/framebuffer_device.h \
@@ -177,9 +177,8 @@ $(BUILD_DIR)/devfs.o: src/kernel/fs/devfs/devfs.c src/include/kernel/devfs.h \
 $(BUILD_DIR)/hda_probe.o: src/kernel/drivers/audio/hda_probe.c src/include/kernel/hda_probe.h src/include/arch/x86_64/pci_resource.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/procfs.o: src/kernel/fs/procfs/procfs.c src/include/kernel/procfs.h \
-		src/include/kernel/vfs.h src/include/kernel/process.h src/include/kernel/timer.h \
-		src/include/kernel/heap.h src/include/kernel/pmm.h src/include/kernel/module.h | $(BUILD_DIR)
+$(BUILD_DIR)/sysinfo.o: src/kernel/core/sysinfo.c src/include/kernel/sysinfo.h \
+		src/include/abi/sysctl.h | $(BUILD_DIR)
 	$(CC) $(KERNEL_CFLAGS) -Iinclude -c $< -o $@
 
 $(BUILD_DIR)/ramfs.o: src/kernel/fs/ramfs/ramfs.c src/include/kernel/vfs.h \
@@ -521,7 +520,7 @@ KERNEL_OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/boot.o $(BUILD_DIR)/boot_entr
 	$(BUILD_DIR)/signal_state.o \
 	$(BUILD_DIR)/string.o $(BUILD_DIR)/vfs.o $(BUILD_DIR)/ramfs.o \
 	$(BUILD_DIR)/initramfs.o $(BUILD_DIR)/silliconfs.o \
-	$(BUILD_DIR)/devfs.o $(BUILD_DIR)/procfs.o $(BUILD_DIR)/hda_probe.o \
+	$(BUILD_DIR)/devfs.o $(BUILD_DIR)/sysinfo.o $(BUILD_DIR)/hda_probe.o \
 	$(ACPICA_OBJECTS)
 
 -include $(KERNEL_OBJECTS:.o=.d)
