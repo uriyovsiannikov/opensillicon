@@ -79,6 +79,8 @@ struct process {
 	uint8_t requested_exit_status;
 	uint64_t waiting_for;
 	uint64_t wake_tick;
+	uint64_t real_timer_deadline;
+	uint64_t real_timer_interval;
 	uint64_t select_deadline;
 	uint64_t nanosleep_start_tick;
 	int64_t nanosleep_seconds;
@@ -2293,6 +2295,28 @@ process_timer_wakeup(uint64_t ticks)
 		return;
 	process = process_head;
 	do {
+		if (process->real_timer_deadline != 0 &&
+		    ticks >= process->real_timer_deadline) {
+			bool notify;
+			uint64_t flags = spinlock_lock_irqsave(&signal_lock);
+			notify = process->signals.actions[OS_SIGALRM].handler !=
+			    OS_SIGNAL_IGNORE;
+			if (notify)
+				(void)os_signal_queue(&process->signals, OS_SIGALRM);
+			spinlock_unlock_irqrestore(&signal_lock, flags);
+			if (process->real_timer_interval != 0 &&
+			    ticks <= UINT64_MAX - process->real_timer_interval)
+				process->real_timer_deadline = ticks +
+				    process->real_timer_interval;
+			else {
+				process->real_timer_deadline = 0;
+				process->real_timer_interval = 0;
+			}
+			if (notify) {
+				process_wake_for_signal(process);
+				interrupt_ap_for_signal(process);
+			}
+		}
 		if (process->state == PROCESS_BLOCKED && process->wake_tick != 0 &&
 		    ticks >= process->wake_tick) {
 			process->wake_tick = 0;
@@ -2306,6 +2330,31 @@ process_timer_wakeup(uint64_t ticks)
 		}
 		process = process->next;
 	} while (process != process_head);
+}
+
+int
+process_real_timer(uint64_t value, uint64_t interval, bool update,
+    uint64_t *old_value, uint64_t *old_interval)
+{
+	uint64_t now;
+
+	if (!process_table_owned_here())
+		return EBUSY;
+	if (current_process == NULL)
+		return ESRCH;
+	now = timer_ticks();
+	if (old_value != NULL)
+		*old_value = current_process->real_timer_deadline > now ?
+		    current_process->real_timer_deadline - now : 0;
+	if (old_interval != NULL)
+		*old_interval = current_process->real_timer_interval;
+	if (update) {
+		if (value != 0 && value > UINT64_MAX - now)
+			return EINVAL;
+		current_process->real_timer_deadline = value == 0 ? 0 : now + value;
+		current_process->real_timer_interval = interval;
+	}
+	return 0;
 }
 
 struct interrupt_frame *

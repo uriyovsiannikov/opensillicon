@@ -104,3 +104,107 @@ syscall_time_local(struct interrupt_frame **result_frame)
 		return false;
 	}
 }
+
+static bool
+itimerval_to_ticks(const struct os_itimerval *value, uint64_t *timer_value,
+    uint64_t *timer_interval)
+{
+	const int64_t values[] = { value->value_seconds,
+	    value->value_microseconds, value->interval_seconds,
+	    value->interval_microseconds };
+	uint64_t *outputs[] = { timer_value, timer_interval };
+	size_t pair;
+
+	for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+		if (values[i] < 0)
+			return false;
+	}
+	if (value->value_microseconds >= 1000000 ||
+	    value->interval_microseconds >= 1000000)
+		return false;
+	for (pair = 0; pair < 2; pair++) {
+		uint64_t seconds = (uint64_t)values[pair * 2];
+		uint64_t microseconds = (uint64_t)values[pair * 2 + 1];
+		uint64_t fractional = (microseconds * TIMER_TICK_HZ + 999999U) /
+		    1000000U;
+		if (seconds > (UINT64_MAX - fractional) / TIMER_TICK_HZ)
+			return false;
+		*outputs[pair] = seconds * TIMER_TICK_HZ + fractional;
+	}
+	return true;
+}
+
+static void
+ticks_to_itimerval(uint64_t value, uint64_t interval,
+    struct os_itimerval *result)
+{
+	result->value_seconds = (int64_t)(value / TIMER_TICK_HZ);
+	result->value_microseconds = (int64_t)((value % TIMER_TICK_HZ) *
+	    1000000U / TIMER_TICK_HZ);
+	result->interval_seconds = (int64_t)(interval / TIMER_TICK_HZ);
+	result->interval_microseconds = (int64_t)((interval % TIMER_TICK_HZ) *
+	    1000000U / TIMER_TICK_HZ);
+}
+
+struct interrupt_frame *
+syscall_time_bsp(struct interrupt_frame *frame)
+{
+	struct address_space *space = vmm_active_address_space();
+	struct os_itimerval value;
+	uint64_t timer_value = 0, timer_interval = 0;
+	uint64_t old_value, old_interval;
+	bool update = frame->rax == SYSCALL_SETITIMER;
+	int error;
+
+	if (frame->rdi != 0) {
+		syscall_error(frame, EINVAL);
+		return frame;
+	}
+	if (!update && frame->rsi == 0) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	if (update) {
+		if (frame->rsi == 0 || !vmm_copy_from_user(space, &value,
+		    frame->rsi, sizeof(value))) {
+			syscall_error(frame, EFAULT);
+			return frame;
+		}
+		if (!itimerval_to_ticks(&value, &timer_value, &timer_interval)) {
+			syscall_error(frame, EINVAL);
+			return frame;
+		}
+	}
+	if (frame->rdx != 0 && !vmm_validate_user_write(space, frame->rdx,
+	    sizeof(value))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	if (!update && frame->rsi != 0 && !vmm_validate_user_write(space,
+	    frame->rsi, sizeof(value))) {
+		syscall_error(frame, EFAULT);
+		return frame;
+	}
+	error = process_real_timer(timer_value, timer_interval, update,
+	    &old_value, &old_interval);
+	if (error != 0) {
+		syscall_error(frame, error);
+		return frame;
+	}
+	if (frame->rdx != 0) {
+		ticks_to_itimerval(old_value, old_interval, &value);
+		if (!vmm_copy_to_user(space, frame->rdx, &value, sizeof(value))) {
+			syscall_error(frame, EFAULT);
+			return frame;
+		}
+	}
+	if (!update && frame->rsi != 0) {
+		ticks_to_itimerval(old_value, old_interval, &value);
+		if (!vmm_copy_to_user(space, frame->rsi, &value, sizeof(value))) {
+			syscall_error(frame, EFAULT);
+			return frame;
+		}
+	}
+	frame->rax = 0;
+	return frame;
+}
