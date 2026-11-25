@@ -102,18 +102,32 @@ int main(void)
 		struct timespec delay = {0, 300000000};
 		nanosleep(&delay, NULL);
 	}
-	children[2] = launch(wallpaper_args);
-	if (children[2] < 0) { failure = "fork wallpaper client"; failure_error = errno; goto cleanup; }
-	while (waitpid(children[2], &status, 0) < 0) {
-		if (errno == EINTR) continue;
-		failure = "wait for wallpaper client"; failure_error = errno;
-		goto cleanup;
-	}
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-		fputs("startx: could not set desktop wallpaper\n", stderr);
-	children[2] = -1;
+	/* The terminal must remain available even if wallpaper decoding stalls. */
 	children[3] = launch(term_args);
 	if (children[3] < 0) { failure = "fork terminal"; failure_error = errno; goto cleanup; }
+	children[2] = launch(wallpaper_args);
+	if (children[2] < 0) { failure = "fork wallpaper client"; failure_error = errno; goto cleanup; }
+	for (unsigned i = 0; i < 100 && !stopping; i++) {
+		pid_t pid = waitpid(children[2], &status, WNOHANG);
+		if (pid == children[2]) {
+			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+				fputs("startx: could not set desktop wallpaper\n", stderr);
+			children[2] = -1;
+			break;
+		}
+		if (pid < 0 && errno != EINTR) {
+			failure = "wait for wallpaper client"; failure_error = errno;
+			goto cleanup;
+		}
+		struct timespec delay = {0, 100000000};
+		nanosleep(&delay, NULL);
+	}
+	if (children[2] > 0) {
+		fputs("startx: wallpaper timed out; continuing without it\n", stderr);
+		kill(children[2], SIGKILL);
+		while (waitpid(children[2], &status, 0) < 0 && errno == EINTR) {}
+		children[2] = -1;
+	}
 	puts("startx: TinyX, twm and xterm launched");
 	while (!stopping) {
 		pid_t pid = waitpid(-1, &status, 0);
