@@ -39,7 +39,7 @@ source = Path(sys.argv[1])
 source.rename(source.with_name("source.previous." + str(time.time_ns())))
 RESTART
 fi
-f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -Wno-error=parentheses -Wno-error=undef -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/build/musl/sysroot/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxcb/include -I$p/include -I$x/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
+f="-Os -flto -ffreestanding -fno-builtin -ffunction-sections -fdata-sections -fno-stack-protector -fno-pic -fno-pie -m64 -mno-red-zone -Wno-error=parentheses -Wno-error=undef -D_XOPEN_SOURCE=700 -DOPEN_SILLICON -nostdinc -isystem $($cc -print-file-name=include) -I$root/src/build/musl/sysroot/include -I$root/src/tools/pkg/repo/_src/twm/deps/libxcb/include -I$p/include -I$x/include -I$root/src/tools/pkg/repo/_src/twm/deps/libz -idirafter /usr/include"
 export PKG_CONFIG_LIBDIR="$p/lib/pkgconfig:$x/lib/pkgconfig:$x/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 # Describe the actual native XCB build, which has no XDMCP or host pthread libs.
