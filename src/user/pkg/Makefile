@@ -283,8 +283,8 @@ $(BUILD_DIR)/pkg/xorg-stage.ready: $(XORG_BINS) $(XORG_FONTS) \
 	cp src/tools/pkg/repo/_src/twm/startx/background.jpg $(XORG_STAGE)/usr/share/xorg/background.jpg
 	touch $@
 
-src/tools/pkg/repo/_pkges/twm-1.0.0+abi23.2.spkg: $(BUILD_DIR)/pkg/xorg-stage.ready $(BUILD_DIR)/pkg/pkg-build
-	$(BUILD_DIR)/pkg/pkg-build twm 1.0.0+abi23.2 $(XORG_STAGE) $@ 'TinyX desktop with twm, X11 clients and fonts'
+src/tools/pkg/repo/_pkges/twm-1.0.0.spkg: $(BUILD_DIR)/pkg/xorg-stage.ready $(BUILD_DIR)/pkg/pkg-build
+	$(BUILD_DIR)/pkg/pkg-build twm 1.0.0 $(XORG_STAGE) $@ 'TinyX desktop with twm, X11 clients and fonts'
 
 X11_CLIENT_PREFIX := $(BUILD_DIR)/x11/prefix
 X11_CLIENT_CFLAGS := -std=c11 -O2 -ffreestanding -fno-builtin -fno-strict-aliasing \
@@ -319,15 +319,15 @@ src/tools/pkg/repo/_pkges/$(1)-$(2).spkg: $(BUILD_DIR)/x11/clients/$(1) \
 	$(BUILD_DIR)/pkg/pkg-build $(1) $(2) $(BUILD_DIR)/pkg/$(1)-stage $$@ '$(3)'
 endef
 
-$(eval $(call X11_CLIENT_PACKAGE,xeyes,1.3.1+abi23,X11 eyes that follow the pointer))
-$(eval $(call X11_CLIENT_PACKAGE,xclock,1.2.0+abi23,Analog and digital clock for X11))
+$(eval $(call X11_CLIENT_PACKAGE,xeyes,1.3.1,X11 eyes that follow the pointer))
+$(eval $(call X11_CLIENT_PACKAGE,xclock,1.2.0,Analog and digital clock for X11))
 
 FETCH_STAGE := $(BUILD_DIR)/fetch/stage
-src/tools/pkg/repo/_pkges/fetch-1.0.0+abi23.spkg: $(BUILD_DIR)/coreutils/fetch.elf \
+src/tools/pkg/repo/_pkges/fetch-1.0.0.spkg: $(BUILD_DIR)/coreutils/fetch.elf \
 		src/user/pkg/Makefile $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(FETCH_STAGE)
 	install -D -m 755 $(BUILD_DIR)/coreutils/fetch.elf $(FETCH_STAGE)/usr/bin/fetch
-	$(BUILD_DIR)/pkg/pkg-build fetch 1.0.0+abi23 $(FETCH_STAGE) $@ 'OpenSillicon system information command'
+	$(BUILD_DIR)/pkg/pkg-build fetch 1.0.0 $(FETCH_STAGE) $@ 'OpenSillicon system information command'
 
 NANO_DIR := src/tools/pkg/repo/_src/nano
 NANO_STAGE := $(BUILD_DIR)/nano/stage
@@ -338,7 +338,7 @@ $(BUILD_DIR)/nano/nano: $(NANO_SOURCES) $(NANO_DIR)/build.sh $(NCURSES_ARCHIVE) 
 		$(LIBC_ARCHIVE) $(LIBC_BUILD_DIR)/crt1.o src/user/c_linker.ld
 	sh $(NANO_DIR)/build.sh
 
-src/tools/pkg/repo/_pkges/nano-9.3.1+abi23.spkg: $(BUILD_DIR)/nano/nano \
+src/tools/pkg/repo/_pkges/nano-9.3.1.spkg: $(BUILD_DIR)/nano/nano \
 		$(NANO_DIR)/README.md $(NANO_DIR)/GPL-3.0.txt $(NANO_NCURSES_COPYING) \
 		$(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(NANO_STAGE)
@@ -346,7 +346,7 @@ src/tools/pkg/repo/_pkges/nano-9.3.1+abi23.spkg: $(BUILD_DIR)/nano/nano \
 	install -D -m 644 $(NANO_DIR)/GPL-3.0.txt $(NANO_STAGE)/usr/share/licenses/nano/GPL-3.0.txt
 	install -D -m 644 $(NANO_NCURSES_COPYING) $(NANO_STAGE)/usr/share/licenses/nano/ncurses-COPYING
 	install -D -m 644 $(NANO_DIR)/README.md $(NANO_STAGE)/usr/share/doc/nano/README.md
-	$(BUILD_DIR)/pkg/pkg-build nano 9.3.1+abi23 $(NANO_STAGE) $@ 'GNU nano text editor for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build nano 9.3.1 $(NANO_STAGE) $@ 'GNU nano text editor for OpenSillicon'
 
 HTOP_DIR := src/tools/pkg/repo/_src/htop
 HTOP_STAGE := $(BUILD_DIR)/htop/stage
@@ -360,7 +360,7 @@ $(BUILD_DIR)/htop/htop: $(HTOP_SOURCES) $(HTOP_DIR)/build.sh $(NCURSES_ARCHIVE) 
 		src/include/abi/process_info.h src/include/abi/syscall.h src/user/c_linker.ld
 	sh $(HTOP_DIR)/build.sh
 
-src/tools/pkg/repo/_pkges/htop-3.5.3.1+abi23.spkg: $(BUILD_DIR)/htop/htop \
+src/tools/pkg/repo/_pkges/htop-3.5.3.1.spkg: $(BUILD_DIR)/htop/htop \
 		$(HTOP_DIR)/README.md $(HTOP_DIR)/upstream/COPYING \
 		$(HTOP_NCURSES_COPYING) $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(HTOP_STAGE)
@@ -368,7 +368,7 @@ src/tools/pkg/repo/_pkges/htop-3.5.3.1+abi23.spkg: $(BUILD_DIR)/htop/htop \
 	install -D -m 644 $(HTOP_DIR)/upstream/COPYING $(HTOP_STAGE)/usr/share/licenses/htop/COPYING
 	install -D -m 644 $(HTOP_NCURSES_COPYING) $(HTOP_STAGE)/usr/share/licenses/htop/ncurses-COPYING
 	install -D -m 644 $(HTOP_DIR)/README.md $(HTOP_STAGE)/usr/share/doc/htop/README.md
-	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3.1+abi23 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build htop 3.5.3.1 $(HTOP_STAGE) $@ 'Interactive process viewer for OpenSillicon'
 
 QUAKE_DIR := src/tools/pkg/repo/_src/quake
 QUAKE_BUILD := $(BUILD_DIR)/quake
@@ -398,12 +398,12 @@ $(QUAKE_BUILD)/quake: $(QUAKE_OBJECTS) $(BUILD_DIR)/x11/.apps-ready \
 		-Wl,--start-group $(X11_DOOM_LIBS) $(X11_PREFIX)/lib/libi18n.a \
 		$(LIBC_ARCHIVE) -Wl,--end-group -lgcc -o $@
 
-src/tools/pkg/repo/_pkges/quake-1.09+abi23.spkg: $(QUAKE_BUILD)/quake $(QUAKE_DIR)/COPYING \
+src/tools/pkg/repo/_pkges/quake-1.09.spkg: $(QUAKE_BUILD)/quake $(QUAKE_DIR)/COPYING \
 		$(QUAKE_DIR)/README.md $(BUILD_DIR)/pkg/pkg-build
 	install -D -m 755 $< $(QUAKE_STAGE)/usr/bin/quake
 	install -D -m 644 $(QUAKE_DIR)/COPYING $(QUAKE_STAGE)/usr/share/licenses/quake/COPYING
 	install -D -m 644 $(QUAKE_DIR)/README.md $(QUAKE_STAGE)/usr/share/doc/quake/README.md
-	$(BUILD_DIR)/pkg/pkg-build quake 1.09+abi23 $(QUAKE_STAGE) $@ 'Quake software renderer for TinyX'
+	$(BUILD_DIR)/pkg/pkg-build quake 1.09 $(QUAKE_STAGE) $@ 'Quake software renderer for TinyX'
 
 JAVAC ?= javac
 JAR ?= jar
@@ -441,7 +441,7 @@ $(MINIJVM_BUILD)/minijvm_rt.jar: $(MINIJVM_CLASSES) $(MINIJVM_DIR)/opensillicon/
 $(MINIJVM_BUILD)/lwjgl.jar: $(MINIJVM_LWJGL_CLASSES) $(MINIJVM_DIR)/opensillicon/build-classlib.sh
 	sh $(MINIJVM_DIR)/opensillicon/build-classlib.sh $(MINIJVM_DIR)/lwjgl $@ $(JAVAC) $(JAR)
 
-src/tools/pkg/repo/_pkges/minijvm-2021.12.4+abi23.spkg: $(MINIJVM_BUILD)/java \
+src/tools/pkg/repo/_pkges/minijvm-2021.12.4.spkg: $(MINIJVM_BUILD)/java \
 		$(MINIJVM_BUILD)/minijvm_rt.jar $(MINIJVM_BUILD)/lwjgl.jar $(MINIJVM_DIR)/README.md $(MINIJVM_DIR)/LICENSE \
 		src/tools/pkg/repo/_src/twm/deps/libpng/LICENSE \
 		$(MINIJVM_DIR)/licenses/mbedtls.Apache-2.0.txt $(BUILD_DIR)/pkg/pkg-build
@@ -453,7 +453,7 @@ src/tools/pkg/repo/_pkges/minijvm-2021.12.4+abi23.spkg: $(MINIJVM_BUILD)/java \
 	install -D -m 644 src/tools/pkg/repo/_src/twm/deps/libpng/LICENSE $(MINIJVM_STAGE)/usr/share/licenses/minijvm/libpng.LICENSE
 	install -D -m 644 $(MINIJVM_DIR)/licenses/mbedtls.Apache-2.0.txt $(MINIJVM_STAGE)/usr/share/licenses/minijvm/mbedtls.Apache-2.0.txt
 	install -D -m 644 $(MINIJVM_DIR)/README.md $(MINIJVM_STAGE)/usr/share/doc/minijvm/README.md
-	$(BUILD_DIR)/pkg/pkg-build minijvm 2021.12.4+abi23 $(MINIJVM_STAGE) $@ 'miniJVM with a Java 8 class library subset'
+	$(BUILD_DIR)/pkg/pkg-build minijvm 2021.12.4 $(MINIJVM_STAGE) $@ 'miniJVM with a Java 8 class library subset'
 
 MINECRAFT_DIR := src/tools/pkg/repo/_src/minecraft
 MINECRAFT_BUILD := $(BUILD_DIR)/minecraft
@@ -475,7 +475,7 @@ $(MINECRAFT_BUILD)/compat.jar: $(MINECRAFT_DIR)/compat/ahy.java $(MINECRAFT_CLIE
 	$(JAVAC) --release 8 -encoding UTF-8 -cp $(MINECRAFT_CLIENT_JAR) -d $(MINECRAFT_BUILD)/compat $<
 	$(JAR) cf $@ -C $(MINECRAFT_BUILD)/compat .
 
-src/tools/pkg/repo/_pkges/minecraft-1.0.0+abi23.spkg: $(MINECRAFT_BUILD)/minecraft $(MINECRAFT_BUILD)/compat.jar \
+src/tools/pkg/repo/_pkges/minecraft-1.0.0.spkg: $(MINECRAFT_BUILD)/minecraft $(MINECRAFT_BUILD)/compat.jar \
 		$(MINECRAFT_DIR)/README.md $(MINECRAFT_CLIENT_JAR) $(MINECRAFT_SUPPORT_JARS) \
 		$(BUILD_DIR)/pkg/pkg-build
 	@test -f "$(MINECRAFT_CLIENT_JAR)" || { echo 'Minecraft 1.0.0 client JAR is missing; set MINECRAFT_CLIENT_JAR=...' >&2; exit 1; }
@@ -487,7 +487,7 @@ src/tools/pkg/repo/_pkges/minecraft-1.0.0+abi23.spkg: $(MINECRAFT_BUILD)/minecra
 	install -D -m 644 src/build/minecraft-package-input/jinput-2.0.5.jar $(MINECRAFT_STAGE)/usr/share/minecraft/jinput-2.0.5.jar
 	install -D -m 644 src/build/minecraft-package-input/jutils-1.0.0.jar $(MINECRAFT_STAGE)/usr/share/minecraft/jutils-1.0.0.jar
 	install -D -m 644 $(MINECRAFT_DIR)/README.md $(MINECRAFT_STAGE)/usr/share/doc/minecraft/README.md
-	$(BUILD_DIR)/pkg/pkg-build minecraft 1.0.0+abi23 $(MINECRAFT_STAGE) $@ 'Minecraft 1.0.0 client for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build minecraft 1.0.0 $(MINECRAFT_STAGE) $@ 'Minecraft 1.0.0 client for OpenSillicon'
 
 TCC_PACKAGE_DIR := src/tools/pkg/repo/_src/tcc
 TCC_SOURCE := $(TCC_PACKAGE_DIR)/tinycc
@@ -521,7 +521,7 @@ $(TCC_BUILD)/alloca86_64.o: $(TCC_SOURCE)/lib/alloca86_64.S
 $(TCC_BUILD)/libtcc1.a: $(TCC_RUNTIME)
 	$(AR) rcs $@ $^
 
-src/tools/pkg/repo/_pkges/tcc-0.9.27+abi23.spkg: $(TCC_BUILD)/tcc $(TCC_BUILD)/libtcc1.a \
+src/tools/pkg/repo/_pkges/tcc-0.9.27.spkg: $(TCC_BUILD)/tcc $(TCC_BUILD)/libtcc1.a \
 		$(TCC_BUILTIN_HEADERS) $(TCC_PORT)/include/stdint.h $(TCC_HEADERS) src/include/abi/disk.h \
 		$(TCC_SOURCE)/COPYING $(BUILD_DIR)/pkg/pkg-build
 	rm -rf $(TCC_STAGE)
@@ -533,7 +533,7 @@ src/tools/pkg/repo/_pkges/tcc-0.9.27+abi23.spkg: $(TCC_BUILD)/tcc $(TCC_BUILD)/l
 	cp -R src/build/musl/sysroot/include/. $(TCC_STAGE)/usr/lib/tcc/include/
 	install -m 644 $(TCC_BUILTIN_HEADERS) $(TCC_PORT)/include/stdint.h $(TCC_STAGE)/usr/lib/tcc/include/
 	install -D -m 644 $(TCC_SOURCE)/COPYING $(TCC_STAGE)/usr/share/licenses/tcc/COPYING
-	$(BUILD_DIR)/pkg/pkg-build tcc 0.9.27+abi23 $(TCC_STAGE) $@ 'Tiny C Compiler for OpenSillicon'
+	$(BUILD_DIR)/pkg/pkg-build tcc 0.9.27 $(TCC_STAGE) $@ 'Tiny C Compiler for OpenSillicon'
 
 NETSURF_RESOURCES := adblock.css credits.html default.css internal.css \
 	licence.html netsurf.png quirks.css welcome.html Messages
@@ -560,8 +560,8 @@ $(BUILD_DIR)/pkg/doom-stage.ready: $(BUILD_DIR)/doom/doom \
 	cp src/tools/pkg/repo/_src/doom/doom1.wad $(DOOM_STAGE)/usr/share/doom/doom.wad
 	touch $@
 
-src/tools/pkg/repo/_pkges/doom-1.0.0+abi23.spkg: $(BUILD_DIR)/pkg/doom-stage.ready $(BUILD_DIR)/pkg/pkg-build
-	$(BUILD_DIR)/pkg/pkg-build doom 1.0.0+abi23 $(DOOM_STAGE) $@ 'Doom with shareware game data'
+src/tools/pkg/repo/_pkges/doom-1.0.0.spkg: $(BUILD_DIR)/pkg/doom-stage.ready $(BUILD_DIR)/pkg/pkg-build
+	$(BUILD_DIR)/pkg/pkg-build doom 1.0.0 $(DOOM_STAGE) $@ 'Doom with shareware game data'
 
 -include $(PKG_OBJECTS:.o=.d)
 
