@@ -15,6 +15,7 @@ ARCHIVES = ROOT / "src/tools/pkg/repo/_pkges"
 PORTS = ROOT / "src/tools/pkg/repo/_src"
 REMOTE_BASE = "/opt/opensillicon-pkg"
 NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+\-]*$")
+PORT_ALIASES = {"openssh-client": "openssh"}
 
 
 def fail(message: str) -> "NoReturn":
@@ -106,7 +107,7 @@ def main() -> None:
     for name in selected:
         if not NAME_RE.fullmatch(name):
             fail(f"invalid package selector: {name!r}")
-        port = PORTS / name
+        port = PORTS / PORT_ALIASES.get(name, name)
         if not (port / "Makefile").is_file():
             fail(f"no package recipe at {port.relative_to(ROOT)}")
         subprocess.run(["make", "-C", str(port)], check=True)
