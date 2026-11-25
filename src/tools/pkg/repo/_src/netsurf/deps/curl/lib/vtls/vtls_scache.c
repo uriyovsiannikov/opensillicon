@@ -23,6 +23,10 @@
  ***************************************************************************/
 #include "curl_setup.h"
 
+#ifdef HAVE_REALPATH
+#include <stdlib.h>
+#endif
+
 #ifdef USE_SSL
 
 #include "urldata.h"
