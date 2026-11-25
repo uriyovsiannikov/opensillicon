@@ -154,6 +154,7 @@ syscall_time_bsp(struct interrupt_frame *frame)
 	uint64_t timer_value = 0, timer_interval = 0;
 	uint64_t old_value, old_interval;
 	bool update = frame->rax == SYSCALL_SETITIMER;
+	uint64_t old_address = update ? frame->rdx : frame->rsi;
 	int error;
 
 	if (frame->rdi != 0) {
@@ -175,13 +176,8 @@ syscall_time_bsp(struct interrupt_frame *frame)
 			return frame;
 		}
 	}
-	if (frame->rdx != 0 && !vmm_validate_user_write(space, frame->rdx,
+	if (old_address != 0 && !vmm_validate_user_write(space, old_address,
 	    sizeof(value))) {
-		syscall_error(frame, EFAULT);
-		return frame;
-	}
-	if (!update && frame->rsi != 0 && !vmm_validate_user_write(space,
-	    frame->rsi, sizeof(value))) {
 		syscall_error(frame, EFAULT);
 		return frame;
 	}
@@ -191,16 +187,9 @@ syscall_time_bsp(struct interrupt_frame *frame)
 		syscall_error(frame, error);
 		return frame;
 	}
-	if (frame->rdx != 0) {
+	if (old_address != 0) {
 		ticks_to_itimerval(old_value, old_interval, &value);
-		if (!vmm_copy_to_user(space, frame->rdx, &value, sizeof(value))) {
-			syscall_error(frame, EFAULT);
-			return frame;
-		}
-	}
-	if (!update && frame->rsi != 0) {
-		ticks_to_itimerval(old_value, old_interval, &value);
-		if (!vmm_copy_to_user(space, frame->rsi, &value, sizeof(value))) {
+		if (!vmm_copy_to_user(space, old_address, &value, sizeof(value))) {
 			syscall_error(frame, EFAULT);
 			return frame;
 		}
