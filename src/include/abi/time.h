@@ -12,6 +12,13 @@ struct os_timespec {
 	int64_t tv_nsec;
 };
 
+struct os_itimerval {
+	int64_t interval_seconds;
+	int64_t interval_microseconds;
+	int64_t value_seconds;
+	int64_t value_microseconds;
+};
+
 _Static_assert(sizeof(struct os_timespec) == 16, "native timespec ABI size");
 
 #endif

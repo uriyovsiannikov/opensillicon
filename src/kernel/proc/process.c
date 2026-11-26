@@ -2390,6 +2390,23 @@ process_exit(struct interrupt_frame *frame, uint64_t status)
 	    parent->waiting_for == process->id)) {
 		process_wake_retry(parent);
 	}
+	/* SIGCHLD's default disposition is ignore; preserve waitable zombies.
+	 * A caught SIGCHLD must wake event loops that reap children with
+	 * WNOHANG, even when the parent was not blocked in waitpid. */
+	if (parent != NULL && parent->state != PROCESS_ZOMBIE) {
+		bool notify;
+		uint64_t flags = spinlock_lock_irqsave(&signal_lock);
+		notify = parent->signals.actions[OS_SIGCHLD].handler !=
+		    OS_SIGNAL_DEFAULT && parent->signals.actions[OS_SIGCHLD].handler !=
+		    OS_SIGNAL_IGNORE;
+		if (notify)
+			(void)os_signal_queue(&parent->signals, OS_SIGCHLD);
+		spinlock_unlock_irqrestore(&signal_lock, flags);
+		if (notify) {
+			process_wake_for_signal(parent);
+			interrupt_ap_for_signal(parent);
+		}
+	}
 	return schedule_from(process);
 }
 

@@ -64,6 +64,7 @@ static const struct syscall_route syscall_routes[] = {
 	[SYSCALL_SHM_DETACH] = { .local = syscall_memory_local },
 	/* Sockets and network configuration */
 	[SYSCALL_SOCKET] = { .bsp = syscall_net_bsp },
+	[SYSCALL_SOCKETPAIR] = { .bsp = syscall_net_bsp },
 	[SYSCALL_GETSOCKNAME] = { .bsp = syscall_net_bsp },
 	[SYSCALL_GETPEERNAME] = { .bsp = syscall_net_bsp },
 	[SYSCALL_SOCKET_KIND] = { .bsp = syscall_net_bsp },
@@ -105,6 +106,8 @@ static const struct syscall_route syscall_routes[] = {
 	/* Time */
 	[SYSCALL_NANOSLEEP] = { .local = syscall_time_local },
 	[SYSCALL_CLOCK_GETTIME] = { .local = syscall_time_local },
+	[SYSCALL_SETITIMER] = { .bsp = syscall_time_bsp },
+	[SYSCALL_GETITIMER] = { .bsp = syscall_time_bsp },
 };
 
 int

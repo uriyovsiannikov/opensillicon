@@ -12,6 +12,7 @@
 #define UNIX_SOCKET_BUFFER_SIZE 65536U
 
 int unix_socket_create(struct fd_table *table);
+int unix_socket_pair(struct fd_table *table, int descriptors[2]);
 int unix_socket_bind(struct fd_object *object,
 	const struct os_unix_address *address, size_t length);
 int unix_socket_get_name(struct fd_object *object, bool peer,

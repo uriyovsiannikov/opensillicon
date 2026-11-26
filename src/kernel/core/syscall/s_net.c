@@ -15,6 +15,38 @@ syscall_net_bsp(struct interrupt_frame *frame)
 	uint64_t number = frame->rax;
 
 	switch (number) {
+	case SYSCALL_SOCKETPAIR:
+		{
+			int descriptors[2];
+			int result;
+			if (frame->rdi != OS_AF_UNIX) {
+				syscall_error(frame, EAFNOSUPPORT);
+				break;
+			}
+			if (frame->rsi != OS_SOCK_STREAM || frame->rdx != 0) {
+				syscall_error(frame, EPROTONOSUPPORT);
+				break;
+			}
+			if (!vmm_validate_user_write(vmm_active_address_space(),
+			    frame->r10, sizeof(descriptors))) {
+				syscall_error(frame, EFAULT);
+				break;
+			}
+			result = unix_socket_pair(current_fd_table(), descriptors);
+			if (result < 0) {
+				syscall_error(frame, errno_from_kernel(result));
+				break;
+			}
+			if (!vmm_copy_to_user(vmm_active_address_space(), frame->r10,
+			    descriptors, sizeof(descriptors))) {
+				(void)fd_close(current_fd_table(), descriptors[0]);
+				(void)fd_close(current_fd_table(), descriptors[1]);
+				syscall_error(frame, EFAULT);
+				break;
+			}
+			frame->rax = 0;
+		}
+		break;
 	case SYSCALL_SOCKET_KIND:
 		{
 			struct fd_object *object = fd_object_for_descriptor(

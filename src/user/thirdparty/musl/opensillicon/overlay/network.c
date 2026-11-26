@@ -67,6 +67,18 @@ static long set_flags(long fd,long flags)
 }
 long __os_network(long n,long a,long b,long c,long d,long e,long f)
 {
+ if(n==SYS_socketpair) {
+  if(b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK|SOCK_STREAM|SOCK_DGRAM)) return -EINVAL;
+  int pair[2];
+  long r=call(SYSCALL_SOCKETPAIR,a,b & ~(SOCK_CLOEXEC|SOCK_NONBLOCK),c,d,0,0);
+  if(r<0) return r;
+  memcpy(pair,(const void *)d,sizeof pair);
+  r=set_flags(pair[0],b);
+  if(r<0) { call(SYSCALL_CLOSE,pair[1],0,0,0,0,0); return r; }
+  r=set_flags(pair[1],b);
+  if(r<0) { call(SYSCALL_CLOSE,pair[0],0,0,0,0,0); return r; }
+  return 0;
+ }
  if(n==SYS_recvmsg || n==SYS_sendmsg) {
   struct msghdr *msg=(void *)b;
   if(!msg) return -EFAULT;

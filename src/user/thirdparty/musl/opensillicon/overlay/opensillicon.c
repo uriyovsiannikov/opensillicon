@@ -219,6 +219,10 @@ long __os_syscall(long n,long a,long b,long c,long d,long e,long f)
  }
  case SYS_setuid: s=SYSCALL_SETUID; break;
  case SYS_setgid: s=SYSCALL_SETGID; break;
+ case SYS_setitimer: s=SYSCALL_SETITIMER; break;
+ case SYS_getitimer: s=SYSCALL_GETITIMER; break;
+ case SYS_chown: return call(SYSCALL_CHOWN,a,(uint32_t)b,(uint32_t)c,0,0,0);
+ case SYS_fchown: return call(SYSCALL_FCHOWN,a,(uint32_t)b,(uint32_t)c,0,0,0);
  case SYS_setresuid:
   return call(SYSCALL_SETRESUID,(uint32_t)a,(uint32_t)b,(uint32_t)c,0,0,0);
  case SYS_setresgid:

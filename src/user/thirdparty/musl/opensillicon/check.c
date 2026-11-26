@@ -191,6 +191,13 @@ static int files_check(void)
  CHECK(lstat("data",&st)==0 && S_ISREG(st.st_mode));
  CHECK(chmod("data",0640)==0);
  CHECK(stat("data",&st)==0 && (st.st_mode&0777)==0640);
+ CHECK(chown("data",1000,1000)==0);
+ CHECK(stat("data",&st)==0 && st.st_uid==1000 && st.st_gid==1000);
+ int owner_fd=open("data",O_RDONLY);
+ CHECK(owner_fd>=0 && fchown(owner_fd,(uid_t)-1,0)==0);
+ CHECK(fstat(owner_fd,&st)==0 && st.st_uid==1000 && st.st_gid==0);
+ CHECK(fchown(owner_fd,0,(gid_t)-1)==0 && close(owner_fd)==0);
+ CHECK(stat("data",&st)==0 && st.st_uid==0 && st.st_gid==0);
  CHECK(access("data",R_OK)==0);
  FILE *f=fopen("data","w+");
  CHECK(f);
@@ -415,7 +422,11 @@ static int duplication_check(void)
  CHECK(close(source)==0 && unlink("/musl-dup")==0);
  return 0;
 }
-static volatile sig_atomic_t signals_received, signal_mask_ok;
+static volatile sig_atomic_t signals_received, signal_mask_ok, child_signal_count;
+static void handle_child(int signo)
+{
+ if(signo==SIGCHLD) child_signal_count++;
+}
 static void handle_usr1(int signo)
 {
  sigset_t blocked;
@@ -437,6 +448,17 @@ static int signals_check(void)
  CHECK(kill(getpid(),SIGUSR1)==0 && signals_received==1);
  CHECK(sigprocmask(SIG_UNBLOCK,&mask,NULL)==0 && signals_received==2);
  CHECK(sigaction(SIGUSR1,&previous,NULL)==0);
+ struct sigaction child_action={.sa_handler=handle_child}, child_previous;
+ sigemptyset(&child_action.sa_mask);
+ CHECK(sigaction(SIGCHLD,&child_action,&child_previous)==0);
+ sigemptyset(&mask); sigaddset(&mask,SIGCHLD);
+ CHECK(sigprocmask(SIG_BLOCK,&mask,NULL)==0);
+ pid_t child=fork(); CHECK(child>=0);
+ if(child==0) _exit(17);
+ int child_status;
+ CHECK(waitpid(child,&child_status,0)==child && WIFEXITED(child_status) && WEXITSTATUS(child_status)==17);
+ CHECK(child_signal_count==0 && sigprocmask(SIG_UNBLOCK,&mask,NULL)==0 && child_signal_count==1);
+ CHECK(sigaction(SIGCHLD,&child_previous,NULL)==0);
  CHECK(signal(SIGPIPE,SIG_IGN)!=SIG_ERR && raise(SIGPIPE)==0);
  action.sa_flags=SA_SIGINFO;
  CHECK(sigaction(SIGUSR1,&action,NULL)==-1 && errno==EOPNOTSUPP);
@@ -1192,6 +1214,17 @@ static int flock_check(void)
 }
 static int network_check(void)
 {
+ int pair[2];
+ CHECK(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, pair)==0);
+ CHECK((fcntl(pair[0], F_GETFD)&FD_CLOEXEC) && (fcntl(pair[1], F_GETFL)&O_NONBLOCK));
+ CHECK(write(pair[0], "a", 1)==1 && write(pair[1], "b", 1)==1);
+ char pair_byte;
+ CHECK(read(pair[0], &pair_byte, 1)==1 && pair_byte=='b');
+ CHECK(read(pair[1], &pair_byte, 1)==1 && pair_byte=='a');
+ CHECK(shutdown(pair[0], SHUT_WR)==0 && read(pair[1], &pair_byte, 1)==0);
+ CHECK(close(pair[0])==0 && close(pair[1])==0);
+ CHECK(socketpair(AF_INET, SOCK_STREAM, 0, pair)==-1 && errno==EAFNOSUPPORT);
+ CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, NULL)==-1 && errno==EFAULT);
  const long socket_cases[][4]={
   {OS_AF_UNIX,OS_SOCK_STREAM,0,OS_SOCKET_KIND_UNIX},
   {OS_AF_INET,OS_SOCK_STREAM,0,OS_SOCKET_KIND_TCP},

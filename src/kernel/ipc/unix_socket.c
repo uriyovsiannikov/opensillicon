@@ -309,6 +309,39 @@ unix_socket_create(struct fd_table *table)
 	return descriptor;
 }
 
+int
+unix_socket_pair(struct fd_table *table, int descriptors[2])
+{
+	int first = unix_socket_create(table);
+	int second;
+	struct unix_socket_state *left, *right;
+	uint64_t flags;
+
+	if (first < 0)
+		return first;
+	second = unix_socket_create(table);
+	if (second < 0) {
+		(void)fd_close(table, first);
+		return second;
+	}
+	left = socket_state(fd_object_for_descriptor(table, first));
+	right = socket_state(fd_object_for_descriptor(table, second));
+	flags = state_guard_enter();
+	left->peer = right;
+	right->peer = left;
+	left->connected = right->connected = true;
+	left->peer_pid = right->owner_pid;
+	left->peer_uid = right->owner_uid;
+	left->peer_gid = right->owner_gid;
+	right->peer_pid = left->owner_pid;
+	right->peer_uid = left->owner_uid;
+	right->peer_gid = left->owner_gid;
+	state_guard_leave(flags);
+	descriptors[0] = first;
+	descriptors[1] = second;
+	return 0;
+}
+
 /* Socket names go through normal cwd, directory search and inode checks. */
 static int
 resolve_address(const struct os_unix_address *address, size_t length,

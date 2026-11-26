@@ -88,6 +88,8 @@ struct interrupt_frame *process_block_on_channel_until(
 	struct interrupt_frame *frame, void *channel, uint64_t wake_tick);
 void process_wake_channel(void *channel);
 void process_timer_wakeup(uint64_t ticks);
+int process_real_timer(uint64_t value, uint64_t interval, bool update,
+    uint64_t *old_value, uint64_t *old_interval);
 struct interrupt_frame *process_exit(struct interrupt_frame *frame,
 	uint64_t status);
 struct interrupt_frame *process_user_exception(
